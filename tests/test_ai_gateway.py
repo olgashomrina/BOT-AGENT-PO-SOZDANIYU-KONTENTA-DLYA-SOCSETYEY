@@ -270,9 +270,22 @@ async def test_generate_text_rate_limit_recovers_after_one_retry():
 async def test_logs_required_fields_on_final_failure(caplog):
     respx.post(CHAT_URL).mock(side_effect=httpx.TimeoutException("timed out"))
 
-    with caplog.at_level(logging.INFO, logger="bot"):
-        with pytest.raises(AIGatewayTimeoutError):
-            await generate_text("prompt")
+    # Attach caplog's handler directly rather than relying on propagation to
+    # the root logger: bot/logging_config.py's setup_logging() sets
+    # propagate=False on the "bot" logger, and once any test in the suite
+    # calls it for real (e.g. tests/test_logging_config.py), that setting
+    # sticks for the rest of the process, breaking propagation-based capture.
+    logger = logging.getLogger("bot")
+    previous_propagate = logger.propagate
+    logger.propagate = False
+    logger.addHandler(caplog.handler)
+    try:
+        with caplog.at_level(logging.INFO, logger="bot"):
+            with pytest.raises(AIGatewayTimeoutError):
+                await generate_text("prompt")
+    finally:
+        logger.removeHandler(caplog.handler)
+        logger.propagate = previous_propagate
 
     error_records = [r for r in caplog.records if r.levelno == logging.ERROR]
     assert len(error_records) == 1

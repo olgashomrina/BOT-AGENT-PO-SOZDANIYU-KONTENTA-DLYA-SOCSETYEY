@@ -53,6 +53,8 @@ def _make_state() -> FSMContext:
 
 @pytest.mark.asyncio
 async def test_link_extraction_failure_gives_friendly_message_and_no_crash(db_path, monkeypatch):
+    """Phase 9 failure path: invalid/unreachable link -> localized error reply,
+    no technical detail leaked, no unhandled exception escapes route_content."""
     message = _make_message(text="https://example.com/protected")
     bot = _make_bot()
     state = _make_state()

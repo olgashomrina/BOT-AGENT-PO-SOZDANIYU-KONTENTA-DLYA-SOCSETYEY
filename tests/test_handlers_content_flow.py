@@ -114,6 +114,8 @@ def test_detects_plain_text():
 
 @pytest.mark.asyncio
 async def test_route_content_text_generates_variants_for_both_platforms(db_path, monkeypatch):
+    """Phase 9 happy path: plain text in -> generation (mocked AI, no network)
+    -> user receives formatted variants with refine buttons for both platforms."""
     message = _make_message(text="Просто текст")
     bot = _make_bot()
     state = _make_state()
