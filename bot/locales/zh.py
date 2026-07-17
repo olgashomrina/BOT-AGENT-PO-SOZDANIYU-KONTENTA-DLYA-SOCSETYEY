@@ -53,4 +53,9 @@ STRINGS = {
         "已收到文字！帖子生成功能仍在开发中——很快我就能把它变成可直接"
         "使用的 Telegram 和 VK 多个版本。"
     ),
+    "refine_more_button": "换一个",
+    "refine_shorten_button": "更简短",
+    "error_refine_missing_context": (
+        "找不到用于优化的原始文本——请重新发送材料。"
+    ),
 }

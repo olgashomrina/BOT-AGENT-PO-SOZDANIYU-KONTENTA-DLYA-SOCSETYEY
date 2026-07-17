@@ -75,6 +75,47 @@ async def test_generate_variants_passes_temperature_for_diversity(monkeypatch):
         assert call.kwargs["temperature"] == content_generator._VARIANT_TEMPERATURE
 
 
+def test_build_prompt_without_extra_instruction_is_unchanged_from_default():
+    prompt = content_generator.build_prompt("текст", "telegram", "ru")
+
+    assert prompt == content_generator.build_prompt("текст", "telegram", "ru", extra_instruction=None)
+
+
+def test_build_prompt_includes_extra_instruction_when_given():
+    prompt = content_generator.build_prompt(
+        "текст", "telegram", "ru", extra_instruction="Make it shorter."
+    )
+
+    assert "Make it shorter." in prompt
+
+
+@pytest.mark.asyncio
+async def test_generate_variants_passes_extra_instruction_into_prompt(monkeypatch):
+    mock_generate = AsyncMock(return_value="вариант")
+    monkeypatch.setattr(ai_gateway, "generate_text", mock_generate)
+
+    await content_generator.generate_variants(
+        "исходник", "telegram", "ru", count=1, extra_instruction=content_generator.SHORTEN_INSTRUCTION
+    )
+
+    called_prompt = mock_generate.await_args.args[0]
+    assert called_prompt == content_generator.build_prompt(
+        "исходник", "telegram", "ru", extra_instruction=content_generator.SHORTEN_INSTRUCTION
+    )
+    assert content_generator.SHORTEN_INSTRUCTION in called_prompt
+
+
+@pytest.mark.asyncio
+async def test_generate_variants_without_extra_instruction_matches_default_prompt(monkeypatch):
+    mock_generate = AsyncMock(return_value="вариант")
+    monkeypatch.setattr(ai_gateway, "generate_text", mock_generate)
+
+    await content_generator.generate_variants("исходник", "telegram", "ru", count=1)
+
+    called_prompt = mock_generate.await_args.args[0]
+    assert called_prompt == content_generator.build_prompt("исходник", "telegram", "ru")
+
+
 @pytest.mark.asyncio
 async def test_generate_variants_propagates_ai_gateway_error(monkeypatch):
     mock_generate = AsyncMock(side_effect=AIGatewayTimeoutError("timed out"))

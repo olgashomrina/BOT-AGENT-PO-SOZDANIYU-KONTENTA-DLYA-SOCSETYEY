@@ -17,7 +17,7 @@ from bot.handlers.content import (
     route_content,
 )
 from bot.locales.loader import get_string
-from bot.services import content_generator, input_processor
+from bot.services import content_generator, input_processor, output_formatter
 from bot.services.ai_gateway import AIGatewayTimeoutError, TranscriptionError
 from bot.storage.users import set_content_language, set_interface_language
 
@@ -128,12 +128,20 @@ async def test_route_content_text_generates_variants_for_both_platforms(db_path,
     assert telegram_call.args[1] == "telegram"
     assert vk_call.args[1] == "vk"
 
-    message.answer.assert_awaited_once()
-    reply = message.answer.call_args.args[0]
-    for variant in ["TG вариант 1", "TG вариант 2", "VK вариант 1", "VK вариант 2"]:
-        assert variant in reply
-    assert "Telegram" in reply
-    assert "VK" in reply
+    assert message.answer.await_count == 4
+    expected = [
+        ("telegram", "TG вариант 1", 1),
+        ("telegram", "TG вариант 2", 2),
+        ("vk", "VK вариант 1", 1),
+        ("vk", "VK вариант 2", 2),
+    ]
+    for call, (platform, text, index) in zip(message.answer.call_args_list, expected):
+        assert call.args[0] == output_formatter.format_variant(text)
+        assert call.kwargs["parse_mode"] == output_formatter.PARSE_MODE
+        keyboard = call.kwargs["reply_markup"]
+        row = keyboard.inline_keyboard[0]
+        assert row[0].callback_data == f"refine:more:{platform}:{index}"
+        assert row[1].callback_data == f"refine:shorten:{platform}:{index}"
     assert await state.get_state() is None
 
 
@@ -154,9 +162,10 @@ async def test_route_content_link_success_generates_variants_for_both_platforms(
     assert telegram_call.args[0] == "Извлечённый текст статьи."
     assert vk_call.args[0] == "Извлечённый текст статьи."
 
-    reply = message.answer.call_args.args[0]
+    assert message.answer.await_count == 4
+    sent_texts = [call.args[0] for call in message.answer.call_args_list]
     for variant in ["TG вариант 1", "VK вариант 1"]:
-        assert variant in reply
+        assert output_formatter.format_variant(variant) in sent_texts
 
 
 @pytest.mark.asyncio
@@ -216,13 +225,16 @@ async def test_voice_confirm_flow_generates_variants_for_both_platforms(db_path,
     telegram_call, vk_call = mock_generate_variants.await_args_list
     assert telegram_call.args[0] == "Расшифрованный текст."
 
-    callback.message.answer.assert_awaited_once()
-    reply = callback.message.answer.call_args.args[0]
+    assert callback.message.answer.await_count == 4
+    sent_texts = [call.args[0] for call in callback.message.answer.call_args_list]
     for variant in ["TG вариант 1", "VK вариант 1"]:
-        assert variant in reply
+        assert output_formatter.format_variant(variant) in sent_texts
     callback.answer.assert_awaited_once()
     assert await state.get_state() is None
-    assert (await state.get_data())["final_text"] == "Расшифрованный текст."
+    data = await state.get_data()
+    assert data["source_text"] == "Расшифрованный текст."
+    assert data["content_language"] == "ru"
+    assert data["language"] == "ru"
 
 
 @pytest.mark.asyncio
@@ -257,7 +269,7 @@ async def test_voice_edit_flow_shows_edited_text_for_reconfirmation(db_path, mon
     assert await state.get_state() == VoiceConfirmStates.waiting_for_confirmation.state
     data = await state.get_data()
     assert data["transcript"] == "Правильный текст, который я имел в виду."
-    assert "final_text" not in data
+    assert "source_text" not in data
 
 
 @pytest.mark.asyncio
@@ -284,9 +296,9 @@ async def test_voice_edit_then_confirm_generates_variants_with_edited_text(db_pa
 
     telegram_call, _ = mock_generate_variants.await_args_list
     assert telegram_call.args[0] == "Правильный текст, который я имел в виду."
-    confirm_callback.message.answer.assert_awaited_once()
+    assert confirm_callback.message.answer.await_count == 4
     assert await state.get_state() is None
-    assert (await state.get_data())["final_text"] == "Правильный текст, который я имел в виду."
+    assert (await state.get_data())["source_text"] == "Правильный текст, который я имел в виду."
 
 
 @pytest.mark.asyncio
@@ -313,7 +325,7 @@ async def test_voice_edit_can_loop_multiple_times_before_confirming(db_path, mon
     confirm_callback = _make_callback()
     await on_transcript_confirm(confirm_callback, state, db_path)
 
-    assert (await state.get_data())["final_text"] == "Третья версия."
+    assert (await state.get_data())["source_text"] == "Третья версия."
 
 
 @pytest.mark.asyncio
@@ -336,7 +348,7 @@ async def test_non_text_input_during_edit_reprompts_without_finishing(db_path, m
     )
     assert await state.get_state() == VoiceConfirmStates.waiting_for_edit.state
     data = await state.get_data()
-    assert "final_text" not in data
+    assert "source_text" not in data
     assert data["transcript"] == "Расшифрованный текст."
 
 

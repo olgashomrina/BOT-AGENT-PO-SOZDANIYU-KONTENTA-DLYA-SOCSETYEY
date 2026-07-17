@@ -75,4 +75,10 @@ STRINGS = {
         "tới tôi sẽ biến nó thành các phiên bản sẵn sàng sử dụng cho "
         "Telegram và VK."
     ),
+    "refine_more_button": "Thêm phương án",
+    "refine_shorten_button": "Ngắn hơn",
+    "error_refine_missing_context": (
+        "Tôi không tìm thấy văn bản gốc để chỉnh sửa — vui lòng gửi lại "
+        "tài liệu."
+    ),
 }

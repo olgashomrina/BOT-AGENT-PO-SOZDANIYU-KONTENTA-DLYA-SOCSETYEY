@@ -73,4 +73,10 @@ STRINGS = {
         "I'll be able to turn it into ready-to-use variants for Telegram "
         "and VK."
     ),
+    "refine_more_button": "More options",
+    "refine_shorten_button": "Shorter",
+    "error_refine_missing_context": (
+        "I couldn't find the original text to refine — please send your "
+        "material again."
+    ),
 }

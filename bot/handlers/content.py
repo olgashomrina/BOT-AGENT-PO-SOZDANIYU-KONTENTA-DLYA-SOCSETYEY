@@ -16,9 +16,10 @@ from bot.keyboards.transcript_confirm import (
     CALLBACK_EDIT,
     build_transcript_confirm_keyboard,
 )
+from bot.keyboards.refine import build_refine_keyboard
 from bot.locales.loader import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, get_string
 from bot.logging_config import LOGGER_NAME
-from bot.services import content_generator, input_processor
+from bot.services import content_generator, input_processor, output_formatter
 from bot.services.ai_gateway import (
     AIGatewayError,
     AIGatewayInvalidResponseError,
@@ -179,26 +180,33 @@ async def on_transcript_edited_text(message: Message, state: FSMContext) -> None
     await _show_transcript_confirmation(message, language, message.text, state)
 
 
-def _format_variants_reply(telegram_variants: list[str], vk_variants: list[str]) -> str:
-    lines = ["Telegram:"]
-    lines.extend(f"{i}. {variant}" for i, variant in enumerate(telegram_variants, start=1))
-    lines.append("")
-    lines.append("VK:")
-    lines.extend(f"{i}. {variant}" for i, variant in enumerate(vk_variants, start=1))
-    return "\n".join(lines)
+async def _send_variants(message: Message, language: str, platform: str, variants: list[str]) -> None:
+    for index, variant in enumerate(variants, start=1):
+        await message.answer(
+            output_formatter.format_variant(variant),
+            parse_mode=output_formatter.PARSE_MODE,
+            reply_markup=build_refine_keyboard(platform, index, language),
+        )
 
 
 async def _finish(
     message: Message, language: str, text: str, state: FSMContext, telegram_id: int, db_path: str
 ) -> None:
-    await state.set_data({"final_text": text})
+    content_language = get_content_language(db_path, telegram_id) or language
+    # Keep FSM state itself at None (route_content's StateFilter(None) needs
+    # this to match again for the next message) while still holding data —
+    # MemoryStorage (and every other aiogram storage backend) keeps state and
+    # data as independent fields, so this is safe. The refine callbacks
+    # (bot/handlers/refine.py) read source_text/content_language/language
+    # back out of this same FSM data to regenerate without asking the user
+    # to resend anything.
+    await state.update_data(source_text=text, content_language=content_language, language=language)
     await state.set_state(None)
     logger.info(
         "Content ready for generation",
         extra={"user_id": telegram_id, "operation": "handler:content", "content_length": len(text)},
     )
 
-    content_language = get_content_language(db_path, telegram_id) or language
     settings = load_settings()
 
     try:
@@ -217,4 +225,5 @@ async def _finish(
         await message.answer(get_string(error_key, language))
         return
 
-    await message.answer(_format_variants_reply(telegram_variants, vk_variants))
+    await _send_variants(message, language, "telegram", telegram_variants)
+    await _send_variants(message, language, "vk", vk_variants)
