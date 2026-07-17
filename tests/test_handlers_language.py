@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -67,3 +67,19 @@ async def test_language_selection_confirms_in_new_language(db_path):
         get_string("language_set_confirmation", "zh")
     )
     callback.answer.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_language_selection_rejects_unsupported_code(db_path, monkeypatch):
+    mock_set_interface_language = MagicMock()
+    monkeypatch.setattr(
+        "bot.handlers.language.set_interface_language", mock_set_interface_language
+    )
+    callback = _make_callback(333, "xx")
+
+    await on_language_selected(callback, db_path)
+
+    mock_set_interface_language.assert_not_called()
+    callback.message.answer.assert_not_awaited()
+    callback.answer.assert_awaited_once()
+    assert get_interface_language(db_path, 333) is None
