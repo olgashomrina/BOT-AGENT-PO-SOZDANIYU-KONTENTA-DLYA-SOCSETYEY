@@ -43,15 +43,14 @@ STRINGS = {
         "/language — 切换界面语言\n"
         "/help — 显示此帮助信息"
     ),
-    "content_stub_link": (
-        "看到链接了！链接处理功能仍在开发中——很快我就能把它变成完整的帖子。"
+    "transcript_preview": (
+        "这是我在你的语音消息中听到的内容：\n\n{text}\n\n内容正确吗？"
     ),
-    "content_stub_voice": (
-        "收到语音消息了！语音识别功能仍在开发中——很快我就能把它变成完整"
-        "的帖子。"
-    ),
-    "content_stub_text": (
-        "收到文字了！帖子生成功能仍在开发中——很快我就能把它变成可直接"
-        "使用的多个版本。"
+    "transcript_confirm_button": "完全正确",
+    "transcript_edit_button": "修改",
+    "transcript_edit_prompt": "请发送修改后的文字。",
+    "content_ready_stub": (
+        "已收到文字！帖子生成功能仍在开发中——很快我就能把它变成可直接"
+        "使用的 Telegram 和 VK 多个版本。"
     ),
 }

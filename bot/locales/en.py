@@ -61,16 +61,16 @@ STRINGS = {
         "/language — change interface language\n"
         "/help — show this message"
     ),
-    "content_stub_link": (
-        "I see a link! Link processing is still in development — soon "
-        "I'll be able to turn it into a ready post."
+    "transcript_preview": (
+        "Here's what I heard in your voice message:\n\n{text}\n\n"
+        "Is that correct?"
     ),
-    "content_stub_voice": (
-        "Got your voice message! Voice transcription is still in "
-        "development — soon I'll be able to turn it into a ready post."
-    ),
-    "content_stub_text": (
-        "Got your text! Post generation is still in development — soon "
-        "I'll be able to turn it into ready-to-use variants."
+    "transcript_confirm_button": "Looks correct",
+    "transcript_edit_button": "Edit",
+    "transcript_edit_prompt": "Please send the corrected text.",
+    "content_ready_stub": (
+        "Text received! Post generation is still in development — soon "
+        "I'll be able to turn it into ready-to-use variants for Telegram "
+        "and VK."
     ),
 }

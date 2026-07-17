@@ -63,16 +63,16 @@ STRINGS = {
         "/language — đổi ngôn ngữ giao diện\n"
         "/help — hiển thị tin nhắn này"
     ),
-    "content_stub_link": (
-        "Tôi thấy một đường liên kết! Xử lý liên kết vẫn đang được phát "
-        "triển — sắp tới tôi sẽ biến nó thành bài đăng hoàn chỉnh."
+    "transcript_preview": (
+        "Đây là nội dung tôi nghe được trong tin nhắn thoại của bạn:\n\n"
+        "{text}\n\nCó đúng không?"
     ),
-    "content_stub_voice": (
-        "Đã nhận tin nhắn thoại! Nhận dạng giọng nói vẫn đang được phát "
-        "triển — sắp tới tôi sẽ biến nó thành bài đăng hoàn chỉnh."
-    ),
-    "content_stub_text": (
+    "transcript_confirm_button": "Đúng rồi",
+    "transcript_edit_button": "Sửa lại",
+    "transcript_edit_prompt": "Vui lòng gửi văn bản đã chỉnh sửa.",
+    "content_ready_stub": (
         "Đã nhận văn bản! Tạo bài đăng vẫn đang được phát triển — sắp "
-        "tới tôi sẽ biến nó thành các phiên bản sẵn sàng sử dụng."
+        "tới tôi sẽ biến nó thành các phiên bản sẵn sàng sử dụng cho "
+        "Telegram và VK."
     ),
 }
