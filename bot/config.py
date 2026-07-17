@@ -9,6 +9,12 @@ DEFAULT_DAILY_LIMIT = 20
 DEFAULT_MONTHLY_LIMIT = 300
 DEFAULT_DB_PATH = "bot.db"
 DEFAULT_LOG_LEVEL = "INFO"
+DEFAULT_AI_PROXY_BASE_URL = "https://api.vsegpt.ru/v1"
+DEFAULT_AI_GATEWAY_PROVIDER = "vsegpt"
+DEFAULT_AI_GATEWAY_TEXT_MODEL = "openai/gpt-4o-mini"
+DEFAULT_AI_GATEWAY_TRANSCRIPTION_MODEL = "openai/whisper-1"
+DEFAULT_AI_GATEWAY_MAX_RETRIES = 2
+DEFAULT_AI_GATEWAY_TIMEOUT_SECONDS = 30.0
 
 
 class ConfigError(Exception):
@@ -19,6 +25,12 @@ class ConfigError(Exception):
 class Settings:
     bot_token: str
     ai_proxy_api_key: str
+    ai_proxy_base_url: str
+    ai_gateway_provider: str
+    ai_gateway_text_model: str
+    ai_gateway_transcription_model: str
+    ai_gateway_max_retries: int
+    ai_gateway_timeout_seconds: float
     owner_chat_id: int
     daily_limit: int
     monthly_limit: int
@@ -59,9 +71,35 @@ def load_settings(env_file: str | None = None) -> Settings:
     db_path = os.environ.get("DB_PATH", DEFAULT_DB_PATH)
     log_level = os.environ.get("LOG_LEVEL", DEFAULT_LOG_LEVEL)
 
+    ai_proxy_base_url = os.environ.get("AI_PROXY_BASE_URL", DEFAULT_AI_PROXY_BASE_URL)
+    ai_gateway_provider = os.environ.get("AI_GATEWAY_PROVIDER", DEFAULT_AI_GATEWAY_PROVIDER)
+    ai_gateway_text_model = os.environ.get("AI_GATEWAY_TEXT_MODEL", DEFAULT_AI_GATEWAY_TEXT_MODEL)
+    ai_gateway_transcription_model = os.environ.get(
+        "AI_GATEWAY_TRANSCRIPTION_MODEL", DEFAULT_AI_GATEWAY_TRANSCRIPTION_MODEL
+    )
+
+    try:
+        ai_gateway_max_retries = int(
+            os.environ.get("AI_GATEWAY_MAX_RETRIES", DEFAULT_AI_GATEWAY_MAX_RETRIES)
+        )
+        ai_gateway_timeout_seconds = float(
+            os.environ.get("AI_GATEWAY_TIMEOUT_SECONDS", DEFAULT_AI_GATEWAY_TIMEOUT_SECONDS)
+        )
+    except ValueError as exc:
+        raise ConfigError(
+            "AI_GATEWAY_MAX_RETRIES должен быть целым числом, "
+            "AI_GATEWAY_TIMEOUT_SECONDS — числом (секунды)."
+        ) from exc
+
     return Settings(
         bot_token=bot_token,
         ai_proxy_api_key=ai_proxy_api_key,
+        ai_proxy_base_url=ai_proxy_base_url,
+        ai_gateway_provider=ai_gateway_provider,
+        ai_gateway_text_model=ai_gateway_text_model,
+        ai_gateway_transcription_model=ai_gateway_transcription_model,
+        ai_gateway_max_retries=ai_gateway_max_retries,
+        ai_gateway_timeout_seconds=ai_gateway_timeout_seconds,
         owner_chat_id=owner_chat_id,
         daily_limit=daily_limit,
         monthly_limit=monthly_limit,
