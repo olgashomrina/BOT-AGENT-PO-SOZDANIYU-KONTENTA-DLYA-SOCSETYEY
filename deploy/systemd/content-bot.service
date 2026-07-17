@@ -1,0 +1,64 @@
+# ============================================================================
+# Этот файл — конфигурация systemd, инструмента, который заставляет Linux
+# держать бота запущенным постоянно и автоматически перезапускать его,
+# если он вдруг упадёт (например, из-за непредвиденной ошибки).
+#
+# Он используется только на сервере (Timeweb Cloud, Фаза 10 плана), не на
+# вашем компьютере с Windows. Открывать и редактировать этот файл вручную
+# без необходимости не нужно — но если что-то пошло не так, вот что здесь
+# настроено:
+#
+#   - WorkingDirectory / ExecStart — где лежит проект и как запускается бот.
+#   - EnvironmentFile — секреты (токен бота, ключ ИИ-сервиса) бот читает
+#     из файла .env, который НЕ хранится в Git и НЕ прописан в этом файле.
+#   - Restart=on-failure — если бот упадёт, сервер перезапустит его сам
+#     через несколько секунд, без участия человека.
+#
+# Основные команды для сервера (через SSH):
+#   sudo systemctl daemon-reload        — применить изменения в этом файле
+#   sudo systemctl enable content-bot   — запускать бота автоматически при
+#                                          перезагрузке сервера
+#   sudo systemctl start content-bot    — запустить бота сейчас
+#   sudo systemctl status content-bot   — посмотреть, работает ли бот
+#   sudo journalctl -u content-bot -f   — посмотреть свежие логи бота
+# ============================================================================
+
+[Unit]
+Description=Telegram-бот для создания контента для соцсетей
+After=network-online.target
+Wants=network-online.target
+
+# Ограничение: если бот падает слишком часто подряд (например, сломан
+# .env), не пытаться перезапускать его бесконечно раз в секунду — не более
+# 5 попыток перезапуска за 300 секунд.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+
+# Путь к папке проекта на сервере. Замените на реальный путь, если он
+# отличается (например, /home/botuser/content-bot).
+WorkingDirectory=/opt/content-bot
+
+# Файл с секретами (токен бота, ключ ИИ-сервиса и т.д.) — копируется на
+# сервер отдельно (не через Git, см. deploy/README-deploy.md), но должен
+# лежать по этому пути.
+EnvironmentFile=/opt/content-bot/.env
+
+# Запуск через виртуальное окружение (venv), созданное на сервере командой
+# `python3 -m venv .venv` внутри WorkingDirectory (см. deploy/README-deploy.md).
+ExecStart=/opt/content-bot/.venv/bin/python -m bot.main
+
+# Если бот упадёт (ненулевой код выхода), перезапустить его через 5 секунд.
+# on-failure означает: не перезапускать при штатной остановке
+# (`systemctl stop content-bot`), только при падении процесса.
+Restart=on-failure
+RestartSec=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=content-bot
+
+[Install]
+WantedBy=multi-user.target
