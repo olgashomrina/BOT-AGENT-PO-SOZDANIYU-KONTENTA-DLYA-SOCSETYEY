@@ -50,4 +50,25 @@ STRINGS = {
         "Bạn đã dùng hết hạn mức yêu cầu trong ngày hôm nay. Hạn mức mới "
         "sẽ có vào ngày mai."
     ),
+    "help_text": (
+        "Hãy gửi cho tôi một đường liên kết bài viết, một tin nhắn thoại, "
+        "hoặc chỉ cần văn bản — tôi sẽ giúp biến nó thành bài đăng sẵn "
+        "sàng cho Telegram và VK.\n\n"
+        "Các lệnh:\n"
+        "/start — bắt đầu lại\n"
+        "/language — đổi ngôn ngữ giao diện\n"
+        "/help — hiển thị tin nhắn này"
+    ),
+    "content_stub_link": (
+        "Tôi thấy một đường liên kết! Xử lý liên kết vẫn đang được phát "
+        "triển — sắp tới tôi sẽ biến nó thành bài đăng hoàn chỉnh."
+    ),
+    "content_stub_voice": (
+        "Đã nhận tin nhắn thoại! Nhận dạng giọng nói vẫn đang được phát "
+        "triển — sắp tới tôi sẽ biến nó thành bài đăng hoàn chỉnh."
+    ),
+    "content_stub_text": (
+        "Đã nhận văn bản! Tạo bài đăng vẫn đang được phát triển — sắp "
+        "tới tôi sẽ biến nó thành các phiên bản sẵn sàng sử dụng."
+    ),
 }

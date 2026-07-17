@@ -48,4 +48,25 @@ STRINGS = {
         "You've used up your daily request limit for today. A new limit "
         "will be available tomorrow."
     ),
+    "help_text": (
+        "Send me a link to an article, a voice message, or just plain "
+        "text — and I'll help turn it into a ready-to-use post for "
+        "Telegram and VK.\n\n"
+        "Commands:\n"
+        "/start — start over\n"
+        "/language — change interface language\n"
+        "/help — show this message"
+    ),
+    "content_stub_link": (
+        "I see a link! Link processing is still in development — soon "
+        "I'll be able to turn it into a ready post."
+    ),
+    "content_stub_voice": (
+        "Got your voice message! Voice transcription is still in "
+        "development — soon I'll be able to turn it into a ready post."
+    ),
+    "content_stub_text": (
+        "Got your text! Post generation is still in development — soon "
+        "I'll be able to turn it into ready-to-use variants."
+    ),
 }

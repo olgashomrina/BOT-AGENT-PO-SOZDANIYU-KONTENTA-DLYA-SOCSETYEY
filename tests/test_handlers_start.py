@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from bot.handlers.start import cmd_start
+from bot.handlers.start import cmd_help, cmd_start
 from bot.locales.loader import get_string
 from bot.storage.users import get_interface_language, set_interface_language
 
@@ -54,3 +54,22 @@ async def test_existing_user_keeps_stored_language_on_start(db_path):
 
     assert get_interface_language(db_path, 444) == "en"
     message.answer.assert_awaited_once_with(get_string("start_greeting", "en"))
+
+
+@pytest.mark.asyncio
+async def test_help_replies_in_default_language_for_new_user(db_path):
+    message = _make_message(555, "ru")
+
+    await cmd_help(message, db_path)
+
+    message.answer.assert_awaited_once_with(get_string("help_text", "ru"))
+
+
+@pytest.mark.asyncio
+async def test_help_replies_in_stored_interface_language(db_path):
+    set_interface_language(db_path, 666, "zh")
+    message = _make_message(666, "en")
+
+    await cmd_help(message, db_path)
+
+    message.answer.assert_awaited_once_with(get_string("help_text", "zh"))
