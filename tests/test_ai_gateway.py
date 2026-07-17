@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 
 import httpx
@@ -106,6 +107,38 @@ async def test_generate_text_uses_model_override():
     await generate_text("prompt", model="custom-model")
 
     assert b"custom-model" in captured["body"]
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_generate_text_includes_temperature_when_passed():
+    captured = {}
+
+    def _responder(request: httpx.Request) -> httpx.Response:
+        captured["json"] = json.loads(request.content)
+        return _chat_response("ok")
+
+    respx.post(CHAT_URL).mock(side_effect=_responder)
+
+    await generate_text("prompt", temperature=0.9)
+
+    assert captured["json"]["temperature"] == 0.9
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_generate_text_omits_temperature_when_not_passed():
+    captured = {}
+
+    def _responder(request: httpx.Request) -> httpx.Response:
+        captured["json"] = json.loads(request.content)
+        return _chat_response("ok")
+
+    respx.post(CHAT_URL).mock(side_effect=_responder)
+
+    await generate_text("prompt")
+
+    assert "temperature" not in captured["json"]
 
 
 # --- transcribe: success / structural failures (no retry) ---

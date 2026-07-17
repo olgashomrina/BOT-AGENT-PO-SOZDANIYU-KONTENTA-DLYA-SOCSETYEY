@@ -64,6 +64,18 @@ async def test_generate_variants_passes_built_prompt_to_generate_text(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_generate_variants_passes_temperature_for_diversity(monkeypatch):
+    mock_generate = AsyncMock(return_value="вариант")
+    monkeypatch.setattr(ai_gateway, "generate_text", mock_generate)
+
+    await content_generator.generate_variants("текст", "telegram", "ru", count=3)
+
+    assert mock_generate.await_count == 3
+    for call in mock_generate.await_args_list:
+        assert call.kwargs["temperature"] == content_generator._VARIANT_TEMPERATURE
+
+
+@pytest.mark.asyncio
 async def test_generate_variants_propagates_ai_gateway_error(monkeypatch):
     mock_generate = AsyncMock(side_effect=AIGatewayTimeoutError("timed out"))
     monkeypatch.setattr(ai_gateway, "generate_text", mock_generate)

@@ -304,20 +304,20 @@ def _parse_transcription_response(
     return text
 
 
-async def generate_text(prompt: str, model: str | None = None) -> str:
+async def generate_text(prompt: str, model: str | None = None, temperature: float | None = None) -> str:
     settings = load_settings()
     resolved_model = model or settings.ai_gateway_text_model
     operation = "generate_text"
     overall_started = time.monotonic()
 
     async def _do_request(client: httpx.AsyncClient) -> httpx.Response:
-        return await client.post(
-            "/chat/completions",
-            json={
-                "model": resolved_model,
-                "messages": [{"role": "user", "content": prompt}],
-            },
-        )
+        payload: dict[str, Any] = {
+            "model": resolved_model,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if temperature is not None:
+            payload["temperature"] = temperature
+        return await client.post("/chat/completions", json=payload)
 
     async with httpx.AsyncClient(
         base_url=settings.ai_proxy_base_url,
