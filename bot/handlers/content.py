@@ -128,6 +128,12 @@ async def _handle_voice(
         await message.answer(get_string(error_key, language))
         return
 
+    await _show_transcript_confirmation(message, language, transcript, state)
+
+
+async def _show_transcript_confirmation(
+    message: Message, language: str, transcript: str, state: FSMContext
+) -> None:
     await state.update_data(transcript=transcript, language=language)
     await state.set_state(VoiceConfirmStates.waiting_for_confirmation)
     await message.answer(
@@ -161,10 +167,13 @@ async def on_transcript_edit_request(callback: CallbackQuery, state: FSMContext)
 async def on_transcript_edited_text(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     language = data.get("language", DEFAULT_LANGUAGE)
-    edited_text = message.text or ""
 
-    logger.info("Voice transcript edited and confirmed", extra={"user_id": message.from_user.id, "operation": "handler:content"})
-    await _finish(message, language, edited_text, state)
+    if not message.text:
+        await message.answer(get_string("transcript_edit_prompt", language))
+        return
+
+    logger.info("Voice transcript edited, awaiting re-confirmation", extra={"user_id": message.from_user.id, "operation": "handler:content"})
+    await _show_transcript_confirmation(message, language, message.text, state)
 
 
 async def _finish(message: Message, language: str, text: str, state: FSMContext) -> None:

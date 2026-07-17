@@ -182,7 +182,7 @@ async def test_voice_confirm_flow_reaches_ready_stub(db_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_voice_edit_flow_reaches_ready_stub_with_edited_text(db_path, monkeypatch):
+async def test_voice_edit_flow_shows_edited_text_for_reconfirmation(db_path, monkeypatch):
     message = _make_message(voice=SimpleNamespace(file_id="abc"))
     bot = _make_bot()
     state = _make_state()
@@ -203,9 +203,92 @@ async def test_voice_edit_flow_reaches_ready_stub_with_edited_text(db_path, monk
     edited_message = _make_message(text="Правильный текст, который я имел в виду.")
     await on_transcript_edited_text(edited_message, state)
 
-    edited_message.answer.assert_awaited_once_with(get_string("content_ready_stub", "ru"))
+    edited_message.answer.assert_awaited_once()
+    args, kwargs = edited_message.answer.call_args
+    assert args[0] == get_string(
+        "transcript_preview", "ru", text="Правильный текст, который я имел в виду."
+    )
+    assert "reply_markup" in kwargs
+
+    assert await state.get_state() == VoiceConfirmStates.waiting_for_confirmation.state
+    data = await state.get_data()
+    assert data["transcript"] == "Правильный текст, который я имел в виду."
+    assert "final_text" not in data
+
+
+@pytest.mark.asyncio
+async def test_voice_edit_then_confirm_reaches_ready_stub_with_edited_text(db_path, monkeypatch):
+    message = _make_message(voice=SimpleNamespace(file_id="abc"))
+    bot = _make_bot()
+    state = _make_state()
+
+    monkeypatch.setattr(
+        input_processor, "handle_voice", AsyncMock(return_value="Неверно распознанный текст.")
+    )
+    await route_content(message, db_path, bot, state)
+
+    edit_callback = _make_callback()
+    await on_transcript_edit_request(edit_callback, state)
+
+    edited_message = _make_message(text="Правильный текст, который я имел в виду.")
+    await on_transcript_edited_text(edited_message, state)
+
+    confirm_callback = _make_callback()
+    await on_transcript_confirm(confirm_callback, state)
+
+    confirm_callback.message.answer.assert_awaited_once_with(get_string("content_ready_stub", "ru"))
     assert await state.get_state() is None
     assert (await state.get_data())["final_text"] == "Правильный текст, который я имел в виду."
+
+
+@pytest.mark.asyncio
+async def test_voice_edit_can_loop_multiple_times_before_confirming(db_path, monkeypatch):
+    message = _make_message(voice=SimpleNamespace(file_id="abc"))
+    bot = _make_bot()
+    state = _make_state()
+
+    monkeypatch.setattr(
+        input_processor, "handle_voice", AsyncMock(return_value="Первая версия.")
+    )
+    await route_content(message, db_path, bot, state)
+
+    await on_transcript_edit_request(_make_callback(), state)
+    await on_transcript_edited_text(_make_message(text="Вторая версия."), state)
+    assert await state.get_state() == VoiceConfirmStates.waiting_for_confirmation.state
+
+    await on_transcript_edit_request(_make_callback(), state)
+    await on_transcript_edited_text(_make_message(text="Третья версия."), state)
+    assert await state.get_state() == VoiceConfirmStates.waiting_for_confirmation.state
+    assert (await state.get_data())["transcript"] == "Третья версия."
+
+    confirm_callback = _make_callback()
+    await on_transcript_confirm(confirm_callback, state)
+
+    assert (await state.get_data())["final_text"] == "Третья версия."
+
+
+@pytest.mark.asyncio
+async def test_non_text_input_during_edit_reprompts_without_finishing(db_path, monkeypatch):
+    message = _make_message(voice=SimpleNamespace(file_id="abc"))
+    bot = _make_bot()
+    state = _make_state()
+
+    monkeypatch.setattr(
+        input_processor, "handle_voice", AsyncMock(return_value="Расшифрованный текст.")
+    )
+    await route_content(message, db_path, bot, state)
+    await on_transcript_edit_request(_make_callback(), state)
+
+    stray_voice_message = _make_message(voice=SimpleNamespace(file_id="xyz"))
+    await on_transcript_edited_text(stray_voice_message, state)
+
+    stray_voice_message.answer.assert_awaited_once_with(
+        get_string("transcript_edit_prompt", "ru")
+    )
+    assert await state.get_state() == VoiceConfirmStates.waiting_for_edit.state
+    data = await state.get_data()
+    assert "final_text" not in data
+    assert data["transcript"] == "Расшифрованный текст."
 
 
 @pytest.mark.asyncio
