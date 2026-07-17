@@ -46,9 +46,13 @@ STRINGS = {
         "dùng được mời. Nếu bạn cho rằng mình nên có quyền truy cập, hãy "
         "liên hệ với chủ sở hữu bot."
     ),
-    "error_limit_exceeded": (
+    "error_daily_limit_exceeded": (
         "Bạn đã dùng hết hạn mức yêu cầu trong ngày hôm nay. Hạn mức mới "
         "sẽ có vào ngày mai."
+    ),
+    "error_monthly_limit_exceeded": (
+        "Bạn đã dùng hết hạn mức yêu cầu trong tháng này. Hạn mức mới sẽ "
+        "có vào tháng sau."
     ),
     "help_text": (
         "Hãy gửi cho tôi một đường liên kết bài viết, một tin nhắn thoại, "

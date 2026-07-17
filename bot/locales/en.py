@@ -44,9 +44,13 @@ STRINGS = {
         "users. If you believe you should have access, contact the bot "
         "owner."
     ),
-    "error_limit_exceeded": (
+    "error_daily_limit_exceeded": (
         "You've used up your daily request limit for today. A new limit "
         "will be available tomorrow."
+    ),
+    "error_monthly_limit_exceeded": (
+        "You've used up your monthly request limit. A new limit will be "
+        "available next month."
     ),
     "help_text": (
         "Send me a link to an article, a voice message, or just plain "

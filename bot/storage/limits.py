@@ -1,8 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from enum import Enum
 
 from bot.storage.db import get_connection
+
+
+class LimitStatus(Enum):
+    OK = "ok"
+    DAILY_EXCEEDED = "daily_exceeded"
+    MONTHLY_EXCEEDED = "monthly_exceeded"
 
 
 def _resolve_now(now: datetime | None) -> datetime:
@@ -54,14 +61,15 @@ def get_monthly_count(db_path: str, telegram_id: int, now: datetime | None = Non
         connection.close()
 
 
-def is_within_limit(
+def check_limit_status(
     db_path: str,
     telegram_id: int,
     daily_limit: int,
     monthly_limit: int,
     now: datetime | None = None,
-) -> bool:
-    return (
-        get_daily_count(db_path, telegram_id, now) < daily_limit
-        and get_monthly_count(db_path, telegram_id, now) < monthly_limit
-    )
+) -> LimitStatus:
+    if get_daily_count(db_path, telegram_id, now) >= daily_limit:
+        return LimitStatus.DAILY_EXCEEDED
+    if get_monthly_count(db_path, telegram_id, now) >= monthly_limit:
+        return LimitStatus.MONTHLY_EXCEEDED
+    return LimitStatus.OK

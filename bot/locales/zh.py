@@ -29,8 +29,11 @@ STRINGS = {
         "目前该机器人仅限受邀用户名单访问。如果您认为应当拥有访问权限，"
         "请联系机器人所有者。"
     ),
-    "error_limit_exceeded": (
+    "error_daily_limit_exceeded": (
         "您今天的每日请求额度已用完。新的额度将在明天开放。"
+    ),
+    "error_monthly_limit_exceeded": (
+        "您本月的请求额度已用完。新的额度将在下个月开放。"
     ),
     "help_text": (
         "给我发送文章链接、语音消息或直接发送文字——我会帮你把它变成可直接"

@@ -43,7 +43,7 @@ async def test_at_daily_limit_is_blocked_with_friendly_message(db_path):
     result = await middleware(handler, message, {"db_path": db_path})
 
     handler.assert_not_awaited()
-    message.answer.assert_awaited_once_with(get_string("error_limit_exceeded", "en"))
+    message.answer.assert_awaited_once_with(get_string("error_daily_limit_exceeded", "en"))
     assert result is None
     assert get_daily_count(db_path, 111) == 1
 
@@ -63,6 +63,22 @@ async def test_over_monthly_limit_is_blocked(db_path):
 
 
 @pytest.mark.asyncio
+async def test_over_monthly_limit_with_daily_still_under_shows_monthly_message(db_path):
+    message = _make_message(111, "en")
+    middleware = RateLimitMiddleware(daily_limit=50, monthly_limit=1)
+    handler = AsyncMock()
+    await middleware(handler, message, {"db_path": db_path})
+    handler.reset_mock()
+    message.answer.reset_mock()
+
+    result = await middleware(handler, message, {"db_path": db_path})
+
+    handler.assert_not_awaited()
+    message.answer.assert_awaited_once_with(get_string("error_monthly_limit_exceeded", "en"))
+    assert result is None
+
+
+@pytest.mark.asyncio
 async def test_blocked_user_uses_stored_interface_language(db_path):
     set_interface_language(db_path, 222, "vi")
     message = _make_message(222, "en")
@@ -71,4 +87,4 @@ async def test_blocked_user_uses_stored_interface_language(db_path):
 
     await middleware(handler, message, {"db_path": db_path})
 
-    message.answer.assert_awaited_once_with(get_string("error_limit_exceeded", "vi"))
+    message.answer.assert_awaited_once_with(get_string("error_daily_limit_exceeded", "vi"))
