@@ -15,10 +15,24 @@ from bot.services import content_generator, output_formatter
 from bot.services.ai_gateway import AIGatewayError
 from bot.services.content_generator import SHORTEN_INSTRUCTION
 from bot.storage.limits import LimitStatus, check_limit_status, increment_usage
+from bot.storage.whitelist import is_whitelisted
 
 logger = logging.getLogger(LOGGER_NAME)
 
 router = Router(name="refine")
+
+
+async def _check_whitelist_or_reply(callback: CallbackQuery, db_path: str, language: str) -> bool:
+    # WHY this check exists here at all: WhitelistMiddleware (bot/middlewares/
+    # whitelist_middleware.py) is registered only on dispatcher.message.outer_
+    # middleware (see bot/main.py) — it never runs for callback_query events.
+    telegram_id = callback.from_user.id
+    if is_whitelisted(db_path, telegram_id):
+        return True
+
+    await callback.message.answer(get_string("error_not_whitelisted", language))
+    await callback.answer()
+    return False
 
 
 async def _check_limit_or_reply(callback: CallbackQuery, db_path: str, language: str) -> bool:
@@ -57,6 +71,9 @@ async def _generate_and_send(
     language = data.get("language") or _resolve_language(
         db_path, telegram_id, callback.from_user.language_code
     )
+
+    if not await _check_whitelist_or_reply(callback, db_path, language):
+        return
 
     if not await _check_limit_or_reply(callback, db_path, language):
         return

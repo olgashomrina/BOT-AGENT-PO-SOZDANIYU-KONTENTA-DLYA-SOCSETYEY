@@ -13,6 +13,7 @@ from bot.locales.loader import get_string
 from bot.services import content_generator, output_formatter
 from bot.services.ai_gateway import AIGatewayTimeoutError
 from bot.storage.limits import get_daily_count
+from bot.storage.whitelist import add_user
 
 TELEGRAM_ID = 111
 
@@ -22,6 +23,11 @@ def _ai_gateway_env(monkeypatch):
     monkeypatch.setenv("BOT_TOKEN", "123456:test-token")
     monkeypatch.setenv("AI_PROXY_API_KEY", "test-ai-key")
     monkeypatch.setenv("OWNER_CHAT_ID", "42")
+
+
+@pytest.fixture(autouse=True)
+def _whitelisted(db_path):
+    add_user(db_path, TELEGRAM_ID)
 
 
 def _make_state(telegram_id: int = TELEGRAM_ID) -> FSMContext:
@@ -162,3 +168,30 @@ async def test_refine_ai_gateway_error_replies_friendly_message_and_does_not_inc
     callback.message.answer.assert_awaited_once_with(get_string("error_ai_timeout", "ru"))
     callback.answer.assert_awaited_once()
     assert get_daily_count(db_path, TELEGRAM_ID) == 0
+
+
+@pytest.mark.parametrize(
+    "handler, data",
+    [
+        (on_refine_more, "refine:more:telegram:1"),
+        (on_refine_shorten, "refine:shorten:telegram:1"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_refine_blocked_when_not_whitelisted_does_not_call_generate(
+    db_path, monkeypatch, handler, data
+):
+    NOT_WHITELISTED_ID = 999
+    state = _make_state(NOT_WHITELISTED_ID)
+    await _seed_finished_session(state)
+
+    mock_generate = AsyncMock(return_value=["Не должно быть отправлено"])
+    monkeypatch.setattr(content_generator, "generate_variants", mock_generate)
+
+    callback = _make_callback(telegram_id=NOT_WHITELISTED_ID, data=data)
+    await handler(callback, state, db_path)
+
+    mock_generate.assert_not_awaited()
+    callback.message.answer.assert_awaited_once_with(get_string("error_not_whitelisted", "ru"))
+    callback.answer.assert_awaited_once()
+    assert get_daily_count(db_path, NOT_WHITELISTED_ID) == 0
