@@ -15,6 +15,7 @@ DEFAULT_AI_GATEWAY_TEXT_MODEL = "openai/gpt-4o-mini"
 DEFAULT_AI_GATEWAY_TRANSCRIPTION_MODEL = "openai/whisper-1"
 DEFAULT_AI_GATEWAY_MAX_RETRIES = 2
 DEFAULT_AI_GATEWAY_TIMEOUT_SECONDS = 30.0
+DEFAULT_CONTENT_VARIANTS_COUNT = 2
 
 
 class ConfigError(Exception):
@@ -31,6 +32,7 @@ class Settings:
     ai_gateway_transcription_model: str
     ai_gateway_max_retries: int
     ai_gateway_timeout_seconds: float
+    content_variants_count: int
     owner_chat_id: int
     daily_limit: int
     monthly_limit: int
@@ -91,6 +93,13 @@ def load_settings(env_file: str | None = None) -> Settings:
             "AI_GATEWAY_TIMEOUT_SECONDS — числом (секунды)."
         ) from exc
 
+    try:
+        content_variants_count = int(
+            os.environ.get("CONTENT_VARIANTS_COUNT", DEFAULT_CONTENT_VARIANTS_COUNT)
+        )
+    except ValueError as exc:
+        raise ConfigError("CONTENT_VARIANTS_COUNT должен быть целым числом.") from exc
+
     return Settings(
         bot_token=bot_token,
         ai_proxy_api_key=ai_proxy_api_key,
@@ -100,6 +109,7 @@ def load_settings(env_file: str | None = None) -> Settings:
         ai_gateway_transcription_model=ai_gateway_transcription_model,
         ai_gateway_max_retries=ai_gateway_max_retries,
         ai_gateway_timeout_seconds=ai_gateway_timeout_seconds,
+        content_variants_count=content_variants_count,
         owner_chat_id=owner_chat_id,
         daily_limit=daily_limit,
         monthly_limit=monthly_limit,

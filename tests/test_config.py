@@ -73,3 +73,20 @@ def test_load_settings_raises_when_owner_chat_id_not_numeric(monkeypatch, tmp_pa
 
     with pytest.raises(ConfigError):
         load_settings(env_file=_missing_env_file(tmp_path))
+
+
+def test_load_settings_content_variants_count_default(monkeypatch, tmp_path):
+    _set_required_env(monkeypatch)
+    monkeypatch.delenv("CONTENT_VARIANTS_COUNT", raising=False)
+
+    settings = load_settings(env_file=_missing_env_file(tmp_path))
+
+    assert settings.content_variants_count == 2
+
+
+def test_load_settings_content_variants_count_override(monkeypatch, tmp_path):
+    _set_required_env(monkeypatch, {"CONTENT_VARIANTS_COUNT": "5"})
+
+    settings = load_settings(env_file=_missing_env_file(tmp_path))
+
+    assert settings.content_variants_count == 5

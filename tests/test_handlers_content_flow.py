@@ -17,10 +17,26 @@ from bot.handlers.content import (
     route_content,
 )
 from bot.locales.loader import get_string
-from bot.services import input_processor
+from bot.services import content_generator, input_processor
 from bot.services.ai_gateway import AIGatewayTimeoutError, TranscriptionError
+from bot.storage.users import set_content_language, set_interface_language
 
 TELEGRAM_ID = 111
+
+
+@pytest.fixture(autouse=True)
+def _ai_gateway_env(monkeypatch):
+    monkeypatch.setenv("BOT_TOKEN", "123456:test-token")
+    monkeypatch.setenv("AI_PROXY_API_KEY", "test-ai-key")
+    monkeypatch.setenv("OWNER_CHAT_ID", "42")
+
+
+def _mock_generate_variants(monkeypatch, telegram_variants=None, vk_variants=None):
+    telegram_variants = telegram_variants or ["TG вариант 1", "TG вариант 2"]
+    vk_variants = vk_variants or ["VK вариант 1", "VK вариант 2"]
+    mock = AsyncMock(side_effect=[telegram_variants, vk_variants])
+    monkeypatch.setattr(content_generator, "generate_variants", mock)
+    return mock
 
 
 def _make_message(
@@ -97,19 +113,32 @@ def test_detects_plain_text():
 
 
 @pytest.mark.asyncio
-async def test_route_content_text_goes_straight_to_ready_stub(db_path):
+async def test_route_content_text_generates_variants_for_both_platforms(db_path, monkeypatch):
     message = _make_message(text="Просто текст")
     bot = _make_bot()
     state = _make_state()
 
+    mock_generate_variants = _mock_generate_variants(monkeypatch)
+
     await route_content(message, db_path, bot, state)
 
-    message.answer.assert_awaited_once_with(get_string("content_ready_stub", "ru"))
+    assert mock_generate_variants.await_count == 2
+    telegram_call, vk_call = mock_generate_variants.await_args_list
+    assert telegram_call.args[0] == "Просто текст"
+    assert telegram_call.args[1] == "telegram"
+    assert vk_call.args[1] == "vk"
+
+    message.answer.assert_awaited_once()
+    reply = message.answer.call_args.args[0]
+    for variant in ["TG вариант 1", "TG вариант 2", "VK вариант 1", "VK вариант 2"]:
+        assert variant in reply
+    assert "Telegram" in reply
+    assert "VK" in reply
     assert await state.get_state() is None
 
 
 @pytest.mark.asyncio
-async def test_route_content_link_success_goes_straight_to_ready_stub(db_path, monkeypatch):
+async def test_route_content_link_success_generates_variants_for_both_platforms(db_path, monkeypatch):
     message = _make_message(text="https://example.com/article")
     bot = _make_bot()
     state = _make_state()
@@ -117,10 +146,17 @@ async def test_route_content_link_success_goes_straight_to_ready_stub(db_path, m
     monkeypatch.setattr(
         input_processor, "extract_from_link", lambda url: "Извлечённый текст статьи."
     )
+    mock_generate_variants = _mock_generate_variants(monkeypatch)
 
     await route_content(message, db_path, bot, state)
 
-    message.answer.assert_awaited_once_with(get_string("content_ready_stub", "ru"))
+    telegram_call, vk_call = mock_generate_variants.await_args_list
+    assert telegram_call.args[0] == "Извлечённый текст статьи."
+    assert vk_call.args[0] == "Извлечённый текст статьи."
+
+    reply = message.answer.call_args.args[0]
+    for variant in ["TG вариант 1", "VK вариант 1"]:
+        assert variant in reply
 
 
 @pytest.mark.asyncio
@@ -162,7 +198,7 @@ async def test_route_content_voice_shows_transcript_for_confirmation(db_path, mo
 
 
 @pytest.mark.asyncio
-async def test_voice_confirm_flow_reaches_ready_stub(db_path, monkeypatch):
+async def test_voice_confirm_flow_generates_variants_for_both_platforms(db_path, monkeypatch):
     message = _make_message(voice=SimpleNamespace(file_id="abc"))
     bot = _make_bot()
     state = _make_state()
@@ -172,10 +208,18 @@ async def test_voice_confirm_flow_reaches_ready_stub(db_path, monkeypatch):
     )
     await route_content(message, db_path, bot, state)
 
-    callback = _make_callback()
-    await on_transcript_confirm(callback, state)
+    mock_generate_variants = _mock_generate_variants(monkeypatch)
 
-    callback.message.answer.assert_awaited_once_with(get_string("content_ready_stub", "ru"))
+    callback = _make_callback()
+    await on_transcript_confirm(callback, state, db_path)
+
+    telegram_call, vk_call = mock_generate_variants.await_args_list
+    assert telegram_call.args[0] == "Расшифрованный текст."
+
+    callback.message.answer.assert_awaited_once()
+    reply = callback.message.answer.call_args.args[0]
+    for variant in ["TG вариант 1", "VK вариант 1"]:
+        assert variant in reply
     callback.answer.assert_awaited_once()
     assert await state.get_state() is None
     assert (await state.get_data())["final_text"] == "Расшифрованный текст."
@@ -217,7 +261,7 @@ async def test_voice_edit_flow_shows_edited_text_for_reconfirmation(db_path, mon
 
 
 @pytest.mark.asyncio
-async def test_voice_edit_then_confirm_reaches_ready_stub_with_edited_text(db_path, monkeypatch):
+async def test_voice_edit_then_confirm_generates_variants_with_edited_text(db_path, monkeypatch):
     message = _make_message(voice=SimpleNamespace(file_id="abc"))
     bot = _make_bot()
     state = _make_state()
@@ -233,10 +277,14 @@ async def test_voice_edit_then_confirm_reaches_ready_stub_with_edited_text(db_pa
     edited_message = _make_message(text="Правильный текст, который я имел в виду.")
     await on_transcript_edited_text(edited_message, state)
 
-    confirm_callback = _make_callback()
-    await on_transcript_confirm(confirm_callback, state)
+    mock_generate_variants = _mock_generate_variants(monkeypatch)
 
-    confirm_callback.message.answer.assert_awaited_once_with(get_string("content_ready_stub", "ru"))
+    confirm_callback = _make_callback()
+    await on_transcript_confirm(confirm_callback, state, db_path)
+
+    telegram_call, _ = mock_generate_variants.await_args_list
+    assert telegram_call.args[0] == "Правильный текст, который я имел в виду."
+    confirm_callback.message.answer.assert_awaited_once()
     assert await state.get_state() is None
     assert (await state.get_data())["final_text"] == "Правильный текст, который я имел в виду."
 
@@ -261,8 +309,9 @@ async def test_voice_edit_can_loop_multiple_times_before_confirming(db_path, mon
     assert await state.get_state() == VoiceConfirmStates.waiting_for_confirmation.state
     assert (await state.get_data())["transcript"] == "Третья версия."
 
+    _mock_generate_variants(monkeypatch)
     confirm_callback = _make_callback()
-    await on_transcript_confirm(confirm_callback, state)
+    await on_transcript_confirm(confirm_callback, state, db_path)
 
     assert (await state.get_data())["final_text"] == "Третья версия."
 
@@ -327,3 +376,39 @@ async def test_route_content_voice_ai_gateway_error_replies_friendly_message(db_
 
     message.answer.assert_awaited_once_with(get_string("error_ai_timeout", "ru"))
     assert await state.get_state() is None
+
+
+@pytest.mark.asyncio
+async def test_route_content_text_generation_error_replies_friendly_message(db_path, monkeypatch):
+    message = _make_message(text="Просто текст")
+    bot = _make_bot()
+    state = _make_state()
+
+    monkeypatch.setattr(
+        content_generator,
+        "generate_variants",
+        AsyncMock(side_effect=AIGatewayTimeoutError("timed out after retries")),
+    )
+
+    await route_content(message, db_path, bot, state)
+
+    message.answer.assert_awaited_once_with(get_string("error_ai_timeout", "ru"))
+    assert await state.get_state() is None
+
+
+@pytest.mark.asyncio
+async def test_generation_uses_content_language_not_interface_language(db_path, monkeypatch):
+    set_interface_language(db_path, TELEGRAM_ID, "ru")
+    set_content_language(db_path, TELEGRAM_ID, "en")
+
+    message = _make_message(text="Просто текст")
+    bot = _make_bot()
+    state = _make_state()
+
+    mock_generate_variants = _mock_generate_variants(monkeypatch)
+
+    await route_content(message, db_path, bot, state)
+
+    telegram_call, vk_call = mock_generate_variants.await_args_list
+    assert telegram_call.args[2] == "en"
+    assert vk_call.args[2] == "en"

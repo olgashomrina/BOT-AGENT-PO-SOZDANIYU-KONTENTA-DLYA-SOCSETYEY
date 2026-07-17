@@ -10,6 +10,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
+from bot.config import load_settings
 from bot.keyboards.transcript_confirm import (
     CALLBACK_CONFIRM,
     CALLBACK_EDIT,
@@ -17,7 +18,7 @@ from bot.keyboards.transcript_confirm import (
 )
 from bot.locales.loader import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, get_string
 from bot.logging_config import LOGGER_NAME
-from bot.services import input_processor
+from bot.services import content_generator, input_processor
 from bot.services.ai_gateway import (
     AIGatewayError,
     AIGatewayInvalidResponseError,
@@ -83,17 +84,19 @@ async def route_content(message: Message, db_path: str, bot: Bot, state: FSMCont
     input_type = detect_input_type(message)
 
     if input_type == "text":
-        await _finish(message, language, message.text, state)
+        await _finish(message, language, message.text, state, telegram_id, db_path)
         return
 
     if input_type == "link":
-        await _handle_link(message, language, state)
+        await _handle_link(message, language, state, telegram_id, db_path)
         return
 
     await _handle_voice(message, db_path, bot, state, language)
 
 
-async def _handle_link(message: Message, language: str, state: FSMContext) -> None:
+async def _handle_link(
+    message: Message, language: str, state: FSMContext, telegram_id: int, db_path: str
+) -> None:
     raw = message.text or message.caption or ""
     match = _URL_PATTERN.search(raw)
     url = match.group(0) if match else raw
@@ -105,7 +108,7 @@ async def _handle_link(message: Message, language: str, state: FSMContext) -> No
         await message.answer(get_string("error_link_extraction", language))
         return
 
-    await _finish(message, language, extracted_text, state)
+    await _finish(message, language, extracted_text, state, telegram_id, db_path)
 
 
 async def _handle_voice(
@@ -135,7 +138,7 @@ async def _show_transcript_confirmation(
     message: Message, language: str, transcript: str, state: FSMContext
 ) -> None:
     await state.update_data(transcript=transcript, language=language)
-    await state.set_state(VoiceConfirmStates.waiting_for_confirmation)
+    await state.set_state (VoiceConfirmStates.waiting_for_confirmation)
     await message.answer(
         get_string("transcript_preview", language, text=transcript),
         reply_markup=build_transcript_confirm_keyboard(language),
@@ -143,13 +146,13 @@ async def _show_transcript_confirmation(
 
 
 @router.callback_query(F.data == CALLBACK_CONFIRM, VoiceConfirmStates.waiting_for_confirmation)
-async def on_transcript_confirm(callback: CallbackQuery, state: FSMContext) -> None:
+async def on_transcript_confirm(callback: CallbackQuery, state: FSMContext, db_path: str) -> None:
     data = await state.get_data()
     transcript = data.get("transcript", "")
     language = data.get("language", DEFAULT_LANGUAGE)
 
     logger.info("Voice transcript confirmed", extra={"user_id": callback.from_user.id, "operation": "handler:content"})
-    await _finish(callback.message, language, transcript, state)
+    await _finish(callback.message, language, transcript, state, callback.from_user.id, db_path)
     await callback.answer()
 
 
@@ -176,13 +179,42 @@ async def on_transcript_edited_text(message: Message, state: FSMContext) -> None
     await _show_transcript_confirmation(message, language, message.text, state)
 
 
-async def _finish(message: Message, language: str, text: str, state: FSMContext) -> None:
-    # Phase 6 (Content Generator) will read this instead of the placeholder
-    # reply below — stored now so the confirmed text isn't lost in the meantime.
+def _format_variants_reply(telegram_variants: list[str], vk_variants: list[str]) -> str:
+    lines = ["Telegram:"]
+    lines.extend(f"{i}. {variant}" for i, variant in enumerate(telegram_variants, start=1))
+    lines.append("")
+    lines.append("VK:")
+    lines.extend(f"{i}. {variant}" for i, variant in enumerate(vk_variants, start=1))
+    return "\n".join(lines)
+
+
+async def _finish(
+    message: Message, language: str, text: str, state: FSMContext, telegram_id: int, db_path: str
+) -> None:
     await state.set_data({"final_text": text})
     await state.set_state(None)
     logger.info(
         "Content ready for generation",
-        extra={"user_id": message.from_user.id, "operation": "handler:content", "content_length": len(text)},
+        extra={"user_id": telegram_id, "operation": "handler:content", "content_length": len(text)},
     )
-    await message.answer(get_string("content_ready_stub", language))
+
+    content_language = get_content_language(db_path, telegram_id) or language
+    settings = load_settings()
+
+    try:
+        telegram_variants = await content_generator.generate_variants(
+            text, "telegram", content_language, count=settings.content_variants_count
+        )
+        vk_variants = await content_generator.generate_variants(
+            text, "vk", content_language, count=settings.content_variants_count
+        )
+    except AIGatewayError as exc:
+        error_key = _AI_ERROR_KEYS.get(type(exc), "error_unexpected")
+        logger.warning(
+            "AI Gateway error during content generation",
+            extra={"user_id": telegram_id, "operation": "generate_variants", "error_class": type(exc).__name__},
+        )
+        await message.answer(get_string(error_key, language))
+        return
+
+    await message.answer(_format_variants_reply(telegram_variants, vk_variants))
