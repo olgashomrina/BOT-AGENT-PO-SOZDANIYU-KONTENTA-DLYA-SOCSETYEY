@@ -234,13 +234,22 @@ async def on_refine_image(callback: CallbackQuery, state: FSMContext, db_path: s
         await callback.answer()
         return
 
-    increment_usage(db_path, telegram_id)
+    try:
+        sent_message = await bot.send_photo(
+            callback.message.chat.id,
+            photo=image_url,
+            caption=get_string("image_preview_caption", language),
+        )
+    except TelegramAPIError:
+        logger.warning(
+            "Failed to deliver generated image to user",
+            extra={"user_id": telegram_id, "operation": "generate_image"},
+        )
+        await callback.message.answer(get_string("image_delivery_failed", language))
+        await callback.answer()
+        return
 
-    sent_message = await bot.send_photo(
-        callback.message.chat.id,
-        photo=image_url,
-        caption=get_string("image_preview_caption", language),
-    )
+    increment_usage(db_path, telegram_id)
 
     # WHY store Telegram's own file_id instead of the vendor image URL:
     # AI-provider-hosted image URLs are often time-limited, but once

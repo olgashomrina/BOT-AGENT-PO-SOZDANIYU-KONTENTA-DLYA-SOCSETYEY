@@ -120,6 +120,7 @@ STRINGS = {
     "media_nothing_to_clear": "There's no photo or video attached right now.",
     "generate_image_button": "🖼 AI image",
     "image_preview_caption": "AI-generated image preview",
+    "image_delivery_failed": "Couldn't send the image — please try again in a moment.",
     "image_attached_confirmation": (
         "The AI-generated image is ready and attached — it will be used "
         "for the next post you publish to your channel. To remove it, use "
