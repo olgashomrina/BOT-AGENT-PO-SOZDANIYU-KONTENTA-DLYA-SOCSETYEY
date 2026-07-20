@@ -3,8 +3,8 @@ from __future__ import annotations
 STRINGS = {
     "start_greeting": (
         "你好！我是帮你创作社交媒体内容的机器人助手。\n\n"
-        "很快我将学会把链接、语音消息和文字转换成可直接使用的 Telegram 和 "
-        "VK 帖子。目前我还在开发中——这个命令暂时只是一个占位功能。\n\n"
+        "给我发送一个文章链接、一条语音消息，或者直接发送文字——我会分别为 "
+        "Telegram 和 VK 准备好几个可直接使用的帖子方案。\n\n"
         "如需更改界面语言，请使用 /language 命令。"
     ),
     "language_prompt": "请选择界面语言：",

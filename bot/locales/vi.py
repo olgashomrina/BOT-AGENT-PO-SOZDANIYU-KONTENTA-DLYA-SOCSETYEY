@@ -3,10 +3,9 @@ from __future__ import annotations
 STRINGS = {
     "start_greeting": (
         "Xin chào! Tôi là bot trợ lý tạo nội dung cho mạng xã hội.\n\n"
-        "Sắp tới tôi sẽ học cách biến đường liên kết, tin nhắn thoại và "
-        "văn bản thành các bài đăng sẵn sàng sử dụng cho Telegram và VK. "
-        "Tôi vẫn đang được phát triển — hiện tại lệnh này chỉ hoạt động "
-        "như một bản nháp.\n\n"
+        "Hãy gửi cho tôi đường liên kết đến bài viết, tin nhắn thoại, hoặc "
+        "chỉ cần văn bản — tôi sẽ chuẩn bị vài phương án bài đăng sẵn sàng "
+        "sử dụng, riêng cho Telegram và riêng cho VK.\n\n"
         "Để đổi ngôn ngữ giao diện, hãy dùng lệnh /language."
     ),
     "language_prompt": "Chọn ngôn ngữ giao diện:",

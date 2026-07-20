@@ -3,9 +3,9 @@ from __future__ import annotations
 STRINGS = {
     "start_greeting": (
         "Hi! I'm a bot assistant for creating social media content.\n\n"
-        "Soon I'll learn to turn links, voice messages and text into "
-        "ready-to-use posts for Telegram and VK. I'm still in "
-        "development — for now this command just works as a stub.\n\n"
+        "Send me a link to an article, a voice message, or just plain text — "
+        "and I'll prepare several ready-to-use post variants, separately for "
+        "Telegram and for VK.\n\n"
         "To change the interface language, use the /language command."
     ),
     "language_prompt": "Choose your interface language:",
