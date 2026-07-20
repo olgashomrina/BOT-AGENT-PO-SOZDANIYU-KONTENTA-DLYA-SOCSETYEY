@@ -140,6 +140,22 @@ def _fail(
         raise
 
 
+def _response_snippet(response: httpx.Response, limit: int = 300) -> str:
+    # Best-effort diagnostic text for logs only (never shown to end users —
+    # see bot/locales/*.py error_* keys for the user-facing taxonomy
+    # messages). The provider's error body is what actually explains 4xx
+    # failures (e.g. billing/subscription issues), which a bare status code
+    # doesn't.
+    try:
+        text = response.text
+    except Exception:
+        return "<не удалось прочитать тело ответа>"
+    text = text.strip()
+    if len(text) > limit:
+        text = text[:limit] + "…"
+    return text or "<пустое тело ответа>"
+
+
 def _retry_after_seconds(response: httpx.Response) -> float:
     header = response.headers.get("Retry-After")
     if header is None:
@@ -228,7 +244,9 @@ async def _call_with_retries(
 
             if response.status_code >= 400:
                 _fail(
-                    AIGatewayInvalidResponseError(f"AI-прокси вернул ошибку {response.status_code}"),
+                    AIGatewayInvalidResponseError(
+                        f"AI-прокси вернул ошибку {response.status_code}: {_response_snippet(response)}"
+                    ),
                     operation=operation,
                     provider=provider,
                     model=model,

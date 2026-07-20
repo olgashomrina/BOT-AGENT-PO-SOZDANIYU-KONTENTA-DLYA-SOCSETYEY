@@ -95,6 +95,21 @@ async def test_generate_text_invalid_json_raises_invalid_response_error():
 
 @respx.mock
 @pytest.mark.asyncio
+async def test_generate_text_4xx_error_message_includes_response_body():
+    route = respx.post(CHAT_URL).mock(
+        return_value=httpx.Response(400, json={"error": {"message": "You have no subscription"}})
+    )
+
+    with pytest.raises(AIGatewayInvalidResponseError) as exc_info:
+        await generate_text("write something")
+
+    assert "400" in str(exc_info.value)
+    assert "You have no subscription" in str(exc_info.value)
+    assert route.call_count == 1
+
+
+@respx.mock
+@pytest.mark.asyncio
 async def test_generate_text_uses_model_override():
     captured = {}
 
