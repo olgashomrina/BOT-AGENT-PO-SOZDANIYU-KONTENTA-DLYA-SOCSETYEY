@@ -5,10 +5,12 @@ from bot.storage.users import (
     get_channel_id,
     get_content_language,
     get_interface_language,
+    get_onboarding_shown,
     get_pending_media,
     set_channel_id,
     set_content_language,
     set_interface_language,
+    set_onboarding_shown,
     set_pending_media,
 )
 
@@ -121,3 +123,26 @@ def test_clear_pending_media_on_unknown_user_does_not_crash(db_path):
     clear_pending_media(db_path, 999)
 
     assert get_pending_media(db_path, 999) is None
+
+
+def test_unknown_user_has_onboarding_not_shown(db_path):
+    assert get_onboarding_shown(db_path, 111) is False
+
+
+def test_set_onboarding_shown_is_readable(db_path):
+    set_onboarding_shown(db_path, 111, True)
+
+    assert get_onboarding_shown(db_path, 111) is True
+
+
+def test_onboarding_shown_can_be_reset(db_path):
+    set_onboarding_shown(db_path, 111, True)
+    set_onboarding_shown(db_path, 111, False)
+
+    assert get_onboarding_shown(db_path, 111) is False
+
+
+def test_onboarding_shown_is_scoped_per_user(db_path):
+    set_onboarding_shown(db_path, 111, True)
+
+    assert get_onboarding_shown(db_path, 222) is False

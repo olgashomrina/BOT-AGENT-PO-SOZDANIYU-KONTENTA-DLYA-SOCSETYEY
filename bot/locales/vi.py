@@ -53,14 +53,30 @@ STRINGS = {
         "Bạn đã dùng hết hạn mức yêu cầu trong tháng này. Hạn mức mới sẽ "
         "có vào tháng sau."
     ),
-    "help_text": (
-        "Hãy gửi cho tôi một đường liên kết bài viết, một tin nhắn thoại, "
-        "hoặc chỉ cần văn bản — tôi sẽ giúp biến nó thành bài đăng sẵn "
-        "sàng cho Telegram và VK.\n\n"
-        "Các lệnh:\n"
-        "/start — bắt đầu lại\n"
-        "/language — đổi ngôn ngữ giao diện\n"
-        "/help — hiển thị tin nhắn này"
+    "onboarding_capabilities": (
+        "Tôi có thể làm gì:\n\n"
+        "— Nhận đường liên kết bài viết, tin nhắn thoại, hoặc văn bản "
+        "thường.\n"
+        "— Chuẩn bị nhiều phương án bài đăng, riêng cho Telegram và riêng "
+        "cho VK.\n"
+        "— Đính kèm ảnh hoặc video vào bài đăng — ảnh của bạn hoặc ảnh do "
+        "AI tạo.\n"
+        "— Đăng bài trực tiếp vào kênh Telegram của bạn chỉ bằng một nút "
+        "bấm (lệnh /channel).\n\n"
+        "Các lệnh: /start — bắt đầu lại, /language — đổi ngôn ngữ giao "
+        "diện, /channel — thiết lập kênh, /clear_media — bỏ tệp đính kèm, "
+        "/settov — dạy bot phong cách viết của bạn, /help — hiển thị lại "
+        "tin nhắn này."
+    ),
+    "onboarding_settov": (
+        "Muốn bài đăng nghe giống văn phong của bạn? Hãy gửi lệnh /settov "
+        "và gửi vài bài đăng cũ của bạn — bot sẽ ghi nhớ chúng và dùng làm "
+        "tham chiếu khi tạo bài đăng mới."
+    ),
+    "onboarding_quick_start": (
+        "Bắt đầu nhanh: hãy gửi cho tôi một đường liên kết bài viết hoặc "
+        "một tin nhắn thoại — chỉ sau vài giây bạn sẽ nhận được các "
+        "phương án bài đăng sẵn sàng sử dụng."
     ),
     "transcript_preview": (
         "Đây là nội dung tôi nghe được trong tin nhắn thoại của bạn:\n\n"

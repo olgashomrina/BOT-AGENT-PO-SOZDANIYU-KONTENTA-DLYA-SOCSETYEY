@@ -154,3 +154,64 @@ def test_init_db_migrates_pre_phase13_users_table(tmp_path):
         assert row == (42, "ru", "en", -1001234567890, None, None)
     finally:
         connection.close()
+
+
+def test_init_db_migrates_pre_phase15_users_table(tmp_path):
+    path = str(tmp_path / "legacy_pre15.db")
+
+    connection = sqlite3.connect(path)
+    try:
+        connection.execute(
+            """
+            CREATE TABLE users (
+                telegram_id INTEGER PRIMARY KEY,
+                interface_language TEXT,
+                content_language TEXT,
+                channel_id INTEGER,
+                pending_media_file_id TEXT,
+                pending_media_type TEXT
+            )
+            """
+        )
+        connection.execute(
+            "INSERT INTO users (telegram_id, interface_language, content_language, "
+            "channel_id, pending_media_file_id, pending_media_type) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (42, "ru", "en", -1001234567890, None, None),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    init_db(path)
+
+    connection = sqlite3.connect(path)
+    try:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(users)")}
+        assert "onboarding_shown" in columns
+
+        row = connection.execute(
+            "SELECT telegram_id, interface_language, content_language, channel_id, "
+            "pending_media_file_id, pending_media_type, onboarding_shown "
+            "FROM users WHERE telegram_id = ?",
+            (42,),
+        ).fetchone()
+        assert row == (42, "ru", "en", -1001234567890, None, None, None)
+    finally:
+        connection.close()
+
+    init_db(path)
+
+    connection = sqlite3.connect(path)
+    try:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(users)")}
+        assert "onboarding_shown" in columns
+        row = connection.execute(
+            "SELECT telegram_id, interface_language, content_language, channel_id, "
+            "pending_media_file_id, pending_media_type, onboarding_shown "
+            "FROM users WHERE telegram_id = ?",
+            (42,),
+        ).fetchone()
+        assert row == (42, "ru", "en", -1001234567890, None, None, None)
+    finally:
+        connection.close()

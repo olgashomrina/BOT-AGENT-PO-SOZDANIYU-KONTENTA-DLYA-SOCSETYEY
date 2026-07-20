@@ -52,14 +52,28 @@ STRINGS = {
         "You've used up your monthly request limit. A new limit will be "
         "available next month."
     ),
-    "help_text": (
-        "Send me a link to an article, a voice message, or just plain "
-        "text — and I'll help turn it into a ready-to-use post for "
-        "Telegram and VK.\n\n"
-        "Commands:\n"
-        "/start — start over\n"
-        "/language — change interface language\n"
-        "/help — show this message"
+    "onboarding_capabilities": (
+        "What I can do:\n\n"
+        "— Accept a link to an article, a voice message, or plain text.\n"
+        "— Prepare several post variants, separately for Telegram and for "
+        "VK.\n"
+        "— Attach a photo or video to a post — your own or an "
+        "AI-generated one.\n"
+        "— Publish a post straight to your Telegram channel with one "
+        "button (the /channel command).\n\n"
+        "Commands: /start — start over, /language — change interface "
+        "language, /channel — set up a channel, /clear_media — remove the "
+        "attached media, /settov — teach the bot your writing style, "
+        "/help — show this message again."
+    ),
+    "onboarding_settov": (
+        "Want posts that sound like you? Send the /settov command and "
+        "submit a few of your past posts — the bot will remember them and "
+        "use them as a reference when generating new texts."
+    ),
+    "onboarding_quick_start": (
+        "Quick start: send me a link to an article or a voice message — "
+        "and in a few seconds you'll get ready-to-use post variants."
     ),
     "transcript_preview": (
         "Here's what I heard in your voice message:\n\n{text}\n\n"

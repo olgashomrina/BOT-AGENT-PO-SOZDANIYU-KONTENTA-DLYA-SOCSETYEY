@@ -35,13 +35,23 @@ STRINGS = {
     "error_monthly_limit_exceeded": (
         "您本月的请求额度已用完。新的额度将在下个月开放。"
     ),
-    "help_text": (
-        "给我发送文章链接、语音消息或直接发送文字——我会帮你把它变成可直接"
-        "使用的 Telegram 和 VK 帖子。\n\n"
-        "命令列表：\n"
-        "/start — 重新开始\n"
-        "/language — 切换界面语言\n"
-        "/help — 显示此帮助信息"
+    "onboarding_capabilities": (
+        "我能做什么：\n\n"
+        "——接收文章链接、语音消息或直接发送的文字。\n"
+        "——分别为 Telegram 和 VK 准备好几个帖子方案。\n"
+        "——为帖子附加图片或视频——可以是您自己的，也可以是 AI 生成的。\n"
+        "——一键将帖子直接发布到您的 Telegram 频道（/channel 命令）。\n\n"
+        "命令列表：/start — 重新开始，/language — 切换界面语言，"
+        "/channel — 设置频道，/clear_media — 移除已附加的媒体，"
+        "/settov — 让机器人学习您的写作风格，/help — 再次显示此消息。"
+    ),
+    "onboarding_settov": (
+        "希望帖子更贴近您自己的风格吗？发送 /settov 命令，并提交几篇您以前"
+        "发布的帖子——机器人会记住它们，并在生成新文本时参考这些风格。"
+    ),
+    "onboarding_quick_start": (
+        "快速开始：给我发送一个文章链接或一条语音消息——几秒钟后您就会收到"
+        "可直接使用的帖子方案。"
     ),
     "transcript_preview": (
         "这是我在你的语音消息中听到的内容：\n\n{text}\n\n内容正确吗？"

@@ -11,6 +11,31 @@ def _ensure_user_row(connection, telegram_id: int) -> None:
     )
 
 
+def set_onboarding_shown(db_path: str, telegram_id: int, shown: bool) -> None:
+    connection = get_connection(db_path)
+    try:
+        _ensure_user_row(connection, telegram_id)
+        connection.execute(
+            "UPDATE users SET onboarding_shown = ? WHERE telegram_id = ?",
+            (1 if shown else 0, telegram_id),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def get_onboarding_shown(db_path: str, telegram_id: int) -> bool:
+    connection = get_connection(db_path)
+    try:
+        row = connection.execute(
+            "SELECT onboarding_shown FROM users WHERE telegram_id = ?",
+            (telegram_id,),
+        ).fetchone()
+        return bool(row[0]) if row and row[0] is not None else False
+    finally:
+        connection.close()
+
+
 def set_channel_id(db_path: str, telegram_id: int, channel_id: int) -> None:
     connection = get_connection(db_path)
     try:
