@@ -13,11 +13,12 @@ DEFAULT_AI_PROXY_BASE_URL = "https://api.vsegpt.ru/v1"
 DEFAULT_AI_GATEWAY_PROVIDER = "vsegpt"
 DEFAULT_AI_GATEWAY_TEXT_MODEL = "openai/gpt-4o-mini"
 DEFAULT_AI_GATEWAY_TRANSCRIPTION_MODEL = "stt-openai/whisper-1"
-# Per vsegpt.ru's own docs example; UNVERIFIED against the real model
-# catalog (the transcription model id above already turned out to differ
-# from what their docs showed) — configurable via .env so a wrong default
-# is a one-line fix, not a code change.
-DEFAULT_AI_GATEWAY_IMAGE_MODEL = "dall-e-3"
+# dall-e-3 (vsegpt.ru's own docs example) is currently rejected by their
+# proxy with "Temporarily disabled due to OpenAI blocking" (confirmed via a
+# live request, 2026-07-20) — not a vsegpt.ru catalog-naming mismatch this
+# time, an actual upstream OpenAI-side block. Using Flux 2 [klein] instead,
+# which vsegpt.ru's own catalog highlights for speed/cost-efficiency.
+DEFAULT_AI_GATEWAY_IMAGE_MODEL = "img-flux/flux-2-klein-4b"
 DEFAULT_AI_GATEWAY_IMAGE_SIZE = "1024x1024"
 DEFAULT_AI_GATEWAY_MAX_RETRIES = 2
 DEFAULT_AI_GATEWAY_TIMEOUT_SECONDS = 30.0
