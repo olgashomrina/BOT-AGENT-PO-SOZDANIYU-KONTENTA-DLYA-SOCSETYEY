@@ -39,6 +39,19 @@ SHORTEN_INSTRUCTION = (
 )
 
 
+# Tone instruction (kept generic, platform-independent): the earlier prompt
+# had no personality guidance at all, which produced flat, corporate-sounding
+# drafts — this is the single biggest lever for making variants feel alive
+# rather than interchangeable.
+_TONE_INSTRUCTION = (
+    "Write with genuine personality: be witty, a little playful, and use "
+    "humor where it naturally fits the topic — avoid generic corporate "
+    "phrasing and dry, safe summaries. It's fine to have an opinion or a "
+    "surprising angle. Keep the humor tasteful and relevant to the source "
+    "material, never forced."
+)
+
+
 def build_prompt(
     source_text: str,
     platform: Platform,
@@ -50,6 +63,7 @@ def build_prompt(
         "You are a social media copywriter. Write ONE ready-to-publish social "
         "media post based on the source material below.\n"
         f"{_PLATFORM_INSTRUCTIONS[platform]}\n"
+        f"{_TONE_INSTRUCTION}\n"
         f"Write the post in this language (ISO 639-1 code): {content_language}.\n"
         f"{extra_line}"
         "Return only the post text itself, without any preamble, quotes or "
