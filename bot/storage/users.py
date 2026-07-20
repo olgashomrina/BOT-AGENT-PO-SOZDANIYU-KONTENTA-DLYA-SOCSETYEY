@@ -11,6 +11,31 @@ def _ensure_user_row(connection, telegram_id: int) -> None:
     )
 
 
+def set_channel_id(db_path: str, telegram_id: int, channel_id: int) -> None:
+    connection = get_connection(db_path)
+    try:
+        _ensure_user_row(connection, telegram_id)
+        connection.execute(
+            "UPDATE users SET channel_id = ? WHERE telegram_id = ?",
+            (channel_id, telegram_id),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def get_channel_id(db_path: str, telegram_id: int) -> int | None:
+    connection = get_connection(db_path)
+    try:
+        row = connection.execute(
+            "SELECT channel_id FROM users WHERE telegram_id = ?",
+            (telegram_id,),
+        ).fetchone()
+        return row[0] if row else None
+    finally:
+        connection.close()
+
+
 def set_interface_language(db_path: str, telegram_id: int, language: str) -> None:
     connection = get_connection(db_path)
     try:

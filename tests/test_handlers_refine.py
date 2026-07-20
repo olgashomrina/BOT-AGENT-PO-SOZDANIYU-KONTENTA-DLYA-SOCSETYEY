@@ -8,11 +8,15 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
 from aiogram.fsm.storage.memory import MemoryStorage
 
-from bot.handlers.refine import on_refine_more, on_refine_shorten
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.methods import SendMessage
+
+from bot.handlers.refine import on_refine_more, on_refine_publish, on_refine_shorten
 from bot.locales.loader import get_string
 from bot.services import content_generator, output_formatter
 from bot.services.ai_gateway import AIGatewayTimeoutError
 from bot.storage.limits import get_daily_count
+from bot.storage.users import set_channel_id
 from bot.storage.whitelist import add_user
 
 TELEGRAM_ID = 111
@@ -195,3 +199,83 @@ async def test_refine_blocked_when_not_whitelisted_does_not_call_generate(
     callback.message.answer.assert_awaited_once_with(get_string("error_not_whitelisted", "ru"))
     callback.answer.assert_awaited_once()
     assert get_daily_count(db_path, NOT_WHITELISTED_ID) == 0
+
+
+CHANNEL_ID = -1001234567890
+
+
+@pytest.mark.asyncio
+async def test_publish_success_sends_formatted_variant_to_channel(db_path):
+    set_channel_id(db_path, TELEGRAM_ID, CHANNEL_ID)
+    state = _make_state()
+    await _seed_finished_session(state)
+
+    callback = _make_callback(data="refine:publish:telegram:1")
+    callback.message.text = "Готовый вариант поста"
+    bot = AsyncMock()
+
+    await on_refine_publish(callback, state, db_path, bot)
+
+    bot.send_message.assert_awaited_once_with(
+        CHANNEL_ID,
+        output_formatter.format_variant("Готовый вариант поста"),
+        parse_mode=output_formatter.PARSE_MODE,
+    )
+    callback.message.answer.assert_awaited_once_with(get_string("publish_success", "ru"))
+    callback.answer.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_publish_without_configured_channel_prompts_setup_and_does_not_send(db_path):
+    state = _make_state()
+    await _seed_finished_session(state)
+
+    callback = _make_callback(data="refine:publish:telegram:1")
+    callback.message.text = "Готовый вариант поста"
+    bot = AsyncMock()
+
+    await on_refine_publish(callback, state, db_path, bot)
+
+    bot.send_message.assert_not_awaited()
+    callback.message.answer.assert_awaited_once_with(
+        get_string("publish_no_channel_configured", "ru")
+    )
+    callback.answer.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_publish_telegram_failure_replies_friendly_error(db_path):
+    set_channel_id(db_path, TELEGRAM_ID, CHANNEL_ID)
+    state = _make_state()
+    await _seed_finished_session(state)
+
+    callback = _make_callback(data="refine:publish:telegram:1")
+    callback.message.text = "Готовый вариант поста"
+    bot = AsyncMock()
+    bot.send_message = AsyncMock(
+        side_effect=TelegramBadRequest(
+            method=SendMessage(chat_id=CHANNEL_ID, text="x"), message="bot was kicked"
+        )
+    )
+
+    await on_refine_publish(callback, state, db_path, bot)
+
+    callback.message.answer.assert_awaited_once_with(get_string("publish_failed", "ru"))
+    callback.answer.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_publish_blocked_when_not_whitelisted_does_not_send(db_path):
+    NOT_WHITELISTED_ID = 999
+    state = _make_state(NOT_WHITELISTED_ID)
+    await _seed_finished_session(state)
+
+    callback = _make_callback(telegram_id=NOT_WHITELISTED_ID, data="refine:publish:telegram:1")
+    callback.message.text = "Готовый вариант поста"
+    bot = AsyncMock()
+
+    await on_refine_publish(callback, state, db_path, bot)
+
+    bot.send_message.assert_not_awaited()
+    callback.message.answer.assert_awaited_once_with(get_string("error_not_whitelisted", "ru"))
+    callback.answer.assert_awaited_once()

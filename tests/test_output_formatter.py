@@ -66,3 +66,26 @@ def test_build_refine_keyboard_uses_localized_button_text():
     row = keyboard.inline_keyboard[0]
     assert row[0].text == get_string("refine_more_button", "en")
     assert row[1].text == get_string("refine_shorten_button", "en")
+
+
+def test_build_refine_keyboard_has_publish_button_encoding_platform_and_index():
+    keyboard = build_refine_keyboard("telegram", 1, "ru")
+
+    publish_row = keyboard.inline_keyboard[1]
+    assert len(publish_row) == 1
+    assert publish_row[0].callback_data == "refine:publish:telegram:1"
+    assert publish_row[0].text == get_string("publish_to_channel_button", "ru")
+
+
+def test_build_refine_keyboard_publish_button_encodes_vk_platform():
+    keyboard = build_refine_keyboard("vk", 2, "ru")
+
+    publish_row = keyboard.inline_keyboard[1]
+    assert publish_row[0].callback_data == "refine:publish:vk:2"
+
+
+def test_build_refine_keyboard_publish_callback_data_within_telegram_64_byte_limit():
+    keyboard = build_refine_keyboard("telegram", 999999, "ru")
+
+    publish_row = keyboard.inline_keyboard[1]
+    assert len(publish_row[0].callback_data.encode("utf-8")) <= 64

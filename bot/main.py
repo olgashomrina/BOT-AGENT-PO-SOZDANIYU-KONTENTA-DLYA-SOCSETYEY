@@ -6,6 +6,7 @@ import sys
 from aiogram import Bot, Dispatcher
 
 from bot.config import load_settings
+from bot.handlers.channel import router as channel_router
 from bot.handlers.content import router as content_router
 from bot.handlers.errors import router as errors_router
 from bot.handlers.language import router as language_router
@@ -33,6 +34,7 @@ def build_dispatcher(daily_limit: int, monthly_limit: int) -> Dispatcher:
     dispatcher.message.outer_middleware(RateLimitMiddleware(daily_limit, monthly_limit))
     dispatcher.include_router(start_router)
     dispatcher.include_router(language_router)
+    dispatcher.include_router(channel_router)
     dispatcher.include_router(content_router)
     dispatcher.include_router(refine_router)
     # Registered last: per-request errors are already handled locally inside

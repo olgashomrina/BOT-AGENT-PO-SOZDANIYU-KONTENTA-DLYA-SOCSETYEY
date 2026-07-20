@@ -58,4 +58,28 @@ STRINGS = {
     "error_refine_missing_context": (
         "找不到用于优化的原始文本——请重新发送材料。"
     ),
+    "channel_setup_instructions": (
+        "只需一键即可发布帖子，请先设置您的频道：\n\n"
+        "1. 将此机器人添加为您 Telegram 频道的管理员，并授予发布消息的权限。\n"
+        "2. 将该频道中的任意一条消息转发到这里——我会据此识别频道。"
+    ),
+    "channel_setup_invalid_forward": (
+        "这看起来不是从频道转发的消息。请转发您 Telegram 频道中的任意一条消息。"
+    ),
+    "channel_setup_bot_not_admin": (
+        "我在该频道中没有具备发布权限的管理员身份。请确认已将机器人添加为频道"
+        "管理员并开启「发布消息」权限，然后重新转发该频道的一条消息。"
+    ),
+    "channel_setup_confirmation": (
+        "完成！频道已设置好——现在您可以一键将帖子发布到该频道。"
+    ),
+    "publish_to_channel_button": "发布到频道",
+    "publish_no_channel_configured": (
+        "尚未设置频道。请使用 /channel 命令连接您的 Telegram 频道。"
+    ),
+    "publish_success": "帖子已发布到您的频道。",
+    "publish_failed": (
+        "未能将帖子发布到频道——机器人可能已失去管理员权限。请检查权限，并"
+        "通过 /channel 重新设置频道。"
+    ),
 }

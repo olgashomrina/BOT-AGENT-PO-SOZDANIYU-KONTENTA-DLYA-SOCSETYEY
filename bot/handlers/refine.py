@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import logging
 
-from aiogram import F, Router
+from aiogram import Bot, F, Router
+from aiogram.exceptions import TelegramAPIError
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
 
@@ -15,6 +16,7 @@ from bot.services import content_generator, output_formatter
 from bot.services.ai_gateway import AIGatewayError
 from bot.services.content_generator import SHORTEN_INSTRUCTION
 from bot.storage.limits import LimitStatus, check_limit_status, increment_usage
+from bot.storage.users import get_channel_id
 from bot.storage.whitelist import is_whitelisted
 
 logger = logging.getLogger(LOGGER_NAME)
@@ -120,3 +122,51 @@ async def on_refine_more(callback: CallbackQuery, state: FSMContext, db_path: st
 async def on_refine_shorten(callback: CallbackQuery, state: FSMContext, db_path: str) -> None:
     platform = callback.data.split(":")[2]
     await _generate_and_send(callback, state, db_path, platform, extra_instruction=SHORTEN_INSTRUCTION)
+
+
+@router.callback_query(F.data.startswith("refine:publish:"))
+async def on_refine_publish(callback: CallbackQuery, state: FSMContext, db_path: str, bot: Bot) -> None:
+    telegram_id = callback.from_user.id
+    data = await state.get_data()
+    language = data.get("language") or _resolve_language(
+        db_path, telegram_id, callback.from_user.language_code
+    )
+
+    if not await _check_whitelist_or_reply(callback, db_path, language):
+        return
+
+    channel_id = get_channel_id(db_path, telegram_id)
+    if channel_id is None:
+        await callback.message.answer(get_string("publish_no_channel_configured", language))
+        await callback.answer()
+        return
+
+    # WHY read the text off callback.message rather than re-deriving it from
+    # FSM data: the publish button is attached to one already-generated,
+    # already-shown variant message specifically — FSM data (source_text)
+    # only ever holds the original input used to (re)generate variants, not
+    # any individual variant's text (see _generate_and_send above), and
+    # there can be several variant messages in the chat at once. The exact
+    # text the user approved is the text of the message the button sits
+    # under, sent earlier via output_formatter.format_variant() with HTML
+    # parse_mode; since that formatting only escapes &/</>, Telegram hands
+    # the plain (unescaped) variant text straight back as callback.message.text.
+    variant_text = callback.message.text or ""
+
+    try:
+        await bot.send_message(
+            channel_id,
+            output_formatter.format_variant(variant_text),
+            parse_mode=output_formatter.PARSE_MODE,
+        )
+    except TelegramAPIError:
+        logger.warning(
+            "Failed to publish variant to channel",
+            extra={"user_id": telegram_id, "operation": "publish_to_channel"},
+        )
+        await callback.message.answer(get_string("publish_failed", language))
+        await callback.answer()
+        return
+
+    await callback.message.answer(get_string("publish_success", language))
+    await callback.answer()

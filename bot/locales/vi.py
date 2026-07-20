@@ -80,4 +80,35 @@ STRINGS = {
         "Tôi không tìm thấy văn bản gốc để chỉnh sửa — vui lòng gửi lại "
         "tài liệu."
     ),
+    "channel_setup_instructions": (
+        "Để đăng bài chỉ bằng một nút bấm, hãy thiết lập kênh của bạn:\n\n"
+        "1. Thêm bot này làm quản trị viên của kênh Telegram của bạn với "
+        "quyền đăng bài.\n"
+        "2. Chuyển tiếp bất kỳ tin nhắn nào từ kênh đó đến đây — tôi sẽ "
+        "dùng nó để xác định kênh."
+    ),
+    "channel_setup_invalid_forward": (
+        "Đây không phải là tin nhắn được chuyển tiếp từ kênh. Vui lòng "
+        "chuyển tiếp một tin nhắn bất kỳ từ kênh Telegram của bạn."
+    ),
+    "channel_setup_bot_not_admin": (
+        "Tôi không có quyền quản trị viên với quyền đăng bài trong kênh "
+        "này. Hãy đảm bảo bot đã được thêm làm quản trị viên kênh và bật "
+        "quyền \"Đăng tin nhắn\", sau đó chuyển tiếp lại một tin nhắn từ "
+        "kênh."
+    ),
+    "channel_setup_confirmation": (
+        "Xong! Kênh đã được thiết lập — giờ bạn có thể đăng bài vào kênh "
+        "chỉ bằng một nút bấm."
+    ),
+    "publish_to_channel_button": "Đăng vào kênh",
+    "publish_no_channel_configured": (
+        "Chưa thiết lập kênh nào. Hãy dùng lệnh /channel để kết nối kênh "
+        "Telegram của bạn."
+    ),
+    "publish_success": "Bài đăng đã được đăng vào kênh của bạn.",
+    "publish_failed": (
+        "Không thể đăng bài vào kênh — có thể bot đã mất quyền quản trị "
+        "viên. Hãy kiểm tra quyền và thiết lập lại kênh qua /channel."
+    ),
 }

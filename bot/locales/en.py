@@ -79,4 +79,36 @@ STRINGS = {
         "I couldn't find the original text to refine — please send your "
         "material again."
     ),
+    "channel_setup_instructions": (
+        "To publish posts with one button, set up your channel:\n\n"
+        "1. Add this bot as an administrator of your Telegram channel with "
+        "permission to post messages.\n"
+        "2. Forward any message from that channel here — I'll use it to "
+        "identify the channel."
+    ),
+    "channel_setup_invalid_forward": (
+        "This doesn't look like a message forwarded from a channel. Please "
+        "forward any message from your Telegram channel."
+    ),
+    "channel_setup_bot_not_admin": (
+        "I don't see administrator rights with posting permission in this "
+        "channel. Make sure the bot is added as a channel administrator "
+        "with the \"Post messages\" right enabled, then forward a message "
+        "from the channel again."
+    ),
+    "channel_setup_confirmation": (
+        "Done! The channel is set up — you can now publish posts to it "
+        "with one button."
+    ),
+    "publish_to_channel_button": "Publish to channel",
+    "publish_no_channel_configured": (
+        "No channel is set up yet. Use the /channel command to connect "
+        "your Telegram channel."
+    ),
+    "publish_success": "The post has been published to your channel.",
+    "publish_failed": (
+        "Couldn't publish the post to the channel — the bot may have lost "
+        "administrator rights. Check its permissions and set up the "
+        "channel again via /channel."
+    ),
 }
