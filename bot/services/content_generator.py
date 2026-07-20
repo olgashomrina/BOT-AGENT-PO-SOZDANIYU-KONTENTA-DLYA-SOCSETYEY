@@ -72,6 +72,26 @@ def build_prompt(
     )
 
 
+# Image models work best with English prompts regardless of what language
+# the post itself is written in, so the instruction explicitly asks for an
+# English-language description rather than mirroring content_language.
+_IMAGE_PROMPT_INSTRUCTION = (
+    "You are a visual prompt writer for an AI image generation model. Based "
+    "on the social media post below (it may be written in any language), "
+    "write ONE short, vivid, English-language visual description suitable "
+    "as a direct prompt for an image generator. Describe concrete imagery, "
+    "mood and style. Return only the prompt itself, without any preamble, "
+    "quotes or explanation.\n\n"
+    "Post:\n{post_text}"
+)
+
+
+async def generate_image_prompt(post_text: str) -> str:
+    prompt = _IMAGE_PROMPT_INSTRUCTION.format(post_text=post_text)
+    result = await ai_gateway.generate_text(prompt)
+    return result.strip()
+
+
 async def generate_variants(
     source_text: str,
     platform: Platform,

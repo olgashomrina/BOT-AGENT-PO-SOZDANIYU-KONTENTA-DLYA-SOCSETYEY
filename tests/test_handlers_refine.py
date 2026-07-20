@@ -11,9 +11,9 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.methods import SendMessage
 
-from bot.handlers.refine import on_refine_more, on_refine_publish, on_refine_shorten
+from bot.handlers.refine import on_refine_image, on_refine_more, on_refine_publish, on_refine_shorten
 from bot.locales.loader import get_string
-from bot.services import content_generator, output_formatter
+from bot.services import ai_gateway, content_generator, output_formatter
 from bot.services.ai_gateway import AIGatewayTimeoutError
 from bot.storage.limits import get_daily_count
 from bot.storage.users import get_pending_media, set_channel_id, set_pending_media
@@ -392,3 +392,111 @@ async def test_publish_failure_with_pending_media_keeps_it_for_retry(db_path):
 
     callback.message.answer.assert_awaited_once_with(get_string("publish_failed", "ru"))
     assert get_pending_media(db_path, TELEGRAM_ID) == ("photo-file-id", "photo")
+
+
+def _fake_sent_photo_message(file_id: str = "telegram-cdn-file-id"):
+    return SimpleNamespace(photo=[SimpleNamespace(file_id=file_id)])
+
+
+@pytest.mark.asyncio
+async def test_refine_image_success_stores_telegram_file_id_not_vendor_url(db_path, monkeypatch):
+    state = _make_state()
+    await _seed_finished_session(state)
+
+    mock_prompt = AsyncMock(return_value="a vivid english prompt")
+    mock_generate_image = AsyncMock(return_value="https://vendor.example/generated.png")
+    monkeypatch.setattr(content_generator, "generate_image_prompt", mock_prompt)
+    monkeypatch.setattr(ai_gateway, "generate_image", mock_generate_image)
+
+    callback = _make_callback(data="refine:image:telegram:1")
+    callback.message.text = "Готовый вариант поста"
+    callback.message.chat = SimpleNamespace(id=TELEGRAM_ID)
+    bot = AsyncMock()
+    bot.send_photo = AsyncMock(return_value=_fake_sent_photo_message("telegram-cdn-file-id"))
+
+    await on_refine_image(callback, state, db_path, bot)
+
+    mock_prompt.assert_awaited_once_with("Готовый вариант поста")
+    mock_generate_image.assert_awaited_once_with("a vivid english prompt")
+    bot.send_photo.assert_awaited_once()
+    args, kwargs = bot.send_photo.call_args
+    assert args[0] == TELEGRAM_ID
+    assert kwargs["photo"] == "https://vendor.example/generated.png"
+
+    assert get_pending_media(db_path, TELEGRAM_ID) == ("telegram-cdn-file-id", "photo")
+    callback.message.answer.assert_awaited_once_with(get_string("image_attached_confirmation", "ru"))
+    callback.answer.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_refine_image_prompt_failure_replies_friendly_error_and_does_not_call_send_photo(
+    db_path, monkeypatch
+):
+    state = _make_state()
+    await _seed_finished_session(state)
+
+    mock_prompt = AsyncMock(side_effect=AIGatewayTimeoutError("timed out"))
+    mock_generate_image = AsyncMock()
+    monkeypatch.setattr(content_generator, "generate_image_prompt", mock_prompt)
+    monkeypatch.setattr(ai_gateway, "generate_image", mock_generate_image)
+
+    callback = _make_callback(data="refine:image:telegram:1")
+    callback.message.text = "Готовый вариант поста"
+    callback.message.chat = SimpleNamespace(id=TELEGRAM_ID)
+    bot = AsyncMock()
+
+    await on_refine_image(callback, state, db_path, bot)
+
+    mock_generate_image.assert_not_awaited()
+    bot.send_photo.assert_not_awaited()
+    callback.message.answer.assert_awaited_once_with(get_string("error_ai_timeout", "ru"))
+    callback.answer.assert_awaited_once()
+    assert get_pending_media(db_path, TELEGRAM_ID) is None
+
+
+@pytest.mark.asyncio
+async def test_refine_image_generation_failure_replies_friendly_error(db_path, monkeypatch):
+    state = _make_state()
+    await _seed_finished_session(state)
+
+    mock_prompt = AsyncMock(return_value="a vivid english prompt")
+    mock_generate_image = AsyncMock(side_effect=AIGatewayTimeoutError("timed out"))
+    monkeypatch.setattr(content_generator, "generate_image_prompt", mock_prompt)
+    monkeypatch.setattr(ai_gateway, "generate_image", mock_generate_image)
+
+    callback = _make_callback(data="refine:image:telegram:1")
+    callback.message.text = "Готовый вариант поста"
+    callback.message.chat = SimpleNamespace(id=TELEGRAM_ID)
+    bot = AsyncMock()
+
+    await on_refine_image(callback, state, db_path, bot)
+
+    bot.send_photo.assert_not_awaited()
+    callback.message.answer.assert_awaited_once_with(get_string("error_ai_timeout", "ru"))
+    callback.answer.assert_awaited_once()
+    assert get_pending_media(db_path, TELEGRAM_ID) is None
+
+
+@pytest.mark.asyncio
+async def test_refine_image_blocked_when_not_whitelisted_does_not_call_ai(db_path, monkeypatch):
+    NOT_WHITELISTED_ID = 999
+    state = _make_state(NOT_WHITELISTED_ID)
+    await _seed_finished_session(state)
+
+    mock_prompt = AsyncMock(return_value="a vivid english prompt")
+    mock_generate_image = AsyncMock(return_value="https://vendor.example/generated.png")
+    monkeypatch.setattr(content_generator, "generate_image_prompt", mock_prompt)
+    monkeypatch.setattr(ai_gateway, "generate_image", mock_generate_image)
+
+    callback = _make_callback(telegram_id=NOT_WHITELISTED_ID, data="refine:image:telegram:1")
+    callback.message.text = "Готовый вариант поста"
+    callback.message.chat = SimpleNamespace(id=NOT_WHITELISTED_ID)
+    bot = AsyncMock()
+
+    await on_refine_image(callback, state, db_path, bot)
+
+    mock_prompt.assert_not_awaited()
+    mock_generate_image.assert_not_awaited()
+    bot.send_photo.assert_not_awaited()
+    callback.message.answer.assert_awaited_once_with(get_string("error_not_whitelisted", "ru"))
+    callback.answer.assert_awaited_once()

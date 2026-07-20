@@ -123,3 +123,35 @@ async def test_generate_variants_propagates_ai_gateway_error(monkeypatch):
 
     with pytest.raises(AIGatewayTimeoutError):
         await content_generator.generate_variants("текст", "telegram", "ru", count=2)
+
+
+@pytest.mark.asyncio
+async def test_generate_image_prompt_calls_generate_text_with_post_text(monkeypatch):
+    mock_generate = AsyncMock(return_value="a vivid english description")
+    monkeypatch.setattr(ai_gateway, "generate_text", mock_generate)
+
+    result = await content_generator.generate_image_prompt("Пост про кофе")
+
+    mock_generate.assert_awaited_once()
+    called_prompt = mock_generate.await_args.args[0]
+    assert "Пост про кофе" in called_prompt
+    assert result == "a vivid english description"
+
+
+@pytest.mark.asyncio
+async def test_generate_image_prompt_strips_whitespace_from_result(monkeypatch):
+    mock_generate = AsyncMock(return_value="  a vivid description  \n")
+    monkeypatch.setattr(ai_gateway, "generate_text", mock_generate)
+
+    result = await content_generator.generate_image_prompt("текст поста")
+
+    assert result == "a vivid description"
+
+
+@pytest.mark.asyncio
+async def test_generate_image_prompt_propagates_ai_gateway_error(monkeypatch):
+    mock_generate = AsyncMock(side_effect=AIGatewayTimeoutError("timed out"))
+    monkeypatch.setattr(ai_gateway, "generate_text", mock_generate)
+
+    with pytest.raises(AIGatewayTimeoutError):
+        await content_generator.generate_image_prompt("текст поста")

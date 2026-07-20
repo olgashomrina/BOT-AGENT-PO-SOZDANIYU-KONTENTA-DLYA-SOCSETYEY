@@ -12,11 +12,11 @@ from bot.handlers.content import _AI_ERROR_KEYS, _resolve_language
 from bot.keyboards.refine import build_refine_keyboard
 from bot.locales.loader import get_string
 from bot.logging_config import LOGGER_NAME
-from bot.services import content_generator, output_formatter
+from bot.services import ai_gateway, content_generator, output_formatter
 from bot.services.ai_gateway import AIGatewayError
 from bot.services.content_generator import SHORTEN_INSTRUCTION
 from bot.storage.limits import LimitStatus, check_limit_status, increment_usage
-from bot.storage.users import clear_pending_media, get_channel_id, get_pending_media
+from bot.storage.users import clear_pending_media, get_channel_id, get_pending_media, set_pending_media
 from bot.storage.whitelist import is_whitelisted
 
 logger = logging.getLogger(LOGGER_NAME)
@@ -198,4 +198,58 @@ async def on_refine_publish(callback: CallbackQuery, state: FSMContext, db_path:
         clear_pending_media(db_path, telegram_id)
 
     await callback.message.answer(get_string("publish_success", language))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("refine:image:"))
+async def on_refine_image(callback: CallbackQuery, state: FSMContext, db_path: str, bot: Bot) -> None:
+    telegram_id = callback.from_user.id
+    data = await state.get_data()
+    language = data.get("language") or _resolve_language(
+        db_path, telegram_id, callback.from_user.language_code
+    )
+
+    if not await _check_whitelist_or_reply(callback, db_path, language):
+        return
+
+    if not await _check_limit_or_reply(callback, db_path, language):
+        return
+
+    # WHY read the text off callback.message rather than FSM data: same
+    # reasoning as on_refine_publish above — the image button sits under one
+    # already-generated variant message specifically, and that message's
+    # text is the exact post this image should illustrate.
+    post_text = callback.message.text or ""
+
+    try:
+        image_prompt = await content_generator.generate_image_prompt(post_text)
+        image_url = await ai_gateway.generate_image(image_prompt)
+    except AIGatewayError as exc:
+        error_key = _AI_ERROR_KEYS.get(type(exc), "error_unexpected")
+        logger.warning(
+            "AI Gateway error during image generation",
+            extra={"user_id": telegram_id, "operation": "generate_image", "error_class": type(exc).__name__},
+        )
+        await callback.message.answer(get_string(error_key, language))
+        await callback.answer()
+        return
+
+    increment_usage(db_path, telegram_id)
+
+    sent_message = await bot.send_photo(
+        callback.message.chat.id,
+        photo=image_url,
+        caption=get_string("image_preview_caption", language),
+    )
+
+    # WHY store Telegram's own file_id instead of the vendor image URL:
+    # AI-provider-hosted image URLs are often time-limited, but once
+    # Telegram has ingested the image into a sent message, its own file_id
+    # is durable — using it (not the raw vendor URL) as what gets stored
+    # here avoids the attachment silently breaking if the user publishes to
+    # their channel later than the URL's expiry window.
+    file_id = sent_message.photo[-1].file_id
+    set_pending_media(db_path, telegram_id, file_id, "photo")
+
+    await callback.message.answer(get_string("image_attached_confirmation", language))
     await callback.answer()

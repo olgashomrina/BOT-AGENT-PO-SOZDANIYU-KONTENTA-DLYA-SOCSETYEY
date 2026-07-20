@@ -11,6 +11,7 @@ Platform = Literal["telegram", "vk"]
 CALLBACK_MORE_PREFIX = "refine:more"
 CALLBACK_SHORTEN_PREFIX = "refine:shorten"
 CALLBACK_PUBLISH_PREFIX = "refine:publish"
+CALLBACK_IMAGE_PREFIX = "refine:image"
 
 
 def build_refine_keyboard(platform: Platform, variant_index: int, lang: str) -> InlineKeyboardMarkup:
@@ -30,4 +31,10 @@ def build_refine_keyboard(platform: Platform, variant_index: int, lang: str) -> 
             callback_data=f"{CALLBACK_PUBLISH_PREFIX}:{platform}:{variant_index}",
         )
     ]
-    return InlineKeyboardMarkup(inline_keyboard=[buttons, publish_button])
+    image_button = [
+        InlineKeyboardButton(
+            text=get_string("generate_image_button", lang),
+            callback_data=f"{CALLBACK_IMAGE_PREFIX}:{platform}:{variant_index}",
+        )
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=[buttons, publish_button, image_button])

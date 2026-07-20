@@ -117,4 +117,11 @@ STRINGS = {
     ),
     "media_cleared_confirmation": "Đã bỏ tệp đính kèm — bài đăng tiếp theo sẽ không có nó.",
     "media_nothing_to_clear": "Hiện không có ảnh hoặc video nào được đính kèm.",
+    "generate_image_button": "🖼 Ảnh từ AI",
+    "image_preview_caption": "Xem trước ảnh do AI tạo",
+    "image_attached_confirmation": (
+        "Ảnh do AI tạo đã sẵn sàng và được đính kèm — nó sẽ được dùng cho "
+        "bài đăng tiếp theo bạn đăng lên kênh. Để bỏ tệp đính kèm, hãy dùng "
+        "lệnh /clear_media."
+    ),
 }

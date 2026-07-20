@@ -14,6 +14,7 @@ from bot.services.ai_gateway import (
     AIGatewayTimeoutError,
     AIGatewayUnavailableError,
     TranscriptionError,
+    generate_image,
     generate_text,
     transcribe,
 )
@@ -27,6 +28,7 @@ REQUIRED_ENV = {
 BASE_URL = "https://fake-ai-proxy.test/v1"
 CHAT_URL = f"{BASE_URL}/chat/completions"
 TRANSCRIBE_URL = f"{BASE_URL}/audio/transcriptions"
+IMAGE_URL = f"{BASE_URL}/images/generations"
 
 
 @pytest.fixture(autouse=True)
@@ -38,6 +40,8 @@ def _env(monkeypatch):
     monkeypatch.setenv("AI_GATEWAY_PROVIDER", "test-provider")
     monkeypatch.setenv("AI_GATEWAY_TEXT_MODEL", "test-text-model")
     monkeypatch.setenv("AI_GATEWAY_TRANSCRIPTION_MODEL", "test-transcription-model")
+    monkeypatch.setenv("AI_GATEWAY_IMAGE_MODEL", "test-image-model")
+    monkeypatch.setenv("AI_GATEWAY_IMAGE_SIZE", "512x512")
 
 
 @pytest.fixture(autouse=True)
@@ -53,6 +57,10 @@ def _fast_sleep(monkeypatch):
 
 def _chat_response(content: str) -> httpx.Response:
     return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
+
+
+def _image_response(url: str) -> httpx.Response:
+    return httpx.Response(200, json={"data": [{"url": url}]})
 
 
 # --- generate_text: success / structural failures (no retry) ---
@@ -179,6 +187,133 @@ async def test_transcribe_empty_result_raises_transcription_error():
         await transcribe(b"fake-audio-bytes")
 
     assert route.call_count == 1
+
+
+# --- generate_image: success / structural failures (no retry) ---
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_generate_image_success():
+    route = respx.post(IMAGE_URL).mock(
+        return_value=_image_response("https://cdn.example.test/generated.png")
+    )
+
+    result = await generate_image("a cat astronaut")
+
+    assert result == "https://cdn.example.test/generated.png"
+    assert route.call_count == 1
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_generate_image_empty_url_raises_invalid_response_error():
+    route = respx.post(IMAGE_URL).mock(return_value=_image_response(""))
+
+    with pytest.raises(AIGatewayInvalidResponseError):
+        await generate_image("a cat astronaut")
+
+    assert route.call_count == 1
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_generate_image_missing_data_raises_invalid_response_error():
+    route = respx.post(IMAGE_URL).mock(return_value=httpx.Response(200, json={}))
+
+    with pytest.raises(AIGatewayInvalidResponseError):
+        await generate_image("a cat astronaut")
+
+    assert route.call_count == 1
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_generate_image_invalid_json_raises_invalid_response_error():
+    route = respx.post(IMAGE_URL).mock(
+        return_value=httpx.Response(200, content=b"not-json", headers={"content-type": "application/json"})
+    )
+
+    with pytest.raises(AIGatewayInvalidResponseError):
+        await generate_image("a cat astronaut")
+
+    assert route.call_count == 1
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_generate_image_4xx_error_message_includes_response_body():
+    route = respx.post(IMAGE_URL).mock(
+        return_value=httpx.Response(400, json={"error": {"message": "You have no subscription"}})
+    )
+
+    with pytest.raises(AIGatewayInvalidResponseError) as exc_info:
+        await generate_image("a cat astronaut")
+
+    assert "400" in str(exc_info.value)
+    assert "You have no subscription" in str(exc_info.value)
+    assert route.call_count == 1
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_generate_image_uses_default_model_and_size_from_settings():
+    captured = {}
+
+    def _responder(request: httpx.Request) -> httpx.Response:
+        captured["json"] = json.loads(request.content)
+        return _image_response("https://cdn.example.test/generated.png")
+
+    respx.post(IMAGE_URL).mock(side_effect=_responder)
+
+    await generate_image("a cat astronaut")
+
+    assert captured["json"]["model"] == "test-image-model"
+    assert captured["json"]["size"] == "512x512"
+    assert captured["json"]["prompt"] == "a cat astronaut"
+    assert captured["json"]["n"] == 1
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_generate_image_uses_model_and_size_override():
+    captured = {}
+
+    def _responder(request: httpx.Request) -> httpx.Response:
+        captured["json"] = json.loads(request.content)
+        return _image_response("https://cdn.example.test/generated.png")
+
+    respx.post(IMAGE_URL).mock(side_effect=_responder)
+
+    await generate_image("a cat astronaut", model="custom-image-model", size="256x256")
+
+    assert captured["json"]["model"] == "custom-image-model"
+    assert captured["json"]["size"] == "256x256"
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_generate_image_5xx_raises_unavailable_after_retries(_fast_sleep):
+    route = respx.post(IMAGE_URL).mock(return_value=httpx.Response(503))
+
+    with pytest.raises(AIGatewayUnavailableError):
+        await generate_image("a cat astronaut")
+
+    assert route.call_count == 3
+    assert _fast_sleep == [1, 2]
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_generate_image_rate_limit_retries_once_then_raises(_fast_sleep):
+    route = respx.post(IMAGE_URL).mock(
+        side_effect=[httpx.Response(429), httpx.Response(429)]
+    )
+
+    with pytest.raises(AIGatewayRateLimitError):
+        await generate_image("a cat astronaut")
+
+    assert route.call_count == 2
 
 
 # --- retry policy: timeout / connection error / 5xx / 429 ---

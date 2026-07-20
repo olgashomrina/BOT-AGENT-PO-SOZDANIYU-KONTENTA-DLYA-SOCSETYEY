@@ -118,4 +118,11 @@ STRINGS = {
     ),
     "media_cleared_confirmation": "Attachment removed — the next post will publish without it.",
     "media_nothing_to_clear": "There's no photo or video attached right now.",
+    "generate_image_button": "🖼 AI image",
+    "image_preview_caption": "AI-generated image preview",
+    "image_attached_confirmation": (
+        "The AI-generated image is ready and attached — it will be used "
+        "for the next post you publish to your channel. To remove it, use "
+        "the /clear_media command."
+    ),
 }

@@ -88,4 +88,10 @@ STRINGS = {
     ),
     "media_cleared_confirmation": "已移除附件——下一个帖子将不带附件发布。",
     "media_nothing_to_clear": "当前没有已附加的图片或视频。",
+    "generate_image_button": "🖼 AI 配图",
+    "image_preview_caption": "AI 生成图片预览",
+    "image_attached_confirmation": (
+        "AI 生成的图片已准备好并已附加——它将用于您下一次发布到频道的帖子。"
+        "如需移除，请使用 /clear_media 命令。"
+    ),
 }

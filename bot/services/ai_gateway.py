@@ -322,6 +322,41 @@ def _parse_transcription_response(
     return text
 
 
+def _parse_image_response(
+    response: httpx.Response,
+    operation: str,
+    provider: str,
+    model: str,
+    retry_count: int,
+    duration_ms: float,
+) -> str:
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        mapped: AIGatewayError = AIGatewayInvalidResponseError("Не удалось разобрать ответ сервиса генерации изображений")
+        mapped.__cause__ = exc
+        _fail(mapped, operation=operation, provider=provider, model=model, duration_ms=duration_ms, retry_count=retry_count)
+
+    try:
+        url = payload["data"][0]["url"]
+    except (KeyError, IndexError, TypeError) as exc:
+        mapped = AIGatewayInvalidResponseError("Ответ сервиса генерации изображений не прошёл базовую валидацию")
+        mapped.__cause__ = exc
+        _fail(mapped, operation=operation, provider=provider, model=model, duration_ms=duration_ms, retry_count=retry_count)
+
+    if not url or not url.strip():
+        _fail(
+            AIGatewayInvalidResponseError("Получен пустой URL изображения от ИИ-модели"),
+            operation=operation,
+            provider=provider,
+            model=model,
+            duration_ms=duration_ms,
+            retry_count=retry_count,
+        )
+
+    return url
+
+
 async def generate_text(prompt: str, model: str | None = None, temperature: float | None = None) -> str:
     settings = load_settings()
     resolved_model = model or settings.ai_gateway_text_model
@@ -386,5 +421,41 @@ async def transcribe(audio_bytes: bytes, language_hint: str | None = None) -> st
 
     duration_ms = (time.monotonic() - overall_started) * 1000
     return _parse_transcription_response(
+        result.response, operation, settings.ai_gateway_provider, resolved_model, result.retry_count, duration_ms
+    )
+
+
+async def generate_image(prompt: str, model: str | None = None, size: str | None = None) -> str:
+    settings = load_settings()
+    resolved_model = model or settings.ai_gateway_image_model
+    resolved_size = size or settings.ai_gateway_image_size
+    operation = "generate_image"
+    overall_started = time.monotonic()
+
+    async def _do_request(client: httpx.AsyncClient) -> httpx.Response:
+        payload: dict[str, Any] = {
+            "model": resolved_model,
+            "prompt": prompt,
+            "n": 1,
+            "size": resolved_size,
+        }
+        return await client.post("/images/generations", json=payload)
+
+    async with httpx.AsyncClient(
+        base_url=settings.ai_proxy_base_url,
+        timeout=settings.ai_gateway_timeout_seconds,
+        headers={"Authorization": f"Bearer {settings.ai_proxy_api_key}"},
+    ) as client:
+        result = await _call_with_retries(
+            request=lambda: _do_request(client),
+            operation=operation,
+            provider=settings.ai_gateway_provider,
+            model=resolved_model,
+            max_retries=settings.ai_gateway_max_retries,
+            sleep=_sleep,
+        )
+
+    duration_ms = (time.monotonic() - overall_started) * 1000
+    return _parse_image_response(
         result.response, operation, settings.ai_gateway_provider, resolved_model, result.retry_count, duration_ms
     )

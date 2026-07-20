@@ -89,3 +89,25 @@ def test_build_refine_keyboard_publish_callback_data_within_telegram_64_byte_lim
 
     publish_row = keyboard.inline_keyboard[1]
     assert len(publish_row[0].callback_data.encode("utf-8")) <= 64
+
+
+def test_build_refine_keyboard_has_image_button_encoding_platform_and_index():
+    keyboard = build_refine_keyboard("telegram", 1, "ru")
+
+    image_row = keyboard.inline_keyboard[2]
+    assert image_row[0].callback_data == "refine:image:telegram:1"
+    assert image_row[0].text == get_string("generate_image_button", "ru")
+
+
+def test_build_refine_keyboard_image_button_encodes_vk_platform():
+    keyboard = build_refine_keyboard("vk", 2, "ru")
+
+    image_row = keyboard.inline_keyboard[2]
+    assert image_row[0].callback_data == "refine:image:vk:2"
+
+
+def test_build_refine_keyboard_image_callback_data_within_telegram_64_byte_limit():
+    keyboard = build_refine_keyboard("telegram", 999999, "ru")
+
+    image_row = keyboard.inline_keyboard[2]
+    assert len(image_row[0].callback_data.encode("utf-8")) <= 64
