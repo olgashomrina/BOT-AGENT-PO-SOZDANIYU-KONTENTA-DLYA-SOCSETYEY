@@ -22,7 +22,7 @@ def test_init_db_creates_expected_tables(tmp_path):
     init_db(path)
 
     tables = _table_names(path)
-    assert {"users", "whitelist", "usage_log"}.issubset(tables)
+    assert {"users", "whitelist", "usage_log", "style_examples"}.issubset(tables)
 
 
 def test_init_db_is_idempotent(tmp_path):
@@ -32,7 +32,7 @@ def test_init_db_is_idempotent(tmp_path):
     init_db(path)
 
     tables = _table_names(path)
-    assert {"users", "whitelist", "usage_log"}.issubset(tables)
+    assert {"users", "whitelist", "usage_log", "style_examples"}.issubset(tables)
 
 
 def test_get_connection_returns_usable_connection(db_path):

@@ -125,4 +125,24 @@ STRINGS = {
         "bài đăng tiếp theo bạn đăng lên kênh. Để bỏ tệp đính kèm, hãy dùng "
         "lệnh /clear_media."
     ),
+    "settov_instructions": (
+        "Hãy gửi cho tôi một vài bài đăng cũ của bạn — mỗi bài một tin "
+        "nhắn riêng, dạng văn bản thường. Tôi sẽ dùng chúng làm tham chiếu "
+        "phong cách khi tạo bài đăng mới.\n\n"
+        "Khi đã gửi xong tất cả các ví dụ, hãy nhấn nút «Xong»."
+    ),
+    "settov_done_button": "Xong",
+    "settov_example_saved": "Đã lưu ví dụ! Gửi thêm một ví dụ nữa hoặc nhấn «Xong».",
+    "settov_example_too_long": (
+        "Ví dụ này quá dài. Vui lòng gửi một ví dụ ngắn hơn (tối đa 2000 "
+        "ký tự)."
+    ),
+    "settov_non_text_reprompt": (
+        "Vui lòng gửi ví dụ dưới dạng tin nhắn văn bản thường, hoặc nhấn "
+        "«Xong» nếu bạn đã có đủ ví dụ."
+    ),
+    "settov_finished_confirmation": (
+        "Xong! Đã lưu số ví dụ phong cách: {count}. Tôi sẽ dựa vào chúng "
+        "khi tạo các bài đăng mới."
+    ),
 }

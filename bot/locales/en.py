@@ -126,4 +126,24 @@ STRINGS = {
         "for the next post you publish to your channel. To remove it, use "
         "the /clear_media command."
     ),
+    "settov_instructions": (
+        "Send me a few of your own past posts — one per message, plain "
+        "text. I'll use them as a reference for your style when generating "
+        "new posts.\n\n"
+        "Once you've sent all the examples, tap the \"Done\" button."
+    ),
+    "settov_done_button": "Done",
+    "settov_example_saved": "Example saved! Send another one or tap \"Done\".",
+    "settov_example_too_long": (
+        "This example is too long. Please send a shorter one (up to 2000 "
+        "characters)."
+    ),
+    "settov_non_text_reprompt": (
+        "Please send the example as a plain text message, or tap \"Done\" "
+        "if you have enough examples."
+    ),
+    "settov_finished_confirmation": (
+        "Done! Saved style examples: {count}. I'll take them into account "
+        "when generating new posts."
+    ),
 }

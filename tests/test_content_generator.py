@@ -116,6 +116,63 @@ async def test_generate_variants_without_extra_instruction_matches_default_promp
     assert called_prompt == content_generator.build_prompt("исходник", "telegram", "ru")
 
 
+def test_build_prompt_without_style_examples_is_unchanged_from_default():
+    prompt = content_generator.build_prompt("текст", "telegram", "ru")
+
+    assert prompt == content_generator.build_prompt(
+        "текст", "telegram", "ru", extra_instruction=None, style_examples=None
+    )
+    assert prompt == content_generator.build_prompt(
+        "текст", "telegram", "ru", extra_instruction=None, style_examples=[]
+    )
+
+
+def test_build_prompt_includes_style_examples_when_given():
+    prompt = content_generator.build_prompt(
+        "текст",
+        "telegram",
+        "ru",
+        style_examples=["Мой старый пост номер один.", "А вот и второй пример."],
+    )
+
+    assert "Мой старый пост номер один." in prompt
+    assert "А вот и второй пример." in prompt
+
+
+def test_build_prompt_style_examples_do_not_affect_prompt_when_empty():
+    prompt = content_generator.build_prompt("текст", "telegram", "ru", style_examples=[])
+
+    assert prompt == content_generator.build_prompt("текст", "telegram", "ru")
+
+
+@pytest.mark.asyncio
+async def test_generate_variants_passes_style_examples_into_prompt(monkeypatch):
+    mock_generate = AsyncMock(return_value="вариант")
+    monkeypatch.setattr(ai_gateway, "generate_text", mock_generate)
+
+    style_examples = ["Пример моего стиля."]
+    await content_generator.generate_variants(
+        "исходник", "telegram", "ru", count=1, style_examples=style_examples
+    )
+
+    called_prompt = mock_generate.await_args.args[0]
+    assert called_prompt == content_generator.build_prompt(
+        "исходник", "telegram", "ru", style_examples=style_examples
+    )
+    assert "Пример моего стиля." in called_prompt
+
+
+@pytest.mark.asyncio
+async def test_generate_variants_without_style_examples_matches_default_prompt(monkeypatch):
+    mock_generate = AsyncMock(return_value="вариант")
+    monkeypatch.setattr(ai_gateway, "generate_text", mock_generate)
+
+    await content_generator.generate_variants("исходник", "telegram", "ru", count=1)
+
+    called_prompt = mock_generate.await_args.args[0]
+    assert called_prompt == content_generator.build_prompt("исходник", "telegram", "ru")
+
+
 @pytest.mark.asyncio
 async def test_generate_variants_propagates_ai_gateway_error(monkeypatch):
     mock_generate = AsyncMock(side_effect=AIGatewayTimeoutError("timed out"))

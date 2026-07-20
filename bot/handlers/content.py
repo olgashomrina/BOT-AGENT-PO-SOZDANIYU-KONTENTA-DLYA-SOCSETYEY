@@ -29,6 +29,7 @@ from bot.services.ai_gateway import (
     TranscriptionError,
 )
 from bot.services.input_processor import LinkExtractionError
+from bot.storage.style_examples import get_style_examples
 from bot.storage.users import (
     clear_pending_media,
     get_content_language,
@@ -253,13 +254,22 @@ async def _finish(
     )
 
     settings = load_settings()
+    style_examples = get_style_examples(db_path, telegram_id)
 
     try:
         telegram_variants = await content_generator.generate_variants(
-            text, "telegram", content_language, count=settings.content_variants_count
+            text,
+            "telegram",
+            content_language,
+            count=settings.content_variants_count,
+            style_examples=style_examples,
         )
         vk_variants = await content_generator.generate_variants(
-            text, "vk", content_language, count=settings.content_variants_count
+            text,
+            "vk",
+            content_language,
+            count=settings.content_variants_count,
+            style_examples=style_examples,
         )
     except AIGatewayError as exc:
         error_key = _AI_ERROR_KEYS.get(type(exc), "error_unexpected")

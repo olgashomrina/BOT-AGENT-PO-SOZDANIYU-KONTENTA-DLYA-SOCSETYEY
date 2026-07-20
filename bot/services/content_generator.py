@@ -52,13 +52,31 @@ _TONE_INSTRUCTION = (
 )
 
 
+# Phase 14 ("тон оф войс", first slice, Plan.md): the examples are quoted
+# directly into the prompt rather than fed through any separate linguistic
+# analysis (sentence length, emoji frequency, etc.) — that stays explicitly
+# out of scope for this slice per Plan.md/speca.md §8.
+def _build_style_section(style_examples: list[str] | None) -> str:
+    if not style_examples:
+        return ""
+    quoted = "\n".join(f"- {example}" for example in style_examples)
+    return (
+        "Match the writing voice and style of the examples below — the same "
+        "tone, phrasing habits and rhythm — while writing about the new "
+        "source material, not about the examples themselves:\n"
+        f"{quoted}\n"
+    )
+
+
 def build_prompt(
     source_text: str,
     platform: Platform,
     content_language: str,
     extra_instruction: str | None = None,
+    style_examples: list[str] | None = None,
 ) -> str:
     extra_line = f"{extra_instruction}\n" if extra_instruction else ""
+    style_section = _build_style_section(style_examples)
     return (
         "You are a social media copywriter. Write ONE ready-to-publish social "
         "media post based on the source material below.\n"
@@ -66,6 +84,7 @@ def build_prompt(
         f"{_TONE_INSTRUCTION}\n"
         f"Write the post in this language (ISO 639-1 code): {content_language}.\n"
         f"{extra_line}"
+        f"{style_section}"
         "Return only the post text itself, without any preamble, quotes or "
         "explanation.\n\n"
         f"Source material:\n{source_text}"
@@ -98,6 +117,7 @@ async def generate_variants(
     content_language: str,
     count: int = 3,
     extra_instruction: str | None = None,
+    style_examples: list[str] | None = None,
 ) -> list[str]:
     # Design call: call generate_text() `count` times with the same prompt
     # rather than asking the model for N variants in one response. Simpler
@@ -105,7 +125,9 @@ async def generate_variants(
     # easy for a model to ignore or format inconsistently, whereas N
     # independent calls always yield N usable variants (relying on the
     # provider's own sampling randomness for variety).
-    prompt = build_prompt(source_text, platform, content_language, extra_instruction)
+    prompt = build_prompt(
+        source_text, platform, content_language, extra_instruction, style_examples
+    )
     variants = []
     for _ in range(count):
         variant = await ai_gateway.generate_text(prompt, temperature=_VARIANT_TEMPERATURE)

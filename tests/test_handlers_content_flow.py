@@ -20,6 +20,7 @@ from bot.handlers.content import (
 from bot.locales.loader import get_string
 from bot.services import content_generator, input_processor, output_formatter
 from bot.services.ai_gateway import AIGatewayTimeoutError, TranscriptionError
+from bot.storage.style_examples import add_style_example
 from bot.storage.users import (
     get_pending_media,
     set_content_language,
@@ -436,6 +437,40 @@ async def test_generation_uses_content_language_not_interface_language(db_path, 
     telegram_call, vk_call = mock_generate_variants.await_args_list
     assert telegram_call.args[2] == "en"
     assert vk_call.args[2] == "en"
+
+
+@pytest.mark.asyncio
+async def test_generation_forwards_stored_style_examples(db_path, monkeypatch):
+    add_style_example(db_path, TELEGRAM_ID, "Мой старый пост.")
+    add_style_example(db_path, TELEGRAM_ID, "Ещё один старый пост.")
+
+    message = _make_message(text="Просто текст")
+    bot = _make_bot()
+    state = _make_state()
+
+    mock_generate_variants = _mock_generate_variants(monkeypatch)
+
+    await route_content(message, db_path, bot, state)
+
+    telegram_call, vk_call = mock_generate_variants.await_args_list
+    expected_examples = ["Ещё один старый пост.", "Мой старый пост."]
+    assert telegram_call.kwargs["style_examples"] == expected_examples
+    assert vk_call.kwargs["style_examples"] == expected_examples
+
+
+@pytest.mark.asyncio
+async def test_generation_without_stored_style_examples_is_unchanged(db_path, monkeypatch):
+    message = _make_message(text="Просто текст")
+    bot = _make_bot()
+    state = _make_state()
+
+    mock_generate_variants = _mock_generate_variants(monkeypatch)
+
+    await route_content(message, db_path, bot, state)
+
+    telegram_call, vk_call = mock_generate_variants.await_args_list
+    assert telegram_call.kwargs["style_examples"] == []
+    assert vk_call.kwargs["style_examples"] == []
 
 
 @pytest.mark.asyncio

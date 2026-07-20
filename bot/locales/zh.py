@@ -95,4 +95,20 @@ STRINGS = {
         "AI 生成的图片已准备好并已附加——它将用于您下一次发布到频道的帖子。"
         "如需移除，请使用 /clear_media 命令。"
     ),
+    "settov_instructions": (
+        "请发送几篇您自己以前发布的帖子——每条消息发一篇，纯文本形式。"
+        "我会用它们作为参考，在生成新帖子时贴近您的风格。\n\n"
+        "发送完所有示例后，请点击「完成」按钮。"
+    ),
+    "settov_done_button": "完成",
+    "settov_example_saved": "示例已保存！可以再发一个，或点击「完成」。",
+    "settov_example_too_long": (
+        "这个示例太长了。请发送短一些的示例（不超过 2000 个字符）。"
+    ),
+    "settov_non_text_reprompt": (
+        "请以纯文本消息发送示例，或者如果示例已经足够，请点击「完成」。"
+    ),
+    "settov_finished_confirmation": (
+        "完成！已保存 {count} 个风格示例。生成新帖子时我会参考它们。"
+    ),
 }

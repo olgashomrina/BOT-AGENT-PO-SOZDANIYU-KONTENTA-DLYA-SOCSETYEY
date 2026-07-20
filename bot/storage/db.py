@@ -22,6 +22,13 @@ CREATE TABLE IF NOT EXISTS usage_log (
     request_count INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (telegram_id, usage_date)
 );
+
+CREATE TABLE IF NOT EXISTS style_examples (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    telegram_id INTEGER NOT NULL,
+    example_text TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 """
 
 
