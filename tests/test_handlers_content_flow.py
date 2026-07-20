@@ -10,6 +10,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 from bot.handlers.content import (
     VoiceConfirmStates,
+    cmd_clear_media,
     detect_input_type,
     on_transcript_confirm,
     on_transcript_edit_request,
@@ -19,7 +20,12 @@ from bot.handlers.content import (
 from bot.locales.loader import get_string
 from bot.services import content_generator, input_processor, output_formatter
 from bot.services.ai_gateway import AIGatewayTimeoutError, TranscriptionError
-from bot.storage.users import set_content_language, set_interface_language
+from bot.storage.users import (
+    get_pending_media,
+    set_content_language,
+    set_interface_language,
+    set_pending_media,
+)
 
 TELEGRAM_ID = 111
 
@@ -47,6 +53,8 @@ def _make_message(
     entities=None,
     caption=None,
     caption_entities=None,
+    photo=None,
+    video=None,
 ):
     message = AsyncMock()
     message.from_user = SimpleNamespace(id=telegram_id, language_code="ru")
@@ -56,6 +64,8 @@ def _make_message(
     message.entities = entities
     message.caption = caption
     message.caption_entities = caption_entities
+    message.photo = photo
+    message.video = video
     return message
 
 
@@ -426,3 +436,65 @@ async def test_generation_uses_content_language_not_interface_language(db_path, 
     telegram_call, vk_call = mock_generate_variants.await_args_list
     assert telegram_call.args[2] == "en"
     assert vk_call.args[2] == "en"
+
+
+@pytest.mark.asyncio
+async def test_receiving_photo_sets_pending_media_and_confirms(db_path, monkeypatch):
+    photo_sizes = [SimpleNamespace(file_id="small"), SimpleNamespace(file_id="largest")]
+    message = _make_message(photo=photo_sizes)
+    bot = _make_bot()
+    state = _make_state()
+
+    await route_content(message, db_path, bot, state)
+
+    assert get_pending_media(db_path, TELEGRAM_ID) == ("largest", "photo")
+    message.answer.assert_awaited_once_with(get_string("media_attached_confirmation", "ru"))
+
+
+@pytest.mark.asyncio
+async def test_receiving_video_sets_pending_media_and_confirms(db_path, monkeypatch):
+    message = _make_message(video=SimpleNamespace(file_id="video-file"))
+    bot = _make_bot()
+    state = _make_state()
+
+    await route_content(message, db_path, bot, state)
+
+    assert get_pending_media(db_path, TELEGRAM_ID) == ("video-file", "video")
+    message.answer.assert_awaited_once_with(get_string("media_attached_confirmation", "ru"))
+
+
+@pytest.mark.asyncio
+async def test_photo_with_caption_is_not_routed_as_content(db_path, monkeypatch):
+    photo_sizes = [SimpleNamespace(file_id="only-size")]
+    message = _make_message(photo=photo_sizes, caption="https://example.com/should-not-matter")
+    bot = _make_bot()
+    state = _make_state()
+
+    mock_generate_variants = _mock_generate_variants(monkeypatch)
+
+    await route_content(message, db_path, bot, state)
+
+    mock_generate_variants.assert_not_awaited()
+    assert get_pending_media(db_path, TELEGRAM_ID) == ("only-size", "photo")
+    message.answer.assert_awaited_once_with(get_string("media_attached_confirmation", "ru"))
+
+
+@pytest.mark.asyncio
+async def test_clear_media_command_clears_existing_attachment(db_path):
+    set_pending_media(db_path, TELEGRAM_ID, "file-id", "photo")
+    message = _make_message()
+
+    await cmd_clear_media(message, db_path)
+
+    assert get_pending_media(db_path, TELEGRAM_ID) is None
+    message.answer.assert_awaited_once_with(get_string("media_cleared_confirmation", "ru"))
+
+
+@pytest.mark.asyncio
+async def test_clear_media_command_with_nothing_pending(db_path):
+    message = _make_message()
+
+    await cmd_clear_media(message, db_path)
+
+    assert get_pending_media(db_path, TELEGRAM_ID) is None
+    message.answer.assert_awaited_once_with(get_string("media_nothing_to_clear", "ru"))

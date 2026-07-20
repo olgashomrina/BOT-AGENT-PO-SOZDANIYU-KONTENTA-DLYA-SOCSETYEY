@@ -96,3 +96,61 @@ def test_init_db_migrates_pre_phase12_users_table(tmp_path):
         assert row == (42, "ru", "en", None)
     finally:
         connection.close()
+
+
+def test_init_db_migrates_pre_phase13_users_table(tmp_path):
+    path = str(tmp_path / "legacy_pre13.db")
+
+    connection = sqlite3.connect(path)
+    try:
+        connection.execute(
+            """
+            CREATE TABLE users (
+                telegram_id INTEGER PRIMARY KEY,
+                interface_language TEXT,
+                content_language TEXT,
+                channel_id INTEGER
+            )
+            """
+        )
+        connection.execute(
+            "INSERT INTO users (telegram_id, interface_language, content_language, channel_id) "
+            "VALUES (?, ?, ?, ?)",
+            (42, "ru", "en", -1001234567890),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    init_db(path)
+
+    connection = sqlite3.connect(path)
+    try:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(users)")}
+        assert "pending_media_file_id" in columns
+        assert "pending_media_type" in columns
+
+        row = connection.execute(
+            "SELECT telegram_id, interface_language, content_language, channel_id, "
+            "pending_media_file_id, pending_media_type FROM users WHERE telegram_id = ?",
+            (42,),
+        ).fetchone()
+        assert row == (42, "ru", "en", -1001234567890, None, None)
+    finally:
+        connection.close()
+
+    init_db(path)
+
+    connection = sqlite3.connect(path)
+    try:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(users)")}
+        assert "pending_media_file_id" in columns
+        assert "pending_media_type" in columns
+        row = connection.execute(
+            "SELECT telegram_id, interface_language, content_language, channel_id, "
+            "pending_media_file_id, pending_media_type FROM users WHERE telegram_id = ?",
+            (42,),
+        ).fetchone()
+        assert row == (42, "ru", "en", -1001234567890, None, None)
+    finally:
+        connection.close()

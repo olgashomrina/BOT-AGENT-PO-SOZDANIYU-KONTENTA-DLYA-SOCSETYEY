@@ -36,6 +36,8 @@ def _make_message(text: str | None = None, voice=None):
     message.entities = None
     message.caption = None
     message.caption_entities = None
+    message.photo = None
+    message.video = None
     return message
 
 

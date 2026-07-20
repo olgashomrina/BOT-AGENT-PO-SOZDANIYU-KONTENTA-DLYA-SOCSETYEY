@@ -16,12 +16,24 @@ from bot.services import content_generator, output_formatter
 from bot.services.ai_gateway import AIGatewayError
 from bot.services.content_generator import SHORTEN_INSTRUCTION
 from bot.storage.limits import LimitStatus, check_limit_status, increment_usage
-from bot.storage.users import get_channel_id
+from bot.storage.users import clear_pending_media, get_channel_id, get_pending_media
 from bot.storage.whitelist import is_whitelisted
 
 logger = logging.getLogger(LOGGER_NAME)
 
 router = Router(name="refine")
+
+# Telegram's hard limit for photo/video captions (Bot API "caption" field),
+# well below the 4096-char limit for plain send_message text. AI-generated
+# variant text is written for send_message and can plausibly exceed this
+# when a photo/video is attached, so publishing must not crash on it.
+_TELEGRAM_CAPTION_LIMIT = 1024
+
+
+def _truncate_caption(text: str) -> str:
+    if len(text) <= _TELEGRAM_CAPTION_LIMIT:
+        return text
+    return text[: _TELEGRAM_CAPTION_LIMIT - 1] + "…"
 
 
 async def _check_whitelist_or_reply(callback: CallbackQuery, db_path: str, language: str) -> bool:
@@ -152,13 +164,23 @@ async def on_refine_publish(callback: CallbackQuery, state: FSMContext, db_path:
     # parse_mode; since that formatting only escapes &/</>, Telegram hands
     # the plain (unescaped) variant text straight back as callback.message.text.
     variant_text = callback.message.text or ""
+    formatted_text = output_formatter.format_variant(variant_text)
+    pending_media = get_pending_media(db_path, telegram_id)
 
     try:
-        await bot.send_message(
-            channel_id,
-            output_formatter.format_variant(variant_text),
-            parse_mode=output_formatter.PARSE_MODE,
-        )
+        if pending_media is None:
+            await bot.send_message(channel_id, formatted_text, parse_mode=output_formatter.PARSE_MODE)
+        else:
+            file_id, media_type = pending_media
+            caption = _truncate_caption(formatted_text)
+            if media_type == "photo":
+                await bot.send_photo(
+                    channel_id, photo=file_id, caption=caption, parse_mode=output_formatter.PARSE_MODE
+                )
+            else:
+                await bot.send_video(
+                    channel_id, video=file_id, caption=caption, parse_mode=output_formatter.PARSE_MODE
+                )
     except TelegramAPIError:
         logger.warning(
             "Failed to publish variant to channel",
@@ -167,6 +189,13 @@ async def on_refine_publish(callback: CallbackQuery, state: FSMContext, db_path:
         await callback.message.answer(get_string("publish_failed", language))
         await callback.answer()
         return
+
+    if pending_media is not None:
+        # Single-slot attachment is one-shot: media_attached_confirmation
+        # tells the user it applies to "the next channel publish" only, so a
+        # successful publish must consume it — otherwise an old photo would
+        # silently keep attaching itself to every unrelated post afterward.
+        clear_pending_media(db_path, telegram_id)
 
     await callback.message.answer(get_string("publish_success", language))
     await callback.answer()

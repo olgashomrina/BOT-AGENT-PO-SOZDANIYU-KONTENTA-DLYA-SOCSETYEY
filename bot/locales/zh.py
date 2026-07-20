@@ -82,4 +82,10 @@ STRINGS = {
         "未能将帖子发布到频道——机器人可能已失去管理员权限。请检查权限，并"
         "通过 /channel 重新设置频道。"
     ),
+    "media_attached_confirmation": (
+        "已收到图片/视频！它将附加到您下一次发布到频道的帖子中。如需移除，"
+        "请使用 /clear_media 命令。"
+    ),
+    "media_cleared_confirmation": "已移除附件——下一个帖子将不带附件发布。",
+    "media_nothing_to_clear": "当前没有已附加的图片或视频。",
 }

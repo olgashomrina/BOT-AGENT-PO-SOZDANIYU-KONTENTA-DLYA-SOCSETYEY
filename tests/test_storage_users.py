@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from bot.storage.users import (
+    clear_pending_media,
     get_channel_id,
     get_content_language,
     get_interface_language,
+    get_pending_media,
     set_channel_id,
     set_content_language,
     set_interface_language,
+    set_pending_media,
 )
 
 
@@ -75,3 +78,46 @@ def test_channel_id_can_be_replaced(db_path):
     set_channel_id(db_path, 111, -1002222222222)
 
     assert get_channel_id(db_path, 111) == -1002222222222
+
+
+def test_unknown_user_has_no_pending_media(db_path):
+    assert get_pending_media(db_path, 111) is None
+
+
+def test_set_pending_media_is_readable(db_path):
+    set_pending_media(db_path, 111, "file-abc", "photo")
+
+    assert get_pending_media(db_path, 111) == ("file-abc", "photo")
+
+
+def test_pending_media_supports_video_type(db_path):
+    set_pending_media(db_path, 111, "file-xyz", "video")
+
+    assert get_pending_media(db_path, 111) == ("file-xyz", "video")
+
+
+def test_pending_media_can_be_replaced(db_path):
+    set_pending_media(db_path, 111, "file-old", "photo")
+    set_pending_media(db_path, 111, "file-new", "video")
+
+    assert get_pending_media(db_path, 111) == ("file-new", "video")
+
+
+def test_pending_media_is_scoped_per_user(db_path):
+    set_pending_media(db_path, 111, "file-abc", "photo")
+
+    assert get_pending_media(db_path, 222) is None
+
+
+def test_clear_pending_media_removes_it(db_path):
+    set_pending_media(db_path, 111, "file-abc", "photo")
+
+    clear_pending_media(db_path, 111)
+
+    assert get_pending_media(db_path, 111) is None
+
+
+def test_clear_pending_media_on_unknown_user_does_not_crash(db_path):
+    clear_pending_media(db_path, 999)
+
+    assert get_pending_media(db_path, 999) is None

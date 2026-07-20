@@ -36,6 +36,48 @@ def get_channel_id(db_path: str, telegram_id: int) -> int | None:
         connection.close()
 
 
+def set_pending_media(db_path: str, telegram_id: int, file_id: str, media_type: str) -> None:
+    connection = get_connection(db_path)
+    try:
+        _ensure_user_row(connection, telegram_id)
+        connection.execute(
+            "UPDATE users SET pending_media_file_id = ?, pending_media_type = ? "
+            "WHERE telegram_id = ?",
+            (file_id, media_type, telegram_id),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def get_pending_media(db_path: str, telegram_id: int) -> tuple[str, str] | None:
+    connection = get_connection(db_path)
+    try:
+        row = connection.execute(
+            "SELECT pending_media_file_id, pending_media_type FROM users WHERE telegram_id = ?",
+            (telegram_id,),
+        ).fetchone()
+        if row is None or row[0] is None or row[1] is None:
+            return None
+        return row[0], row[1]
+    finally:
+        connection.close()
+
+
+def clear_pending_media(db_path: str, telegram_id: int) -> None:
+    connection = get_connection(db_path)
+    try:
+        _ensure_user_row(connection, telegram_id)
+        connection.execute(
+            "UPDATE users SET pending_media_file_id = NULL, pending_media_type = NULL "
+            "WHERE telegram_id = ?",
+            (telegram_id,),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
 def set_interface_language(db_path: str, telegram_id: int, language: str) -> None:
     connection = get_connection(db_path)
     try:

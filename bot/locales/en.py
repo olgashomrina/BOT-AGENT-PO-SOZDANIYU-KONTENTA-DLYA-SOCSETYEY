@@ -111,4 +111,11 @@ STRINGS = {
         "administrator rights. Check its permissions and set up the "
         "channel again via /channel."
     ),
+    "media_attached_confirmation": (
+        "Got the photo/video! It will be attached to the next post you "
+        "publish to your channel. To remove it, use the /clear_media "
+        "command."
+    ),
+    "media_cleared_confirmation": "Attachment removed — the next post will publish without it.",
+    "media_nothing_to_clear": "There's no photo or video attached right now.",
 }

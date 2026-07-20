@@ -111,4 +111,10 @@ STRINGS = {
         "Không thể đăng bài vào kênh — có thể bot đã mất quyền quản trị "
         "viên. Hãy kiểm tra quyền và thiết lập lại kênh qua /channel."
     ),
+    "media_attached_confirmation": (
+        "Đã nhận ảnh/video! Nó sẽ được đính kèm vào bài đăng tiếp theo mà "
+        "bạn đăng lên kênh. Để bỏ tệp đính kèm, hãy dùng lệnh /clear_media."
+    ),
+    "media_cleared_confirmation": "Đã bỏ tệp đính kèm — bài đăng tiếp theo sẽ không có nó.",
+    "media_nothing_to_clear": "Hiện không có ảnh hoặc video nào được đính kèm.",
 }

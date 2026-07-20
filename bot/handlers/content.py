@@ -5,7 +5,7 @@ import re
 from typing import Literal
 
 from aiogram import Bot, F, Router
-from aiogram.filters import StateFilter
+from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
@@ -29,7 +29,13 @@ from bot.services.ai_gateway import (
     TranscriptionError,
 )
 from bot.services.input_processor import LinkExtractionError
-from bot.storage.users import get_content_language, get_interface_language
+from bot.storage.users import (
+    clear_pending_media,
+    get_content_language,
+    get_interface_language,
+    get_pending_media,
+    set_pending_media,
+)
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -77,10 +83,49 @@ def _resolve_language(db_path: str, telegram_id: int, language_code: str | None)
     return language
 
 
+@router.message(Command("clear_media"))
+async def cmd_clear_media(message: Message, db_path: str) -> None:
+    telegram_id = message.from_user.id
+    language = _resolve_language(db_path, telegram_id, message.from_user.language_code)
+
+    had_pending_media = get_pending_media(db_path, telegram_id) is not None
+    clear_pending_media(db_path, telegram_id)
+
+    message_key = "media_cleared_confirmation" if had_pending_media else "media_nothing_to_clear"
+    await message.answer(get_string(message_key, language))
+
+
+async def _handle_media_attachment(
+    message: Message, db_path: str, telegram_id: int, language: str
+) -> None:
+    if message.photo:
+        file_id = message.photo[-1].file_id
+        media_type = "photo"
+    else:
+        file_id = message.video.file_id
+        media_type = "video"
+
+    set_pending_media(db_path, telegram_id, file_id, media_type)
+    await message.answer(get_string("media_attached_confirmation", language))
+    logger.info(
+        "Media attached for next channel publish",
+        extra={"user_id": telegram_id, "operation": "handler:content", "media_type": media_type},
+    )
+
+
 @router.message(StateFilter(None))
 async def route_content(message: Message, db_path: str, bot: Bot, state: FSMContext) -> None:
     telegram_id = message.from_user.id
     language = _resolve_language(db_path, telegram_id, message.from_user.language_code)
+
+    # Checked before detect_input_type: a photo/video message (even with a
+    # caption) is always treated as a media attachment for the next channel
+    # publish, never as link/voice/text content input — detect_input_type
+    # has no "photo"/"video" branch and would otherwise misclassify a
+    # captioned photo as link or text content.
+    if message.photo or message.video:
+        await _handle_media_attachment(message, db_path, telegram_id, language)
+        return
 
     input_type = detect_input_type(message)
 

@@ -16,7 +16,7 @@ from bot.locales.loader import get_string
 from bot.services import content_generator, output_formatter
 from bot.services.ai_gateway import AIGatewayTimeoutError
 from bot.storage.limits import get_daily_count
-from bot.storage.users import set_channel_id
+from bot.storage.users import get_pending_media, set_channel_id, set_pending_media
 from bot.storage.whitelist import add_user
 
 TELEGRAM_ID = 111
@@ -279,3 +279,116 @@ async def test_publish_blocked_when_not_whitelisted_does_not_send(db_path):
     bot.send_message.assert_not_awaited()
     callback.message.answer.assert_awaited_once_with(get_string("error_not_whitelisted", "ru"))
     callback.answer.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_publish_with_pending_photo_sends_photo_not_message(db_path):
+    set_channel_id(db_path, TELEGRAM_ID, CHANNEL_ID)
+    set_pending_media(db_path, TELEGRAM_ID, "photo-file-id", "photo")
+    state = _make_state()
+    await _seed_finished_session(state)
+
+    callback = _make_callback(data="refine:publish:telegram:1")
+    callback.message.text = "Готовый вариант поста"
+    bot = AsyncMock()
+
+    await on_refine_publish(callback, state, db_path, bot)
+
+    bot.send_message.assert_not_awaited()
+    bot.send_photo.assert_awaited_once_with(
+        CHANNEL_ID,
+        photo="photo-file-id",
+        caption=output_formatter.format_variant("Готовый вариант поста"),
+        parse_mode=output_formatter.PARSE_MODE,
+    )
+    callback.message.answer.assert_awaited_once_with(get_string("publish_success", "ru"))
+    callback.answer.assert_awaited_once()
+    assert get_pending_media(db_path, TELEGRAM_ID) is None
+
+
+@pytest.mark.asyncio
+async def test_publish_with_pending_video_sends_video_not_message(db_path):
+    set_channel_id(db_path, TELEGRAM_ID, CHANNEL_ID)
+    set_pending_media(db_path, TELEGRAM_ID, "video-file-id", "video")
+    state = _make_state()
+    await _seed_finished_session(state)
+
+    callback = _make_callback(data="refine:publish:telegram:1")
+    callback.message.text = "Готовый вариант поста"
+    bot = AsyncMock()
+
+    await on_refine_publish(callback, state, db_path, bot)
+
+    bot.send_message.assert_not_awaited()
+    bot.send_video.assert_awaited_once_with(
+        CHANNEL_ID,
+        video="video-file-id",
+        caption=output_formatter.format_variant("Готовый вариант поста"),
+        parse_mode=output_formatter.PARSE_MODE,
+    )
+    callback.message.answer.assert_awaited_once_with(get_string("publish_success", "ru"))
+    assert get_pending_media(db_path, TELEGRAM_ID) is None
+
+
+@pytest.mark.asyncio
+async def test_publish_without_pending_media_still_sends_message(db_path):
+    set_channel_id(db_path, TELEGRAM_ID, CHANNEL_ID)
+    state = _make_state()
+    await _seed_finished_session(state)
+
+    callback = _make_callback(data="refine:publish:telegram:1")
+    callback.message.text = "Готовый вариант поста"
+    bot = AsyncMock()
+
+    await on_refine_publish(callback, state, db_path, bot)
+
+    bot.send_photo.assert_not_awaited()
+    bot.send_video.assert_not_awaited()
+    bot.send_message.assert_awaited_once_with(
+        CHANNEL_ID,
+        output_formatter.format_variant("Готовый вариант поста"),
+        parse_mode=output_formatter.PARSE_MODE,
+    )
+
+
+@pytest.mark.asyncio
+async def test_publish_with_pending_photo_truncates_oversized_caption(db_path):
+    set_channel_id(db_path, TELEGRAM_ID, CHANNEL_ID)
+    set_pending_media(db_path, TELEGRAM_ID, "photo-file-id", "photo")
+    state = _make_state()
+    await _seed_finished_session(state)
+
+    oversized_text = "А" * 1500
+    callback = _make_callback(data="refine:publish:telegram:1")
+    callback.message.text = oversized_text
+    bot = AsyncMock()
+
+    await on_refine_publish(callback, state, db_path, bot)
+
+    _, kwargs = bot.send_photo.call_args
+    caption = kwargs["caption"]
+    assert len(caption) == 1024
+    assert caption.endswith("…")
+    assert caption == output_formatter.format_variant(oversized_text)[:1023] + "…"
+
+
+@pytest.mark.asyncio
+async def test_publish_failure_with_pending_media_keeps_it_for_retry(db_path):
+    set_channel_id(db_path, TELEGRAM_ID, CHANNEL_ID)
+    set_pending_media(db_path, TELEGRAM_ID, "photo-file-id", "photo")
+    state = _make_state()
+    await _seed_finished_session(state)
+
+    callback = _make_callback(data="refine:publish:telegram:1")
+    callback.message.text = "Готовый вариант поста"
+    bot = AsyncMock()
+    bot.send_photo = AsyncMock(
+        side_effect=TelegramBadRequest(
+            method=SendMessage(chat_id=CHANNEL_ID, text="x"), message="bot was kicked"
+        )
+    )
+
+    await on_refine_publish(callback, state, db_path, bot)
+
+    callback.message.answer.assert_awaited_once_with(get_string("publish_failed", "ru"))
+    assert get_pending_media(db_path, TELEGRAM_ID) == ("photo-file-id", "photo")
