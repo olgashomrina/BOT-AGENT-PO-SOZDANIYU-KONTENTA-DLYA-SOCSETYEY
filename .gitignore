@@ -35,3 +35,6 @@ Thumbs.db
 
 # Локальные настройки Claude Code (личные, не для команды)
 .claude/settings.local.json
+
+# Локальные git worktree Claude Code (рабочие копии на диске, не для репозитория)
+.claude/worktrees/
