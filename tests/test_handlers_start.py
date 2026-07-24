@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, call
+from unittest.mock import ANY, AsyncMock, call
 
 import pytest
 
@@ -15,10 +15,18 @@ from bot.storage.users import (
 )
 
 
-def _make_message(telegram_id: int, language_code: str | None):
+def _make_message(telegram_id: int, language_code: str | None, text: str | None = "/start"):
     message = AsyncMock()
     message.from_user = SimpleNamespace(id=telegram_id, language_code=language_code)
+    message.text = text
     return message
+
+
+def _greeting_calls(language: str):
+    return [
+        call(get_string("start_greeting", language), reply_markup=ANY),
+        call(get_string("menu_intro", language), reply_markup=ANY),
+    ]
 
 
 def _onboarding_calls(language: str):
@@ -36,9 +44,7 @@ async def test_new_user_gets_language_from_supported_language_code(db_path):
     await cmd_start(message, db_path)
 
     assert get_interface_language(db_path, 111) == "vi"
-    message.answer.assert_has_calls(
-        [call(get_string("start_greeting", "vi")), *_onboarding_calls("vi")]
-    )
+    message.answer.assert_has_calls([*_greeting_calls("vi"), *_onboarding_calls("vi")])
 
 
 @pytest.mark.asyncio
@@ -48,9 +54,7 @@ async def test_new_user_defaults_to_ru_for_unsupported_language_code(db_path):
     await cmd_start(message, db_path)
 
     assert get_interface_language(db_path, 222) == "ru"
-    message.answer.assert_has_calls(
-        [call(get_string("start_greeting", "ru")), *_onboarding_calls("ru")]
-    )
+    message.answer.assert_has_calls([*_greeting_calls("ru"), *_onboarding_calls("ru")])
 
 
 @pytest.mark.asyncio
@@ -63,15 +67,13 @@ async def test_new_user_defaults_to_ru_when_language_code_missing(db_path):
 
 
 @pytest.mark.asyncio
-async def test_new_user_sees_greeting_plus_all_three_onboarding_messages(db_path):
+async def test_new_user_sees_greeting_menu_and_all_three_onboarding_messages(db_path):
     message = _make_message(777, "ru")
 
     await cmd_start(message, db_path)
 
-    assert message.answer.await_count == 4
-    message.answer.assert_has_calls(
-        [call(get_string("start_greeting", "ru")), *_onboarding_calls("ru")]
-    )
+    assert message.answer.await_count == 5
+    message.answer.assert_has_calls([*_greeting_calls("ru"), *_onboarding_calls("ru")])
 
 
 @pytest.mark.asyncio
@@ -91,11 +93,12 @@ async def test_second_start_from_same_new_user_does_not_repeat_onboarding(db_pat
     message.answer.reset_mock()
     await cmd_start(message, db_path)
 
-    message.answer.assert_awaited_once_with(get_string("start_greeting", "ru"))
+    assert message.answer.await_count == 2
+    message.answer.assert_has_calls(_greeting_calls("ru"))
 
 
 @pytest.mark.asyncio
-async def test_returning_user_start_shows_only_greeting(db_path):
+async def test_returning_user_start_shows_greeting_and_menu_only(db_path):
     set_interface_language(db_path, 444, "en")
     set_onboarding_shown(db_path, 444, True)
     message = _make_message(444, "vi")
@@ -103,7 +106,20 @@ async def test_returning_user_start_shows_only_greeting(db_path):
     await cmd_start(message, db_path)
 
     assert get_interface_language(db_path, 444) == "en"
-    message.answer.assert_awaited_once_with(get_string("start_greeting", "en"))
+    assert message.answer.await_count == 2
+    message.answer.assert_has_calls(_greeting_calls("en"))
+
+
+@pytest.mark.asyncio
+async def test_persistent_start_button_text_triggers_same_flow_as_command(db_path):
+    set_interface_language(db_path, 1010, "ru")
+    set_onboarding_shown(db_path, 1010, True)
+    message = _make_message(1010, "ru", text=get_string("start_button_label", "ru"))
+
+    await cmd_start(message, db_path)
+
+    assert message.answer.await_count == 2
+    message.answer.assert_has_calls(_greeting_calls("ru"))
 
 
 @pytest.mark.asyncio
