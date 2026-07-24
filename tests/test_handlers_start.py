@@ -5,6 +5,10 @@ from unittest.mock import ANY, AsyncMock, call
 
 import pytest
 
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.storage.base import StorageKey
+from aiogram.fsm.storage.memory import MemoryStorage
+
 from bot.handlers.start import cmd_help, cmd_start
 from bot.locales.loader import get_string
 from bot.storage.users import (
@@ -20,6 +24,12 @@ def _make_message(telegram_id: int, language_code: str | None, text: str | None 
     message.from_user = SimpleNamespace(id=telegram_id, language_code=language_code)
     message.text = text
     return message
+
+
+def _make_state(telegram_id: int) -> FSMContext:
+    storage = MemoryStorage()
+    key = StorageKey(bot_id=1, chat_id=telegram_id, user_id=telegram_id)
+    return FSMContext(storage=storage, key=key)
 
 
 def _greeting_calls(language: str):
@@ -40,8 +50,9 @@ def _onboarding_calls(language: str):
 @pytest.mark.asyncio
 async def test_new_user_gets_language_from_supported_language_code(db_path):
     message = _make_message(111, "vi")
+    state = _make_state(111)
 
-    await cmd_start(message, db_path)
+    await cmd_start(message, state, db_path)
 
     assert get_interface_language(db_path, 111) == "vi"
     message.answer.assert_has_calls([*_greeting_calls("vi"), *_onboarding_calls("vi")])
@@ -50,8 +61,9 @@ async def test_new_user_gets_language_from_supported_language_code(db_path):
 @pytest.mark.asyncio
 async def test_new_user_defaults_to_ru_for_unsupported_language_code(db_path):
     message = _make_message(222, "fr")
+    state = _make_state(222)
 
-    await cmd_start(message, db_path)
+    await cmd_start(message, state, db_path)
 
     assert get_interface_language(db_path, 222) == "ru"
     message.answer.assert_has_calls([*_greeting_calls("ru"), *_onboarding_calls("ru")])
@@ -60,8 +72,9 @@ async def test_new_user_defaults_to_ru_for_unsupported_language_code(db_path):
 @pytest.mark.asyncio
 async def test_new_user_defaults_to_ru_when_language_code_missing(db_path):
     message = _make_message(333, None)
+    state = _make_state(333)
 
-    await cmd_start(message, db_path)
+    await cmd_start(message, state, db_path)
 
     assert get_interface_language(db_path, 333) == "ru"
 
@@ -69,8 +82,9 @@ async def test_new_user_defaults_to_ru_when_language_code_missing(db_path):
 @pytest.mark.asyncio
 async def test_new_user_sees_greeting_menu_and_all_three_onboarding_messages(db_path):
     message = _make_message(777, "ru")
+    state = _make_state(777)
 
-    await cmd_start(message, db_path)
+    await cmd_start(message, state, db_path)
 
     assert message.answer.await_count == 5
     message.answer.assert_has_calls([*_greeting_calls("ru"), *_onboarding_calls("ru")])
@@ -79,8 +93,9 @@ async def test_new_user_sees_greeting_menu_and_all_three_onboarding_messages(db_
 @pytest.mark.asyncio
 async def test_new_user_start_persists_onboarding_shown_flag(db_path):
     message = _make_message(888, "ru")
+    state = _make_state(888)
 
-    await cmd_start(message, db_path)
+    await cmd_start(message, state, db_path)
 
     assert get_onboarding_shown(db_path, 888) is True
 
@@ -88,10 +103,11 @@ async def test_new_user_start_persists_onboarding_shown_flag(db_path):
 @pytest.mark.asyncio
 async def test_second_start_from_same_new_user_does_not_repeat_onboarding(db_path):
     message = _make_message(999, "ru")
+    state = _make_state(999)
 
-    await cmd_start(message, db_path)
+    await cmd_start(message, state, db_path)
     message.answer.reset_mock()
-    await cmd_start(message, db_path)
+    await cmd_start(message, state, db_path)
 
     assert message.answer.await_count == 2
     message.answer.assert_has_calls(_greeting_calls("ru"))
@@ -102,8 +118,9 @@ async def test_returning_user_start_shows_greeting_and_menu_only(db_path):
     set_interface_language(db_path, 444, "en")
     set_onboarding_shown(db_path, 444, True)
     message = _make_message(444, "vi")
+    state = _make_state(444)
 
-    await cmd_start(message, db_path)
+    await cmd_start(message, state, db_path)
 
     assert get_interface_language(db_path, 444) == "en"
     assert message.answer.await_count == 2
@@ -115,8 +132,9 @@ async def test_persistent_start_button_text_triggers_same_flow_as_command(db_pat
     set_interface_language(db_path, 1010, "ru")
     set_onboarding_shown(db_path, 1010, True)
     message = _make_message(1010, "ru", text=get_string("start_button_label", "ru"))
+    state = _make_state(1010)
 
-    await cmd_start(message, db_path)
+    await cmd_start(message, state, db_path)
 
     assert message.answer.await_count == 2
     message.answer.assert_has_calls(_greeting_calls("ru"))
@@ -222,21 +240,11 @@ async def test_menu_text_hint_blocked_when_not_whitelisted(db_path):
     callback.message.answer.assert_awaited_once_with(get_string("error_not_whitelisted", "ru"))
 
 
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.storage.base import StorageKey
-from aiogram.fsm.storage.memory import MemoryStorage
-
 from bot.handlers.start import PhotoGenStates, on_menu_photo_gen, on_photo_gen_description
 from bot.keyboards.start import CALLBACK_PHOTO_GEN
 from bot.services import ai_gateway, content_generator
 from bot.services.ai_gateway import AIGatewayTimeoutError
 from bot.storage.users import get_pending_media
-
-
-def _make_state(telegram_id: int) -> FSMContext:
-    storage = MemoryStorage()
-    key = StorageKey(bot_id=1, chat_id=telegram_id, user_id=telegram_id)
-    return FSMContext(storage=storage, key=key)
 
 
 def _make_description_message(telegram_id: int, text: str, language_code: str = "ru"):
@@ -340,3 +348,15 @@ async def test_photo_gen_description_ai_error_replies_friendly_message(db_path, 
     message.answer.assert_awaited_once_with(get_string("error_ai_timeout", "ru"))
     assert get_pending_media(db_path, 3005) is None
     assert await state.get_state() == PhotoGenStates.waiting_for_description.state
+
+
+@pytest.mark.asyncio
+async def test_start_clears_fsm_state_stuck_in_photo_gen(db_path):
+    state = _make_state(3006)
+    await state.update_data(language="ru")
+    await state.set_state(PhotoGenStates.waiting_for_description)
+    message = _make_message(3006, "ru")
+
+    await cmd_start(message, state, db_path)
+
+    assert await state.get_state() is None

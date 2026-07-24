@@ -55,7 +55,8 @@ async def _send_onboarding(message: Message, language: str) -> None:
 
 @router.message(CommandStart())
 @router.message(F.text.in_(_START_BUTTON_LABELS))
-async def cmd_start(message: Message, db_path: str) -> None:
+async def cmd_start(message: Message, state: FSMContext, db_path: str) -> None:
+    await state.set_state(None)
     telegram_id = message.from_user.id
     language = get_interface_language(db_path, telegram_id)
     if language is None:
