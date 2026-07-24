@@ -142,3 +142,81 @@ async def test_help_shows_onboarding_again_for_user_who_already_saw_it(db_path):
 
     assert message.answer.await_count == 3
     message.answer.assert_has_calls(_onboarding_calls("zh"))
+
+
+from bot.handlers.start import on_menu_capabilities, on_menu_create_post, on_menu_text_hint
+from bot.keyboards.start import CALLBACK_CAPABILITIES, CALLBACK_CREATE_POST, CALLBACK_TEXT_HINT
+from bot.storage.whitelist import add_user
+
+
+def _make_callback(telegram_id: int, data: str, language_code: str = "ru"):
+    callback = AsyncMock()
+    callback.from_user = SimpleNamespace(id=telegram_id, language_code=language_code)
+    callback.data = data
+    callback.message = AsyncMock()
+    return callback
+
+
+@pytest.mark.asyncio
+async def test_menu_capabilities_sends_onboarding_capabilities_text(db_path):
+    add_user(db_path, 2001)
+    callback = _make_callback(2001, CALLBACK_CAPABILITIES)
+
+    await on_menu_capabilities(callback, db_path)
+
+    callback.message.answer.assert_awaited_once_with(get_string("onboarding_capabilities", "ru"))
+    callback.answer.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_menu_capabilities_blocked_when_not_whitelisted(db_path):
+    callback = _make_callback(2002, CALLBACK_CAPABILITIES)
+
+    await on_menu_capabilities(callback, db_path)
+
+    callback.message.answer.assert_awaited_once_with(get_string("error_not_whitelisted", "ru"))
+
+
+@pytest.mark.asyncio
+async def test_menu_create_post_shows_submenu_keyboard(db_path, monkeypatch):
+    monkeypatch.setenv("BOT_TOKEN", "123456:test-token")
+    monkeypatch.setenv("AI_PROXY_API_KEY", "test-ai-key")
+    monkeypatch.setenv("OWNER_CHAT_ID", "42")
+    add_user(db_path, 2003)
+    callback = _make_callback(2003, CALLBACK_CREATE_POST)
+
+    await on_menu_create_post(callback, db_path)
+
+    callback.message.answer.assert_awaited_once()
+    _, kwargs = callback.message.answer.call_args
+    assert "reply_markup" in kwargs
+    callback.answer.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_menu_create_post_blocked_when_not_whitelisted(db_path):
+    callback = _make_callback(2004, CALLBACK_CREATE_POST)
+
+    await on_menu_create_post(callback, db_path)
+
+    callback.message.answer.assert_awaited_once_with(get_string("error_not_whitelisted", "ru"))
+
+
+@pytest.mark.asyncio
+async def test_menu_text_hint_sends_hint_text(db_path):
+    add_user(db_path, 2005)
+    callback = _make_callback(2005, CALLBACK_TEXT_HINT)
+
+    await on_menu_text_hint(callback, db_path)
+
+    callback.message.answer.assert_awaited_once_with(get_string("menu_text_generation_hint", "ru"))
+    callback.answer.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_menu_text_hint_blocked_when_not_whitelisted(db_path):
+    callback = _make_callback(2006, CALLBACK_TEXT_HINT)
+
+    await on_menu_text_hint(callback, db_path)
+
+    callback.message.answer.assert_awaited_once_with(get_string("error_not_whitelisted", "ru"))
