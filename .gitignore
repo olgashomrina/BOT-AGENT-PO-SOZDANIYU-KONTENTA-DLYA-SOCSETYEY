@@ -32,3 +32,6 @@ env/
 # ОС
 .DS_Store
 Thumbs.db
+
+# Локальные настройки Claude Code (личные, не для команды)
+.claude/settings.local.json
