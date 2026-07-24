@@ -223,6 +223,9 @@ async def test_run_wrapper_notifies_owner_logs_critical_and_reraises_on_crash(mo
         db_path=":memory:",
         log_level="INFO",
         owner_chat_id=999,
+        site_api_host="0.0.0.0",
+        site_api_port=0,
+        site_media_dir="site_media",
     )
     monkeypatch.setattr(main_module, "load_settings", lambda: fake_settings)
     # Real setup_logging() sets propagate=False on the "bot" logger, which
@@ -240,6 +243,14 @@ async def test_run_wrapper_notifies_owner_logs_critical_and_reraises_on_crash(mo
 
     notify_mock = AsyncMock()
     monkeypatch.setattr(main_module, "notify_owner", notify_mock)
+
+    # This test targets the process-crash wrapper, not the site API server;
+    # stub out the real aiohttp runner/site so run() doesn't bind a real
+    # socket as a side effect of this unrelated unit test.
+    fake_runner = AsyncMock()
+    monkeypatch.setattr(main_module.web, "AppRunner", lambda app: fake_runner)
+    fake_site = AsyncMock()
+    monkeypatch.setattr(main_module.web, "TCPSite", lambda runner, host, port: fake_site)
 
     logger = logging.getLogger("bot")
     previous_propagate = logger.propagate
@@ -273,6 +284,9 @@ async def test_run_wrapper_still_reraises_when_notify_owner_itself_fails(monkeyp
         db_path=":memory:",
         log_level="INFO",
         owner_chat_id=999,
+        site_api_host="0.0.0.0",
+        site_api_port=0,
+        site_media_dir="site_media",
     )
     monkeypatch.setattr(main_module, "load_settings", lambda: fake_settings)
     monkeypatch.setattr(main_module, "setup_logging", lambda level: logging.getLogger("bot"))
@@ -288,6 +302,14 @@ async def test_run_wrapper_still_reraises_when_notify_owner_itself_fails(monkeyp
     monkeypatch.setattr(
         main_module, "notify_owner", AsyncMock(side_effect=RuntimeError("owner notify also failed"))
     )
+
+    # This test targets the process-crash wrapper, not the site API server;
+    # stub out the real aiohttp runner/site so run() doesn't bind a real
+    # socket as a side effect of this unrelated unit test.
+    fake_runner = AsyncMock()
+    monkeypatch.setattr(main_module.web, "AppRunner", lambda app: fake_runner)
+    fake_site = AsyncMock()
+    monkeypatch.setattr(main_module.web, "TCPSite", lambda runner, host, port: fake_site)
 
     logger = logging.getLogger("bot")
     previous_propagate = logger.propagate

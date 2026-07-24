@@ -12,6 +12,7 @@ CALLBACK_MORE_PREFIX = "refine:more"
 CALLBACK_SHORTEN_PREFIX = "refine:shorten"
 CALLBACK_PUBLISH_PREFIX = "refine:publish"
 CALLBACK_IMAGE_PREFIX = "refine:image"
+CALLBACK_SITE_PUSH_PREFIX = "site:push"
 
 
 def build_refine_keyboard(platform: Platform, variant_index: int, lang: str) -> InlineKeyboardMarkup:
@@ -37,4 +38,12 @@ def build_refine_keyboard(platform: Platform, variant_index: int, lang: str) -> 
             callback_data=f"{CALLBACK_IMAGE_PREFIX}:{platform}:{variant_index}",
         )
     ]
-    return InlineKeyboardMarkup(inline_keyboard=[buttons, publish_button, image_button])
+    site_push_button = [
+        InlineKeyboardButton(
+            text=get_string("site_push_button", lang),
+            callback_data=f"{CALLBACK_SITE_PUSH_PREFIX}:{platform}:{variant_index}",
+        )
+    ]
+    return InlineKeyboardMarkup(
+        inline_keyboard=[buttons, publish_button, image_button, site_push_button]
+    )

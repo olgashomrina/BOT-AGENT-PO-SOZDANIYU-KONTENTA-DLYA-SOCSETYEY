@@ -90,3 +90,51 @@ def test_load_settings_content_variants_count_override(monkeypatch, tmp_path):
     settings = load_settings(env_file=_missing_env_file(tmp_path))
 
     assert settings.content_variants_count == 5
+
+
+def test_load_settings_mini_app_url_defaults_to_empty(monkeypatch, tmp_path):
+    _set_required_env(monkeypatch)
+    monkeypatch.delenv("MINI_APP_URL", raising=False)
+
+    settings = load_settings(env_file=_missing_env_file(tmp_path))
+
+    assert settings.mini_app_url == ""
+
+
+def test_load_settings_site_api_defaults(monkeypatch, tmp_path):
+    _set_required_env(monkeypatch)
+    monkeypatch.delenv("SITE_API_HOST", raising=False)
+    monkeypatch.delenv("SITE_API_PORT", raising=False)
+    monkeypatch.delenv("SITE_MEDIA_DIR", raising=False)
+
+    settings = load_settings(env_file=_missing_env_file(tmp_path))
+
+    assert settings.site_api_host == "0.0.0.0"
+    assert settings.site_api_port == 8080
+    assert settings.site_media_dir == "site_media"
+
+
+def test_load_settings_reads_site_api_overrides(monkeypatch, tmp_path):
+    _set_required_env(
+        monkeypatch,
+        {
+            "MINI_APP_URL": "https://olgashomrina.github.io/my-lending-test/",
+            "SITE_API_HOST": "127.0.0.1",
+            "SITE_API_PORT": "9090",
+            "SITE_MEDIA_DIR": "custom_media",
+        },
+    )
+
+    settings = load_settings(env_file=_missing_env_file(tmp_path))
+
+    assert settings.mini_app_url == "https://olgashomrina.github.io/my-lending-test/"
+    assert settings.site_api_host == "127.0.0.1"
+    assert settings.site_api_port == 9090
+    assert settings.site_media_dir == "custom_media"
+
+
+def test_load_settings_raises_when_site_api_port_not_numeric(monkeypatch, tmp_path):
+    _set_required_env(monkeypatch, {"SITE_API_PORT": "not-a-number"})
+
+    with pytest.raises(ConfigError):
+        load_settings(env_file=_missing_env_file(tmp_path))

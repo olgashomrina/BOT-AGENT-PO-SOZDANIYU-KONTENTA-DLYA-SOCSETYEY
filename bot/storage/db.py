@@ -30,6 +30,16 @@ CREATE TABLE IF NOT EXISTS style_examples (
     example_text TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS site_content (
+    page TEXT NOT NULL,
+    block_id TEXT NOT NULL,
+    text TEXT,
+    photo_file_id TEXT,
+    photo_static_path TEXT,
+    updated_at TEXT,
+    PRIMARY KEY (page, block_id)
+);
 """
 
 

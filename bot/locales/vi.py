@@ -161,4 +161,16 @@ STRINGS = {
         "Xong! Đã lưu số ví dụ phong cách: {count}. Tôi sẽ dựa vào chúng "
         "khi tạo các bài đăng mới."
     ),
+    "site_menu_intro": (
+        "Ở đây bạn có thể mở trang web hoặc lấy nội dung thẻ dịch vụ về để chỉnh sửa."
+    ),
+    "open_site_button": "TRANG WEB CỦA TÔI",
+    "pull_from_site_button": "Lấy thẻ 'Dịch vụ'",
+    "site_push_button": "Đăng lên trang web",
+    "site_pull_empty": (
+        "Chưa có nội dung nào được đăng cho thẻ này trên trang web — hãy "
+        "dùng nút 'Đăng lên trang web' trước."
+    ),
+    "site_push_success": "Xong! Thẻ trên trang web đã được cập nhật.",
+    "site_push_photo_failed": "Không thể tải ảnh cho trang web — vui lòng thử lại sau.",
 }

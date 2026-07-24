@@ -23,6 +23,10 @@ DEFAULT_AI_GATEWAY_IMAGE_SIZE = "1024x1024"
 DEFAULT_AI_GATEWAY_MAX_RETRIES = 2
 DEFAULT_AI_GATEWAY_TIMEOUT_SECONDS = 30.0
 DEFAULT_CONTENT_VARIANTS_COUNT = 2
+DEFAULT_MINI_APP_URL = ""
+DEFAULT_SITE_API_HOST = "0.0.0.0"
+DEFAULT_SITE_API_PORT = 8080
+DEFAULT_SITE_MEDIA_DIR = "site_media"
 
 
 class ConfigError(Exception):
@@ -47,6 +51,10 @@ class Settings:
     monthly_limit: int
     db_path: str
     log_level: str
+    mini_app_url: str
+    site_api_host: str
+    site_api_port: int
+    site_media_dir: str
 
 
 def _require(key: str) -> str:
@@ -111,6 +119,15 @@ def load_settings(env_file: str | None = None) -> Settings:
     except ValueError as exc:
         raise ConfigError("CONTENT_VARIANTS_COUNT должен быть целым числом.") from exc
 
+    mini_app_url = os.environ.get("MINI_APP_URL", DEFAULT_MINI_APP_URL)
+    site_api_host = os.environ.get("SITE_API_HOST", DEFAULT_SITE_API_HOST)
+    site_media_dir = os.environ.get("SITE_MEDIA_DIR", DEFAULT_SITE_MEDIA_DIR)
+
+    try:
+        site_api_port = int(os.environ.get("SITE_API_PORT", DEFAULT_SITE_API_PORT))
+    except ValueError as exc:
+        raise ConfigError("SITE_API_PORT должен быть целым числом.") from exc
+
     return Settings(
         bot_token=bot_token,
         ai_proxy_api_key=ai_proxy_api_key,
@@ -128,4 +145,8 @@ def load_settings(env_file: str | None = None) -> Settings:
         monthly_limit=monthly_limit,
         db_path=db_path,
         log_level=log_level,
+        mini_app_url=mini_app_url,
+        site_api_host=site_api_host,
+        site_api_port=site_api_port,
+        site_media_dir=site_media_dir,
     )

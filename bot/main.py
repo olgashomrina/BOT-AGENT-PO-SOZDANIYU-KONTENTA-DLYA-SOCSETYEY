@@ -4,6 +4,7 @@ import asyncio
 import sys
 
 from aiogram import Bot, Dispatcher
+from aiohttp import web
 
 from bot.config import load_settings
 from bot.handlers.channel import router as channel_router
@@ -12,11 +13,13 @@ from bot.handlers.errors import router as errors_router
 from bot.handlers.language import router as language_router
 from bot.handlers.refine import router as refine_router
 from bot.handlers.settov import router as settov_router
+from bot.handlers.site import router as site_router
 from bot.handlers.start import router as start_router
 from bot.logging_config import setup_logging
 from bot.middlewares.rate_limit_middleware import RateLimitMiddleware
 from bot.middlewares.whitelist_middleware import WhitelistMiddleware
 from bot.services.owner_notifier import notify_owner
+from bot.services.site_api import build_site_api_app
 from bot.storage.db import init_db
 
 _OWNER_CRASH_NOTICE = (
@@ -36,6 +39,7 @@ def build_dispatcher(daily_limit: int, monthly_limit: int) -> Dispatcher:
     dispatcher.include_router(start_router)
     dispatcher.include_router(language_router)
     dispatcher.include_router(channel_router)
+    dispatcher.include_router(site_router)
     dispatcher.include_router(settov_router)
     dispatcher.include_router(content_router)
     dispatcher.include_router(refine_router)
@@ -54,6 +58,12 @@ async def run() -> None:
     bot = Bot(token=settings.bot_token)
     dispatcher = build_dispatcher(settings.daily_limit, settings.monthly_limit)
 
+    site_api_app = build_site_api_app(settings.db_path, settings.site_media_dir)
+    runner = web.AppRunner(site_api_app)
+    await runner.setup()
+    site = web.TCPSite(runner, settings.site_api_host, settings.site_api_port)
+    await site.start()
+
     logger.info("Бот запускается (long polling)")
     try:
         await dispatcher.start_polling(bot, db_path=settings.db_path)
@@ -69,6 +79,7 @@ async def run() -> None:
             logger.critical("Не удалось уведомить владельца о падении бота", exc_info=True)
         raise
     finally:
+        await runner.cleanup()
         await bot.session.close()
 
 

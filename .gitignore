@@ -9,6 +9,11 @@
 *.db
 *.db-journal
 
+# Медиафайлы сайта, скачанные в рантайме (media_cache.cache_photo) —
+# .gitkeep оставляем, чтобы папка существовала для aiohttp add_static
+site_media/*
+!site_media/.gitkeep
+
 # Логи
 logs/
 *.log
