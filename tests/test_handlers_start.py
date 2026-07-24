@@ -220,3 +220,123 @@ async def test_menu_text_hint_blocked_when_not_whitelisted(db_path):
     await on_menu_text_hint(callback, db_path)
 
     callback.message.answer.assert_awaited_once_with(get_string("error_not_whitelisted", "ru"))
+
+
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.storage.base import StorageKey
+from aiogram.fsm.storage.memory import MemoryStorage
+
+from bot.handlers.start import PhotoGenStates, on_menu_photo_gen, on_photo_gen_description
+from bot.keyboards.start import CALLBACK_PHOTO_GEN
+from bot.services import ai_gateway, content_generator
+from bot.services.ai_gateway import AIGatewayTimeoutError
+from bot.storage.users import get_pending_media
+
+
+def _make_state(telegram_id: int) -> FSMContext:
+    storage = MemoryStorage()
+    key = StorageKey(bot_id=1, chat_id=telegram_id, user_id=telegram_id)
+    return FSMContext(storage=storage, key=key)
+
+
+def _make_description_message(telegram_id: int, text: str, language_code: str = "ru"):
+    message = AsyncMock()
+    message.from_user = SimpleNamespace(id=telegram_id, language_code=language_code)
+    message.text = text
+    message.chat = SimpleNamespace(id=telegram_id)
+    return message
+
+
+def _fake_sent_photo_message(file_id: str = "telegram-cdn-file-id"):
+    return SimpleNamespace(photo=[SimpleNamespace(file_id=file_id)])
+
+
+@pytest.mark.asyncio
+async def test_menu_photo_gen_prompts_for_description_and_sets_state(db_path):
+    add_user(db_path, 3001)
+    state = _make_state(3001)
+    callback = _make_callback(3001, CALLBACK_PHOTO_GEN)
+
+    await on_menu_photo_gen(callback, state, db_path)
+
+    callback.message.answer.assert_awaited_once_with(get_string("photo_gen_prompt", "ru"))
+    assert await state.get_state() == PhotoGenStates.waiting_for_description.state
+    callback.answer.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_menu_photo_gen_blocked_when_not_whitelisted(db_path):
+    state = _make_state(3002)
+    callback = _make_callback(3002, CALLBACK_PHOTO_GEN)
+
+    await on_menu_photo_gen(callback, state, db_path)
+
+    callback.message.answer.assert_awaited_once_with(get_string("error_not_whitelisted", "ru"))
+    assert await state.get_state() is None
+
+
+@pytest.mark.asyncio
+async def test_photo_gen_description_generates_and_attaches_image(db_path, monkeypatch):
+    add_user(db_path, 3003)
+    state = _make_state(3003)
+    await state.update_data(language="ru")
+    await state.set_state(PhotoGenStates.waiting_for_description)
+
+    mock_prompt = AsyncMock(return_value="a vivid english prompt")
+    mock_generate_image = AsyncMock(return_value="https://vendor.example/generated.png")
+    monkeypatch.setattr(content_generator, "generate_image_prompt", mock_prompt)
+    monkeypatch.setattr(ai_gateway, "generate_image", mock_generate_image)
+
+    message = _make_description_message(3003, "закат над морем, тёплые тона")
+    bot = AsyncMock()
+    bot.send_photo = AsyncMock(return_value=_fake_sent_photo_message("telegram-cdn-file-id"))
+
+    await on_photo_gen_description(message, state, db_path, bot)
+
+    mock_prompt.assert_awaited_once_with("закат над морем, тёплые тона")
+    mock_generate_image.assert_awaited_once_with("a vivid english prompt")
+    bot.send_photo.assert_awaited_once()
+    args, kwargs = bot.send_photo.call_args
+    assert args[0] == 3003
+    assert kwargs["photo"] == "https://vendor.example/generated.png"
+    assert get_pending_media(db_path, 3003) == ("telegram-cdn-file-id", "photo")
+    assert await state.get_state() is None
+    message.answer.assert_awaited_once_with(get_string("photo_gen_ready", "ru"))
+
+
+@pytest.mark.asyncio
+async def test_photo_gen_description_empty_text_reprompts_without_calling_ai(db_path, monkeypatch):
+    state = _make_state(3004)
+    await state.update_data(language="ru")
+    await state.set_state(PhotoGenStates.waiting_for_description)
+
+    mock_prompt = AsyncMock()
+    monkeypatch.setattr(content_generator, "generate_image_prompt", mock_prompt)
+
+    message = _make_description_message(3004, None)
+    bot = AsyncMock()
+
+    await on_photo_gen_description(message, state, db_path, bot)
+
+    mock_prompt.assert_not_awaited()
+    message.answer.assert_awaited_once_with(get_string("photo_gen_prompt", "ru"))
+    assert await state.get_state() == PhotoGenStates.waiting_for_description.state
+
+
+@pytest.mark.asyncio
+async def test_photo_gen_description_ai_error_replies_friendly_message(db_path, monkeypatch):
+    state = _make_state(3005)
+    await state.update_data(language="ru")
+    await state.set_state(PhotoGenStates.waiting_for_description)
+
+    mock_prompt = AsyncMock(side_effect=AIGatewayTimeoutError("timed out"))
+    monkeypatch.setattr(content_generator, "generate_image_prompt", mock_prompt)
+
+    message = _make_description_message(3005, "закат")
+    bot = AsyncMock()
+
+    await on_photo_gen_description(message, state, db_path, bot)
+
+    message.answer.assert_awaited_once_with(get_string("error_ai_timeout", "ru"))
+    assert get_pending_media(db_path, 3005) is None
+    assert await state.get_state() == PhotoGenStates.waiting_for_description.state
