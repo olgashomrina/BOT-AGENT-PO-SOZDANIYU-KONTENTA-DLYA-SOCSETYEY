@@ -33,6 +33,7 @@
       var photoElement = document.getElementById("pilot-card-photo");
       if (photoElement && data.photo_path) {
         photoElement.src = apiBase + data.photo_path;
+        photoElement.style.display = "";
       }
     })
     .catch(function () {
