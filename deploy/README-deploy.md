@@ -313,6 +313,56 @@ git log -p -- .env
 
 ---
 
+## Фаза 17: HTTPS для API сайта (пилот bot_site)
+
+Бот теперь отдаёт содержимое карточки сайта через встроенный веб-сервер
+(порт задаётся `SITE_API_PORT`, по умолчанию 8080). Сайт на GitHub Pages
+работает по HTTPS и не сможет обратиться к обычному `http://IP:порт`
+(браузеры блокируют это как "mixed content") — поэтому перед этим сервером
+нужен `nginx` с бесплатным сертификатом Let's Encrypt.
+
+Своего домена нет — используем бесплатный адрес вида
+`147-45-175-189.sslip.io` (вместо `147-45-175-189` подставьте реальный IP
+сервера через дефис) — он автоматически резолвится на сервер по IP.
+
+Выполните на сервере (через SSH):
+
+```bash
+sudo apt install -y nginx certbot python3-certbot-nginx
+
+sudo tee /etc/nginx/sites-available/content-bot-site-api > /dev/null <<'NGINX'
+server {
+    listen 80;
+    server_name 147-45-175-189.sslip.io;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+    }
+}
+NGINX
+
+sudo ln -s /etc/nginx/sites-available/content-bot-site-api /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+
+sudo certbot --nginx -d 147-45-175-189.sslip.io
+```
+
+`certbot` спросит email (для уведомлений об истечении сертификата) и
+согласие с условиями — сертификат обновляется автоматически, ничего больше
+делать не нужно.
+
+Проверка: `curl https://147-45-175-189.sslip.io/content/services/card_1`
+должен ответить `{"error": "not_found"}` (или реальным содержимым, если
+уже что-то залито через бота) без ошибок сертификата.
+
+Значение `147-45-175-189.sslip.io` (со своим реальным IP) впишите в
+`data-api-base` в `bot_site/site-content-loader.js` при подключении на
+сайте (см. `bot_site/README.md`).
+
+---
+
 ## Итог: чек-лист готовности
 
 - [ ] Сервер на Timeweb Cloud создан, оплата в рублях подтверждена
