@@ -41,3 +41,26 @@ async def test_get_content_with_no_photo_returns_null_photo_path(db_path, tmp_pa
         body = await response.json()
 
     assert body == {"text": "Только текст", "photo_path": None}
+
+
+@pytest.mark.asyncio
+async def test_get_content_success_has_cors_header(db_path, tmp_path):
+    upsert_site_content(
+        db_path, "services", "card_1", "Текст карточки", "file-id", "/media/services/card_1.jpg"
+    )
+    app = build_site_api_app(db_path, media_dir=str(tmp_path))
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.get("/content/services/card_1")
+
+    assert response.headers["Access-Control-Allow-Origin"] == "*"
+
+
+@pytest.mark.asyncio
+async def test_get_content_404_has_cors_header(db_path, tmp_path):
+    app = build_site_api_app(db_path, media_dir=str(tmp_path))
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.get("/content/services/unknown")
+
+    assert response.headers["Access-Control-Allow-Origin"] == "*"

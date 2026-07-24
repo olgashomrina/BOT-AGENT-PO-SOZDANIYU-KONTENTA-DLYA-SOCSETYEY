@@ -20,6 +20,13 @@ async def handle_get_content(request: web.Request) -> web.Response:
 
     content = get_site_content(db_path, page, block_id)
     if content is None:
-        return web.json_response({"error": "not_found"}, status=404)
+        return web.json_response(
+            {"error": "not_found"},
+            status=404,
+            headers={"Access-Control-Allow-Origin": "*"},
+        )
 
-    return web.json_response({"text": content.text, "photo_path": content.photo_static_path})
+    return web.json_response(
+        {"text": content.text, "photo_path": content.photo_static_path},
+        headers={"Access-Control-Allow-Origin": "*"},
+    )
