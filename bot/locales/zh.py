@@ -121,4 +121,11 @@ STRINGS = {
     "settov_finished_confirmation": (
         "完成！已保存 {count} 个风格示例。生成新帖子时我会参考它们。"
     ),
+    "site_menu_intro": "在这里可以打开您的网站，或取回服务卡片内容进行编辑。",
+    "open_site_button": "我的网站",
+    "pull_from_site_button": "取回'服务'卡片",
+    "site_push_button": "发布到网站",
+    "site_pull_empty": "该卡片尚未发布到网站——请先使用'发布到网站'按钮。",
+    "site_push_success": "完成！网站上的卡片已更新。",
+    "site_push_photo_failed": "未能下载网站用的图片——请稍后重试。",
 }

@@ -160,4 +160,16 @@ STRINGS = {
         "Done! Saved style examples: {count}. I'll take them into account "
         "when generating new posts."
     ),
+    "site_menu_intro": (
+        "Here you can open your site or pull the service card content for editing."
+    ),
+    "open_site_button": "MY SITE",
+    "pull_from_site_button": "Pull the 'Services' card",
+    "site_push_button": "Push to site",
+    "site_pull_empty": (
+        "Nothing has been pushed to this card on the site yet — use the "
+        "'Push to site' button first."
+    ),
+    "site_push_success": "Done! The card on the site has been updated.",
+    "site_push_photo_failed": "Couldn't download the photo for the site — please try again in a moment.",
 }
