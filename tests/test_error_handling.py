@@ -200,23 +200,13 @@ async def test_unhandled_exception_in_a_handler_does_not_crash_the_dispatcher(db
     dispatcher.include_router(buggy_router)
     dispatcher.include_router(errors_router)
 
-    try:
-        bot = AsyncMock()
-        update = _make_real_update()
+    bot = AsyncMock()
+    update = _make_real_update()
 
-        result = await dispatcher.feed_update(bot, update, db_path=db_path)
+    result = await dispatcher.feed_update(bot, update, db_path=db_path)
 
-        assert result is None
-        bot.send_message.assert_awaited_once_with(TELEGRAM_ID, get_string("error_unexpected", "ru"))
-    finally:
-        # errors_router is the real module-level singleton from
-        # bot/handlers/errors.py (used deliberately, see comment above), and
-        # aiogram permanently rejects re-attaching a router that already has
-        # a parent. Detach it here so later tests that build a real
-        # Dispatcher via bot.main.build_dispatcher() (e.g.
-        # test_main_site_api_wiring.py) don't hit
-        # "RuntimeError: Router is already attached to ...".
-        errors_router._parent_router = None
+    assert result is None
+    bot.send_message.assert_awaited_once_with(TELEGRAM_ID, get_string("error_unexpected", "ru"))
 
 
 # --- Phase 8: process-level crash handling in bot/main.py ---
