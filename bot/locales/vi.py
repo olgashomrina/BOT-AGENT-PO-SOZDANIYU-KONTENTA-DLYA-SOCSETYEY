@@ -2,10 +2,13 @@ from __future__ import annotations
 
 STRINGS = {
     "start_greeting": (
-        "Xin chào! Tôi là bot trợ lý tạo nội dung cho mạng xã hội.\n\n"
-        "Hãy gửi cho tôi đường liên kết đến bài viết, tin nhắn thoại, hoặc "
-        "chỉ cần văn bản — tôi sẽ chuẩn bị vài phương án bài đăng sẵn sàng "
-        "sử dụng, riêng cho Telegram và riêng cho VK.\n\n"
+        "Xin chào! Tôi là bot trợ lý tạo nội dung cho mạng xã hội và cho "
+        "trang web cá nhân của bạn — tôi viết theo phong cách riêng độc "
+        "đáo của bạn, bằng tiếng Nga, tiếng Anh, tiếng Trung và tiếng "
+        "Việt.\n\n"
+        "Hãy gửi cho tôi đường liên kết đến bài viết, tin nhắn thoại, "
+        "văn bản, hoặc mô tả hình ảnh bạn muốn — tôi sẽ chuẩn bị các "
+        "phương án bài đăng sẵn sàng sử dụng cho Telegram và VK.\n\n"
         "Để đổi ngôn ngữ giao diện, hãy dùng lệnh /language."
     ),
     "language_prompt": "Chọn ngôn ngữ giao diện:",
@@ -56,17 +59,20 @@ STRINGS = {
     "onboarding_capabilities": (
         "Tôi có thể làm gì:\n\n"
         "— Nhận đường liên kết bài viết, tin nhắn thoại, hoặc văn bản "
-        "thường.\n"
-        "— Chuẩn bị nhiều phương án bài đăng, riêng cho Telegram và riêng "
-        "cho VK.\n"
-        "— Đính kèm ảnh hoặc video vào bài đăng — ảnh của bạn hoặc ảnh do "
-        "AI tạo.\n"
-        "— Đăng bài trực tiếp vào kênh Telegram của bạn chỉ bằng một nút "
-        "bấm (lệnh /channel).\n\n"
+        "thường — và chuẩn bị nhiều phương án bài đăng, riêng cho "
+        "Telegram và riêng cho VK, viết theo phong cách riêng của "
+        "bạn.\n"
+        "— Viết bằng tiếng Nga, tiếng Anh, tiếng Trung và tiếng Việt.\n"
+        "— Có thể tạo hình ảnh theo mô tả của bạn — riêng lẻ hoặc bổ "
+        "sung cho bài đăng.\n"
+        "— Đăng bài trực tiếp vào kênh Telegram của bạn chỉ bằng một "
+        "nút bấm (lệnh /channel).\n"
+        "— Lấy và cập nhật thẻ dịch vụ trên trang web cá nhân của bạn "
+        "ngay trong chat (lệnh /site).\n\n"
         "Các lệnh: /start — bắt đầu lại, /language — đổi ngôn ngữ giao "
-        "diện, /channel — thiết lập kênh, /clear_media — bỏ tệp đính kèm, "
-        "/settov — dạy bot phong cách viết của bạn, /help — hiển thị lại "
-        "tin nhắn này."
+        "diện, /channel — thiết lập kênh, /site — làm việc với trang "
+        "web, /clear_media — bỏ tệp đính kèm, /settov — dạy bot phong "
+        "cách viết của bạn, /help — hiển thị lại tin nhắn này."
     ),
     "onboarding_settov": (
         "Muốn bài đăng nghe giống văn phong của bạn? Hãy gửi lệnh /settov "
@@ -77,6 +83,23 @@ STRINGS = {
         "Bắt đầu nhanh: hãy gửi cho tôi một đường liên kết bài viết hoặc "
         "một tin nhắn thoại — chỉ sau vài giây bạn sẽ nhận được các "
         "phương án bài đăng sẵn sàng sử dụng."
+    ),
+    "start_button_label": "Bắt đầu",
+    "menu_intro": "Tiếp theo chúng ta làm gì?",
+    "menu_capabilities_button": "Tôi có thể làm gì",
+    "menu_cta_button": "Tạo bài đăng ngay",
+    "menu_text_generation_button": "Tạo văn bản",
+    "menu_text_generation_hint": (
+        "Hãy gửi cho tôi đường liên kết bài viết, tin nhắn thoại, hoặc "
+        "văn bản — tôi sẽ chuẩn bị các phương án bài đăng cho Telegram "
+        "và VK."
+    ),
+    "menu_photo_generation_button": "Tạo ảnh",
+    "photo_gen_prompt": "Hãy mô tả hình ảnh bạn muốn — tôi sẽ tạo nó bằng AI.",
+    "photo_gen_ready": (
+        "Hình ảnh đã sẵn sàng! Bây giờ hãy gửi văn bản, đường liên kết "
+        "bài viết, hoặc tin nhắn thoại — tôi sẽ chuẩn bị bài đăng kèm "
+        "hình ảnh này."
     ),
     "transcript_preview": (
         "Đây là nội dung tôi nghe được trong tin nhắn thoại của bạn:\n\n"
