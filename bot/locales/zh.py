@@ -2,9 +2,10 @@ from __future__ import annotations
 
 STRINGS = {
     "start_greeting": (
-        "你好！我是帮你创作社交媒体内容的机器人助手。\n\n"
-        "给我发送一个文章链接、一条语音消息，或者直接发送文字——我会分别为 "
-        "Telegram 和 VK 准备好几个可直接使用的帖子方案。\n\n"
+        "你好！我是帮你创作社交媒体内容和个人网站内容的机器人助手——我会用您"
+        "独特的个人风格写作，支持俄语、英语、中文和越南语。\n\n"
+        "给我发送一个文章链接、一条语音消息、文字，或描述您想要的图片——我会"
+        "为 Telegram 和 VK 准备好可直接使用的帖子方案。\n\n"
         "如需更改界面语言，请使用 /language 命令。"
     ),
     "language_prompt": "请选择界面语言：",
@@ -37,13 +38,16 @@ STRINGS = {
     ),
     "onboarding_capabilities": (
         "我能做什么：\n\n"
-        "——接收文章链接、语音消息或直接发送的文字。\n"
-        "——分别为 Telegram 和 VK 准备好几个帖子方案。\n"
-        "——为帖子附加图片或视频——可以是您自己的，也可以是 AI 生成的。\n"
-        "——一键将帖子直接发布到您的 Telegram 频道（/channel 命令）。\n\n"
+        "——接收文章链接、语音消息或直接发送的文字——并分别为 Telegram 和 "
+        "VK 准备好几个帖子方案，用您独特的个人风格写作。\n"
+        "——支持俄语、英语、中文和越南语写作。\n"
+        "——可以根据您的描述生成图片——单独使用，或作为帖子的补充。\n"
+        "——一键将帖子直接发布到您的 Telegram 频道（/channel 命令）。\n"
+        "——直接在聊天中获取并更新您个人网站上的服务卡片（/site 命令）。\n\n"
         "命令列表：/start — 重新开始，/language — 切换界面语言，"
-        "/channel — 设置频道，/clear_media — 移除已附加的媒体，"
-        "/settov — 让机器人学习您的写作风格，/help — 再次显示此消息。"
+        "/channel — 设置频道，/site — 网站相关操作，/clear_media — 移除"
+        "已附加的媒体，/settov — 让机器人学习您的写作风格，/help — 再次"
+        "显示此消息。"
     ),
     "onboarding_settov": (
         "希望帖子更贴近您自己的风格吗？发送 /settov 命令，并提交几篇您以前"
@@ -52,6 +56,21 @@ STRINGS = {
     "onboarding_quick_start": (
         "快速开始：给我发送一个文章链接或一条语音消息——几秒钟后您就会收到"
         "可直接使用的帖子方案。"
+    ),
+    "start_button_label": "开始",
+    "menu_intro": "接下来做什么？",
+    "menu_capabilities_button": "我能做什么",
+    "menu_cta_button": "立即创建帖子",
+    "menu_text_generation_button": "生成文字",
+    "menu_text_generation_hint": (
+        "给我发送文章链接、语音消息或文字——我会为 Telegram 和 VK 准备好"
+        "帖子方案。"
+    ),
+    "menu_photo_generation_button": "生成图片",
+    "photo_gen_prompt": "请描述您想要的图片——我会用 AI 生成它。",
+    "photo_gen_ready": (
+        "图片已生成！现在请发送文字、文章链接或语音消息——我会为您准备带有"
+        "这张图片的帖子。"
     ),
     "transcript_preview": (
         "这是我在你的语音消息中听到的内容：\n\n{text}\n\n内容正确吗？"

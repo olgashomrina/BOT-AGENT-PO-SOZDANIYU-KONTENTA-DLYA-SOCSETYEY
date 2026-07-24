@@ -2,10 +2,12 @@ from __future__ import annotations
 
 STRINGS = {
     "start_greeting": (
-        "Hi! I'm a bot assistant for creating social media content.\n\n"
-        "Send me a link to an article, a voice message, or just plain text — "
-        "and I'll prepare several ready-to-use post variants, separately for "
-        "Telegram and for VK.\n\n"
+        "Hi! I'm a bot assistant for creating social media content and "
+        "for your personal website — I write in your own unique style, "
+        "in Russian, English, Chinese, and Vietnamese.\n\n"
+        "Send me a link to an article, a voice message, text, or "
+        "describe the image you want — and I'll prepare ready-to-use "
+        "post variants for Telegram and VK.\n\n"
         "To change the interface language, use the /language command."
     ),
     "language_prompt": "Choose your interface language:",
@@ -54,17 +56,21 @@ STRINGS = {
     ),
     "onboarding_capabilities": (
         "What I can do:\n\n"
-        "— Accept a link to an article, a voice message, or plain text.\n"
-        "— Prepare several post variants, separately for Telegram and for "
-        "VK.\n"
-        "— Attach a photo or video to a post — your own or an "
-        "AI-generated one.\n"
+        "— Accept a link to an article, a voice message, or plain "
+        "text — and prepare several post variants, separately for "
+        "Telegram and for VK, written in your own individual style.\n"
+        "— Write in Russian, English, Chinese, and Vietnamese.\n"
+        "— Generate an image from your description — on its own or as "
+        "an addition to a post.\n"
         "— Publish a post straight to your Telegram channel with one "
-        "button (the /channel command).\n\n"
+        "button (the /channel command).\n"
+        "— Pull and update the services card on your personal website "
+        "right from the chat (the /site command).\n\n"
         "Commands: /start — start over, /language — change interface "
-        "language, /channel — set up a channel, /clear_media — remove the "
-        "attached media, /settov — teach the bot your writing style, "
-        "/help — show this message again."
+        "language, /channel — set up a channel, /site — work with the "
+        "website, /clear_media — remove the attached media, /settov — "
+        "teach the bot your writing style, /help — show this message "
+        "again."
     ),
     "onboarding_settov": (
         "Want posts that sound like you? Send the /settov command and "
@@ -74,6 +80,21 @@ STRINGS = {
     "onboarding_quick_start": (
         "Quick start: send me a link to an article or a voice message — "
         "and in a few seconds you'll get ready-to-use post variants."
+    ),
+    "start_button_label": "Start",
+    "menu_intro": "What shall we do next?",
+    "menu_capabilities_button": "What I can do",
+    "menu_cta_button": "Create a post now",
+    "menu_text_generation_button": "Text generation",
+    "menu_text_generation_hint": (
+        "Send me a link to an article, a voice message, or text — "
+        "I'll prepare post variants for Telegram and VK."
+    ),
+    "menu_photo_generation_button": "Photo generation",
+    "photo_gen_prompt": "Describe the image you want — I'll generate it using AI.",
+    "photo_gen_ready": (
+        "The image is ready! Now send me text, a link to an article, "
+        "or a voice message — I'll prepare a post with this image."
     ),
     "transcript_preview": (
         "Here's what I heard in your voice message:\n\n{text}\n\n"
