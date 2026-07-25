@@ -16,9 +16,11 @@ DEFAULT_AI_GATEWAY_TRANSCRIPTION_MODEL = "stt-openai/whisper-1"
 # dall-e-3 (vsegpt.ru's own docs example) is currently rejected by their
 # proxy with "Temporarily disabled due to OpenAI blocking" (confirmed via a
 # live request, 2026-07-20) — not a vsegpt.ru catalog-naming mismatch this
-# time, an actual upstream OpenAI-side block. Using Flux 2 [klein] instead,
-# which vsegpt.ru's own catalog highlights for speed/cost-efficiency.
-DEFAULT_AI_GATEWAY_IMAGE_MODEL = "img-flux/flux-2-klein-4b"
+# time, an actual upstream OpenAI-side block. Flux 2 [klein] was used as a
+# budget fallback, but its output is noticeably less photorealistic. Switched
+# to FLUX1.1 Pro for better realism (2026-07-25) — requires vsegpt.ru's paid
+# "Профессиональный" tier to be active; falls back to klein via env var if not.
+DEFAULT_AI_GATEWAY_IMAGE_MODEL = "img-flux/pro1.1"
 DEFAULT_AI_GATEWAY_IMAGE_SIZE = "1024x1024"
 DEFAULT_AI_GATEWAY_MAX_RETRIES = 2
 DEFAULT_AI_GATEWAY_TIMEOUT_SECONDS = 30.0
