@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import logging
 
@@ -59,8 +60,9 @@ def _chat_response(content: str) -> httpx.Response:
     return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
 
 
-def _image_response(url: str) -> httpx.Response:
-    return httpx.Response(200, json={"data": [{"url": url}]})
+def _image_response(raw_bytes: bytes) -> httpx.Response:
+    b64 = base64.b64encode(raw_bytes).decode()
+    return httpx.Response(200, json={"data": [{"b64_json": b64}]})
 
 
 # --- generate_text: success / structural failures (no retry) ---
@@ -195,20 +197,31 @@ async def test_transcribe_empty_result_raises_transcription_error():
 @respx.mock
 @pytest.mark.asyncio
 async def test_generate_image_success():
-    route = respx.post(IMAGE_URL).mock(
-        return_value=_image_response("https://cdn.example.test/generated.png")
-    )
+    route = respx.post(IMAGE_URL).mock(return_value=_image_response(b"fake-png-bytes"))
 
     result = await generate_image("a cat astronaut")
 
-    assert result == "https://cdn.example.test/generated.png"
+    assert result == b"fake-png-bytes"
     assert route.call_count == 1
 
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_generate_image_empty_url_raises_invalid_response_error():
-    route = respx.post(IMAGE_URL).mock(return_value=_image_response(""))
+async def test_generate_image_empty_b64_json_raises_invalid_response_error():
+    route = respx.post(IMAGE_URL).mock(return_value=httpx.Response(200, json={"data": [{"b64_json": ""}]}))
+
+    with pytest.raises(AIGatewayInvalidResponseError):
+        await generate_image("a cat astronaut")
+
+    assert route.call_count == 1
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_generate_image_invalid_base64_raises_invalid_response_error():
+    route = respx.post(IMAGE_URL).mock(
+        return_value=httpx.Response(200, json={"data": [{"b64_json": "not-valid-base64!!"}]})
+    )
 
     with pytest.raises(AIGatewayInvalidResponseError):
         await generate_image("a cat astronaut")
@@ -262,7 +275,7 @@ async def test_generate_image_uses_default_model_and_size_from_settings():
 
     def _responder(request: httpx.Request) -> httpx.Response:
         captured["json"] = json.loads(request.content)
-        return _image_response("https://cdn.example.test/generated.png")
+        return _image_response(b"fake-png-bytes")
 
     respx.post(IMAGE_URL).mock(side_effect=_responder)
 
@@ -272,6 +285,7 @@ async def test_generate_image_uses_default_model_and_size_from_settings():
     assert captured["json"]["size"] == "512x512"
     assert captured["json"]["prompt"] == "a cat astronaut"
     assert captured["json"]["n"] == 1
+    assert captured["json"]["response_format"] == "b64_json"
 
 
 @respx.mock
@@ -281,7 +295,7 @@ async def test_generate_image_uses_model_and_size_override():
 
     def _responder(request: httpx.Request) -> httpx.Response:
         captured["json"] = json.loads(request.content)
-        return _image_response("https://cdn.example.test/generated.png")
+        return _image_response(b"fake-png-bytes")
 
     respx.post(IMAGE_URL).mock(side_effect=_responder)
 

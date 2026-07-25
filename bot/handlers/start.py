@@ -7,7 +7,7 @@ from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
 from bot.config import load_settings
 from bot.handlers.content import _AI_ERROR_KEYS, _resolve_language
@@ -159,7 +159,7 @@ async def on_photo_gen_description(
 
     try:
         image_prompt = await content_generator.generate_image_prompt(description)
-        image_url = await ai_gateway.generate_image(image_prompt)
+        image_bytes = await ai_gateway.generate_image(image_prompt)
     except AIGatewayError as exc:
         error_key = _AI_ERROR_KEYS.get(type(exc), "error_unexpected")
         logger.warning(
@@ -172,7 +172,7 @@ async def on_photo_gen_description(
     try:
         sent_message = await bot.send_photo(
             message.chat.id,
-            photo=image_url,
+            photo=BufferedInputFile(image_bytes, filename="ai_image.png"),
             caption=get_string("image_preview_caption", language),
         )
     except TelegramAPIError:

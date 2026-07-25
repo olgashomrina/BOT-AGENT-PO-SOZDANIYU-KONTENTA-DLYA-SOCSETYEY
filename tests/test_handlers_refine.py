@@ -10,6 +10,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.methods import SendMessage
+from aiogram.types import BufferedInputFile
 
 from bot.handlers.refine import on_refine_image, on_refine_more, on_refine_publish, on_refine_shorten
 from bot.locales.loader import get_string
@@ -399,12 +400,12 @@ def _fake_sent_photo_message(file_id: str = "telegram-cdn-file-id"):
 
 
 @pytest.mark.asyncio
-async def test_refine_image_success_stores_telegram_file_id_not_vendor_url(db_path, monkeypatch):
+async def test_refine_image_success_stores_telegram_file_id(db_path, monkeypatch):
     state = _make_state()
     await _seed_finished_session(state)
 
     mock_prompt = AsyncMock(return_value="a vivid english prompt")
-    mock_generate_image = AsyncMock(return_value="https://vendor.example/generated.png")
+    mock_generate_image = AsyncMock(return_value=b"fake-png-bytes")
     monkeypatch.setattr(content_generator, "generate_image_prompt", mock_prompt)
     monkeypatch.setattr(ai_gateway, "generate_image", mock_generate_image)
 
@@ -421,12 +422,47 @@ async def test_refine_image_success_stores_telegram_file_id_not_vendor_url(db_pa
     bot.send_photo.assert_awaited_once()
     args, kwargs = bot.send_photo.call_args
     assert args[0] == TELEGRAM_ID
-    assert kwargs["photo"] == "https://vendor.example/generated.png"
+    assert isinstance(kwargs["photo"], BufferedInputFile)
+    assert kwargs["photo"].data == b"fake-png-bytes"
 
     assert get_pending_media(db_path, TELEGRAM_ID) == ("telegram-cdn-file-id", "photo")
     callback.message.answer.assert_awaited_once_with(get_string("image_attached_confirmation", "ru"))
     callback.answer.assert_awaited_once()
     assert get_daily_count(db_path, TELEGRAM_ID) == 1
+
+
+@pytest.mark.asyncio
+async def test_refine_image_stale_callback_answer_does_not_raise(db_path, monkeypatch):
+    # Reproduces a production bug: a slow/retried AI Gateway call can push
+    # elapsed time past Telegram's callback-query validity window, so the
+    # final callback.answer() raises "query is too old" — this must not
+    # escape as an unhandled exception (which would trigger the generic
+    # error_unexpected message even though the image was already delivered).
+    state = _make_state()
+    await _seed_finished_session(state)
+
+    mock_prompt = AsyncMock(return_value="a vivid english prompt")
+    mock_generate_image = AsyncMock(return_value=b"fake-png-bytes")
+    monkeypatch.setattr(content_generator, "generate_image_prompt", mock_prompt)
+    monkeypatch.setattr(ai_gateway, "generate_image", mock_generate_image)
+
+    callback = _make_callback(data="refine:image:telegram:1")
+    callback.message.text = "Готовый вариант поста"
+    callback.message.chat = SimpleNamespace(id=TELEGRAM_ID)
+    callback.answer = AsyncMock(
+        side_effect=TelegramBadRequest(
+            method=SendMessage(chat_id=TELEGRAM_ID, text="x"),
+            message="query is too old and response timeout expired or query ID is invalid",
+        )
+    )
+    bot = AsyncMock()
+    bot.send_photo = AsyncMock(return_value=_fake_sent_photo_message("telegram-cdn-file-id"))
+
+    await on_refine_image(callback, state, db_path, bot)
+
+    bot.send_photo.assert_awaited_once()
+    callback.message.answer.assert_awaited_once_with(get_string("image_attached_confirmation", "ru"))
+    assert get_pending_media(db_path, TELEGRAM_ID) == ("telegram-cdn-file-id", "photo")
 
 
 @pytest.mark.asyncio
@@ -486,7 +522,7 @@ async def test_refine_image_delivery_failure_replies_friendly_error_and_does_not
     await _seed_finished_session(state)
 
     mock_prompt = AsyncMock(return_value="a vivid english prompt")
-    mock_generate_image = AsyncMock(return_value="https://vendor.example/generated.png")
+    mock_generate_image = AsyncMock(return_value=b"fake-png-bytes")
     monkeypatch.setattr(content_generator, "generate_image_prompt", mock_prompt)
     monkeypatch.setattr(ai_gateway, "generate_image", mock_generate_image)
 
@@ -515,7 +551,7 @@ async def test_refine_image_blocked_when_not_whitelisted_does_not_call_ai(db_pat
     await _seed_finished_session(state)
 
     mock_prompt = AsyncMock(return_value="a vivid english prompt")
-    mock_generate_image = AsyncMock(return_value="https://vendor.example/generated.png")
+    mock_generate_image = AsyncMock(return_value=b"fake-png-bytes")
     monkeypatch.setattr(content_generator, "generate_image_prompt", mock_prompt)
     monkeypatch.setattr(ai_gateway, "generate_image", mock_generate_image)
 

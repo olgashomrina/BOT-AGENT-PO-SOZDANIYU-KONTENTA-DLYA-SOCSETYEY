@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import logging
 import time
 from dataclasses import dataclass
@@ -329,7 +331,7 @@ def _parse_image_response(
     model: str,
     retry_count: int,
     duration_ms: float,
-) -> str:
+) -> bytes:
     try:
         payload = response.json()
     except ValueError as exc:
@@ -338,15 +340,15 @@ def _parse_image_response(
         _fail(mapped, operation=operation, provider=provider, model=model, duration_ms=duration_ms, retry_count=retry_count)
 
     try:
-        url = payload["data"][0]["url"]
+        b64_data = payload["data"][0]["b64_json"]
     except (KeyError, IndexError, TypeError) as exc:
         mapped = AIGatewayInvalidResponseError("Ответ сервиса генерации изображений не прошёл базовую валидацию")
         mapped.__cause__ = exc
         _fail(mapped, operation=operation, provider=provider, model=model, duration_ms=duration_ms, retry_count=retry_count)
 
-    if not url or not url.strip():
+    if not b64_data or not b64_data.strip():
         _fail(
-            AIGatewayInvalidResponseError("Получен пустой URL изображения от ИИ-модели"),
+            AIGatewayInvalidResponseError("Получено пустое изображение от ИИ-модели"),
             operation=operation,
             provider=provider,
             model=model,
@@ -354,7 +356,12 @@ def _parse_image_response(
             retry_count=retry_count,
         )
 
-    return url
+    try:
+        return base64.b64decode(b64_data)
+    except (binascii.Error, ValueError) as exc:
+        mapped = AIGatewayInvalidResponseError("Не удалось декодировать изображение от ИИ-модели")
+        mapped.__cause__ = exc
+        _fail(mapped, operation=operation, provider=provider, model=model, duration_ms=duration_ms, retry_count=retry_count)
 
 
 async def generate_text(prompt: str, model: str | None = None, temperature: float | None = None) -> str:
@@ -425,7 +432,7 @@ async def transcribe(audio_bytes: bytes, language_hint: str | None = None) -> st
     )
 
 
-async def generate_image(prompt: str, model: str | None = None, size: str | None = None) -> str:
+async def generate_image(prompt: str, model: str | None = None, size: str | None = None) -> bytes:
     settings = load_settings()
     resolved_model = model or settings.ai_gateway_image_model
     resolved_size = size or settings.ai_gateway_image_size
@@ -438,6 +445,13 @@ async def generate_image(prompt: str, model: str | None = None, size: str | None
             "prompt": prompt,
             "n": 1,
             "size": resolved_size,
+            # vsegpt.ru's Flux models reject requests without this — they
+            # only support returning the image inline as base64, not as a
+            # hosted URL (confirmed live: "Only response_format = b64_json
+            # is not supported" when this was omitted). Standard OpenAI-style
+            # image models accept this param too, so it's safe if the
+            # configured model changes later.
+            "response_format": "b64_json",
         }
         return await client.post("/images/generations", json=payload)
 

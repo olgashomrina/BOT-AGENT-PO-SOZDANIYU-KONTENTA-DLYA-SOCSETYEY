@@ -240,6 +240,8 @@ async def test_menu_text_hint_blocked_when_not_whitelisted(db_path):
     callback.message.answer.assert_awaited_once_with(get_string("error_not_whitelisted", "ru"))
 
 
+from aiogram.types import BufferedInputFile
+
 from bot.handlers.start import PhotoGenStates, on_menu_photo_gen, on_photo_gen_description
 from bot.keyboards.start import CALLBACK_PHOTO_GEN
 from bot.services import ai_gateway, content_generator
@@ -291,7 +293,7 @@ async def test_photo_gen_description_generates_and_attaches_image(db_path, monke
     await state.set_state(PhotoGenStates.waiting_for_description)
 
     mock_prompt = AsyncMock(return_value="a vivid english prompt")
-    mock_generate_image = AsyncMock(return_value="https://vendor.example/generated.png")
+    mock_generate_image = AsyncMock(return_value=b"fake-png-bytes")
     monkeypatch.setattr(content_generator, "generate_image_prompt", mock_prompt)
     monkeypatch.setattr(ai_gateway, "generate_image", mock_generate_image)
 
@@ -306,7 +308,8 @@ async def test_photo_gen_description_generates_and_attaches_image(db_path, monke
     bot.send_photo.assert_awaited_once()
     args, kwargs = bot.send_photo.call_args
     assert args[0] == 3003
-    assert kwargs["photo"] == "https://vendor.example/generated.png"
+    assert isinstance(kwargs["photo"], BufferedInputFile)
+    assert kwargs["photo"].data == b"fake-png-bytes"
     assert get_pending_media(db_path, 3003) == ("telegram-cdn-file-id", "photo")
     assert await state.get_state() is None
     message.answer.assert_awaited_once_with(get_string("photo_gen_ready", "ru"))

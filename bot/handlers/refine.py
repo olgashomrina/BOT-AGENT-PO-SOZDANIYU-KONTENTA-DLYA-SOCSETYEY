@@ -3,9 +3,9 @@ from __future__ import annotations
 import logging
 
 from aiogram import Bot, F, Router
-from aiogram.exceptions import TelegramAPIError
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery
+from aiogram.types import BufferedInputFile, CallbackQuery
 
 from bot.config import load_settings
 from bot.handlers.content import _AI_ERROR_KEYS, _resolve_language
@@ -36,6 +36,19 @@ def _truncate_caption(text: str) -> str:
     return text[: _TELEGRAM_CAPTION_LIMIT - 1] + "…"
 
 
+async def _safe_answer(callback: CallbackQuery) -> None:
+    # Telegram invalidates a callback query once too much time passes before
+    # it's acknowledged — observed in production after a slow/retried AI
+    # Gateway call ("query is too old and response timeout expired"). By the
+    # time we get here the substantive reply has already been sent via
+    # callback.message.answer()/send_photo, so answering the callback itself
+    # only stops the button's loading spinner — safe to ignore if it fails.
+    try:
+        await callback.answer()
+    except TelegramBadRequest as exc:
+        logger.warning("Callback query answer failed (likely stale)", extra={"error_message": str(exc)})
+
+
 async def _check_whitelist_or_reply(callback: CallbackQuery, db_path: str, language: str) -> bool:
     # WHY this check exists here at all: WhitelistMiddleware (bot/middlewares/
     # whitelist_middleware.py) is registered only on dispatcher.message.outer_
@@ -45,7 +58,7 @@ async def _check_whitelist_or_reply(callback: CallbackQuery, db_path: str, langu
         return True
 
     await callback.message.answer(get_string("error_not_whitelisted", language))
-    await callback.answer()
+    await _safe_answer(callback)
     return False
 
 
@@ -69,7 +82,7 @@ async def _check_limit_or_reply(callback: CallbackQuery, db_path: str, language:
         else "error_monthly_limit_exceeded"
     )
     await callback.message.answer(get_string(message_key, language))
-    await callback.answer()
+    await _safe_answer(callback)
     return False
 
 
@@ -96,7 +109,7 @@ async def _generate_and_send(
     content_language = data.get("content_language")
     if not source_text or not content_language:
         await callback.message.answer(get_string("error_refine_missing_context", language))
-        await callback.answer()
+        await _safe_answer(callback)
         return
 
     try:
@@ -110,7 +123,7 @@ async def _generate_and_send(
             extra={"user_id": telegram_id, "operation": "refine_generate", "error_class": type(exc).__name__},
         )
         await callback.message.answer(get_string(error_key, language))
-        await callback.answer()
+        await _safe_answer(callback)
         return
 
     increment_usage(db_path, telegram_id)
@@ -121,7 +134,7 @@ async def _generate_and_send(
         parse_mode=output_formatter.PARSE_MODE,
         reply_markup=build_refine_keyboard(platform, 1, language),
     )
-    await callback.answer()
+    await _safe_answer(callback)
 
 
 @router.callback_query(F.data.startswith("refine:more:"))
@@ -150,7 +163,7 @@ async def on_refine_publish(callback: CallbackQuery, state: FSMContext, db_path:
     channel_id = get_channel_id(db_path, telegram_id)
     if channel_id is None:
         await callback.message.answer(get_string("publish_no_channel_configured", language))
-        await callback.answer()
+        await _safe_answer(callback)
         return
 
     # WHY read the text off callback.message rather than re-deriving it from
@@ -187,7 +200,7 @@ async def on_refine_publish(callback: CallbackQuery, state: FSMContext, db_path:
             extra={"user_id": telegram_id, "operation": "publish_to_channel"},
         )
         await callback.message.answer(get_string("publish_failed", language))
-        await callback.answer()
+        await _safe_answer(callback)
         return
 
     if pending_media is not None:
@@ -198,7 +211,7 @@ async def on_refine_publish(callback: CallbackQuery, state: FSMContext, db_path:
         clear_pending_media(db_path, telegram_id)
 
     await callback.message.answer(get_string("publish_success", language))
-    await callback.answer()
+    await _safe_answer(callback)
 
 
 @router.callback_query(F.data.startswith("refine:image:"))
@@ -223,7 +236,7 @@ async def on_refine_image(callback: CallbackQuery, state: FSMContext, db_path: s
 
     try:
         image_prompt = await content_generator.generate_image_prompt(post_text)
-        image_url = await ai_gateway.generate_image(image_prompt)
+        image_bytes = await ai_gateway.generate_image(image_prompt)
     except AIGatewayError as exc:
         error_key = _AI_ERROR_KEYS.get(type(exc), "error_unexpected")
         logger.warning(
@@ -231,13 +244,13 @@ async def on_refine_image(callback: CallbackQuery, state: FSMContext, db_path: s
             extra={"user_id": telegram_id, "operation": "generate_image", "error_class": type(exc).__name__},
         )
         await callback.message.answer(get_string(error_key, language))
-        await callback.answer()
+        await _safe_answer(callback)
         return
 
     try:
         sent_message = await bot.send_photo(
             callback.message.chat.id,
-            photo=image_url,
+            photo=BufferedInputFile(image_bytes, filename="ai_image.png"),
             caption=get_string("image_preview_caption", language),
         )
     except TelegramAPIError:
@@ -246,19 +259,18 @@ async def on_refine_image(callback: CallbackQuery, state: FSMContext, db_path: s
             extra={"user_id": telegram_id, "operation": "generate_image"},
         )
         await callback.message.answer(get_string("image_delivery_failed", language))
-        await callback.answer()
+        await _safe_answer(callback)
         return
 
     increment_usage(db_path, telegram_id)
 
-    # WHY store Telegram's own file_id instead of the vendor image URL:
-    # AI-provider-hosted image URLs are often time-limited, but once
-    # Telegram has ingested the image into a sent message, its own file_id
-    # is durable — using it (not the raw vendor URL) as what gets stored
-    # here avoids the attachment silently breaking if the user publishes to
-    # their channel later than the URL's expiry window.
+    # WHY store Telegram's own file_id instead of re-sending the raw bytes:
+    # the AI Gateway only hands back the image once, as base64 in memory —
+    # once Telegram has ingested it into a sent message, its own file_id is
+    # a durable reference we can reuse (e.g. for a later channel publish)
+    # without holding onto or re-decoding the original bytes.
     file_id = sent_message.photo[-1].file_id
     set_pending_media(db_path, telegram_id, file_id, "photo")
 
     await callback.message.answer(get_string("image_attached_confirmation", language))
-    await callback.answer()
+    await _safe_answer(callback)
