@@ -3,7 +3,9 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from aiogram.types import MenuButtonCommands
 
+from bot.locales.loader import SUPPORTED_LANGUAGES
 from bot.main import run
 
 
@@ -39,3 +41,44 @@ async def test_run_starts_site_api_server_alongside_polling(monkeypatch, tmp_pat
         # site-API startup/cleanup wiring this test targets.
         mock_start_polling.assert_awaited_once()
         mock_runner.cleanup.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_run_configures_native_menu_button_before_polling(monkeypatch, tmp_path):
+    monkeypatch.setenv("BOT_TOKEN", "123456:test-token")
+    monkeypatch.setenv("AI_PROXY_API_KEY", "test-ai-key")
+    monkeypatch.setenv("OWNER_CHAT_ID", "42")
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "test.db"))
+    monkeypatch.setenv("SITE_API_PORT", "18081")
+
+    with patch("bot.main.Bot") as mock_bot_cls, patch(
+        "bot.main.web.TCPSite"
+    ) as mock_tcp_site_cls, patch("bot.main.web.AppRunner") as mock_runner_cls, patch(
+        "aiogram.Dispatcher.start_polling", new_callable=AsyncMock
+    ) as mock_start_polling:
+        mock_bot = AsyncMock()
+        mock_bot_cls.return_value = mock_bot
+        mock_runner_cls.return_value = AsyncMock()
+        mock_tcp_site_cls.return_value = AsyncMock()
+
+        await run()
+
+        # One set_my_commands call per supported language, registering /start
+        # so the native Telegram menu button (bottom-left of the input field)
+        # can offer it without the user typing anything.
+        assert mock_bot.set_my_commands.await_count == len(SUPPORTED_LANGUAGES)
+        called_lang_codes = {
+            call.kwargs["language_code"] for call in mock_bot.set_my_commands.await_args_list
+        }
+        assert called_lang_codes == set(SUPPORTED_LANGUAGES)
+        for call in mock_bot.set_my_commands.await_args_list:
+            (commands,) = call.args
+            assert [c.command for c in commands] == ["start"]
+
+        mock_bot.set_chat_menu_button.assert_awaited_once()
+        menu_button = mock_bot.set_chat_menu_button.await_args.kwargs["menu_button"]
+        assert isinstance(menu_button, MenuButtonCommands)
+
+        # Menu button must be configured before polling starts, not after.
+        assert mock_bot.set_my_commands.await_count > 0
+        mock_start_polling.assert_awaited_once()

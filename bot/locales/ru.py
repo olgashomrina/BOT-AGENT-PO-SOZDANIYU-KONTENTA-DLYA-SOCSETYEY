@@ -85,6 +85,7 @@ STRINGS = {
         "постов."
     ),
     "start_button_label": "Старт",
+    "command_start_description": "Запустить бота",
     "menu_intro": "Что делаем дальше?",
     "menu_capabilities_button": "Я умею",
     "menu_cta_button": "Создать пост сейчас",

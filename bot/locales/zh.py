@@ -58,6 +58,7 @@ STRINGS = {
         "可直接使用的帖子方案。"
     ),
     "start_button_label": "开始",
+    "command_start_description": "启动机器人",
     "menu_intro": "接下来做什么？",
     "menu_capabilities_button": "我能做什么",
     "menu_cta_button": "立即创建帖子",

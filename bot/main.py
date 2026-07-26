@@ -4,6 +4,7 @@ import asyncio
 import sys
 
 from aiogram import Bot, Dispatcher
+from aiogram.types import BotCommand, MenuButtonCommands
 from aiohttp import web
 
 from bot.config import load_settings
@@ -15,6 +16,7 @@ from bot.handlers.refine import router as refine_router
 from bot.handlers.settov import router as settov_router
 from bot.handlers.site import router as site_router
 from bot.handlers.start import router as start_router
+from bot.locales.loader import SUPPORTED_LANGUAGES, get_string
 from bot.logging_config import setup_logging
 from bot.middlewares.rate_limit_middleware import RateLimitMiddleware
 from bot.middlewares.whitelist_middleware import WhitelistMiddleware
@@ -50,12 +52,26 @@ def build_dispatcher(daily_limit: int, monthly_limit: int) -> Dispatcher:
     return dispatcher
 
 
+async def _configure_start_menu_button(bot: Bot) -> None:
+    # Native Telegram "menu button" (bottom-left of the input field) is
+    # rendered by the client itself, before the user has ever messaged the
+    # bot — unlike our reply-keyboard "Старт" button, which only appears
+    # after the bot has sent it in response to a message.
+    for lang in SUPPORTED_LANGUAGES:
+        await bot.set_my_commands(
+            [BotCommand(command="start", description=get_string("command_start_description", lang))],
+            language_code=lang,
+        )
+    await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
+
+
 async def run() -> None:
     settings = load_settings()
     logger = setup_logging(level=settings.log_level)
     init_db(settings.db_path)
 
     bot = Bot(token=settings.bot_token)
+    await _configure_start_menu_button(bot)
     dispatcher = build_dispatcher(settings.daily_limit, settings.monthly_limit)
 
     site_api_app = build_site_api_app(settings.db_path, settings.site_media_dir)

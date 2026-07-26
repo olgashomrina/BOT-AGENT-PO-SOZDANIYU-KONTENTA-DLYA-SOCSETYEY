@@ -82,6 +82,7 @@ STRINGS = {
         "and in a few seconds you'll get ready-to-use post variants."
     ),
     "start_button_label": "Start",
+    "command_start_description": "Start the bot",
     "menu_intro": "What shall we do next?",
     "menu_capabilities_button": "What I can do",
     "menu_cta_button": "Create a post now",

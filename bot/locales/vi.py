@@ -85,6 +85,7 @@ STRINGS = {
         "phương án bài đăng sẵn sàng sử dụng."
     ),
     "start_button_label": "Bắt đầu",
+    "command_start_description": "Khởi động bot",
     "menu_intro": "Tiếp theo chúng ta làm gì?",
     "menu_capabilities_button": "Tôi có thể làm gì",
     "menu_cta_button": "Tạo bài đăng ngay",
