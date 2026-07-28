@@ -295,3 +295,20 @@ def test_format_digest_message_returns_empty_result_text_when_nothing_found():
     from bot.locales.loader import get_string
 
     assert text == get_string("digest_empty_result", "ru", topic="тема")
+
+
+def test_format_digest_message_truncates_to_telegram_limit():
+    # Simulates real Google News RSS redirect URLs, which are long (400-900+
+    # chars each) — 4 news + 3 papers with such URLs can push the unbounded
+    # assembled message past Telegram's 4096-char send_message/answer limit.
+    long_url = "https://news.google.com/rss/articles/" + ("A" * 800)
+    result = digest.DigestResult(
+        topic="психология",
+        news=[digest.DigestItem(title=f"Новость {i}", url=long_url) for i in range(4)],
+        papers=[digest.DigestItem(title=f"Статья {i}", url=long_url) for i in range(3)],
+        methods_summary="Используется новый формат коротких сессий.",
+    )
+
+    text = digest.format_digest_message(result, "ru")
+
+    assert len(text) <= 4096

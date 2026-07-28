@@ -22,6 +22,9 @@ def test_build_digest_scheduler_registers_daily_cron_job(db_path):
     assert job.id == "daily_digest"
     assert isinstance(job.trigger, CronTrigger)
     assert str(job.trigger.timezone) == "Europe/Moscow"
+    assert job.misfire_grace_time == 3600
+    hour_field = next(f for f in job.trigger.fields if f.name == "hour")
+    assert str(hour_field) == "9"
 
 
 @pytest.mark.asyncio

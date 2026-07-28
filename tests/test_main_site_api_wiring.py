@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import ANY, AsyncMock, patch
 
 import pytest
 from aiogram.types import MenuButtonCommands
@@ -43,6 +43,10 @@ async def test_run_starts_site_api_server_alongside_polling(monkeypatch, tmp_pat
         # site-API startup/cleanup wiring this test targets.
         mock_start_polling.assert_awaited_once()
         mock_runner.cleanup.assert_awaited_once()
+        # DIGEST_SEND_HOUR is not set above, so the default (9) from
+        # bot/config.py must reach the scheduler factory unchanged — a bug
+        # that passed the wrong settings field would go undetected otherwise.
+        mock_scheduler_factory.assert_called_once_with(mock_bot, ANY, 9)
         mock_scheduler_factory.return_value.start.assert_called_once()
         mock_scheduler_factory.return_value.shutdown.assert_called_once()
 

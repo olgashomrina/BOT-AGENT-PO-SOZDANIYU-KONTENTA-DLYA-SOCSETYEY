@@ -21,6 +21,12 @@ _SEMANTIC_SCHOLAR_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
 _MAX_NEWS_ITEMS = 4
 _MAX_PAPER_ITEMS = 3
 
+# Telegram's hard limit for plain send_message/answer text (Bot API "text"
+# field). Google News RSS <link> values are long redirect URLs (400-900+
+# chars each); 4 news + 3 papers can push the assembled message past this
+# limit, which would make the send fail outright.
+_TELEGRAM_MESSAGE_LIMIT = 4096
+
 _METHODS_PROMPT_TEMPLATE = (
     "Вот список свежих новостей и научных статей по теме «{topic}»:\n\n"
     "Новости:\n{news_lines}\n\n"
@@ -167,4 +173,7 @@ def format_digest_message(result: DigestResult, language: str) -> str:
     if result.methods_summary:
         parts.append(f"{get_string('digest_section_methods', language)}\n{result.methods_summary}")
 
-    return "\n\n".join(parts)
+    message = "\n\n".join(parts)
+    if len(message) > _TELEGRAM_MESSAGE_LIMIT:
+        message = message[: _TELEGRAM_MESSAGE_LIMIT - 1] + "…"
+    return message

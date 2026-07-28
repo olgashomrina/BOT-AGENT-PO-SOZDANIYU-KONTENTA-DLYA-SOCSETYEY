@@ -11,7 +11,7 @@ from aiogram.types import BufferedInputFile, CallbackQuery, ForceReply, Message
 
 from bot.config import load_settings
 from bot.handlers.content import _AI_ERROR_KEYS, _resolve_language
-from bot.handlers.refine import _check_limit_or_reply, _check_whitelist_or_reply
+from bot.handlers.refine import _check_limit_or_reply, _check_whitelist_or_reply, _safe_answer
 from bot.keyboards.start import (
     CALLBACK_CAPABILITIES,
     CALLBACK_CREATE_POST,
@@ -140,7 +140,7 @@ async def on_menu_news_digest(callback: CallbackQuery, db_path: str) -> None:
             get_string("digest_prompt_no_topic", language),
             reply_markup=build_digest_topic_keyboard(language, has_saved_topic=False),
         )
-        await callback.answer()
+        await _safe_answer(callback)
         return
 
     if not await _check_limit_or_reply(callback, db_path, language):
@@ -154,7 +154,7 @@ async def on_menu_news_digest(callback: CallbackQuery, db_path: str) -> None:
         get_string("digest_change_topic_prompt", language),
         reply_markup=build_digest_topic_keyboard(language, has_saved_topic=True),
     )
-    await callback.answer()
+    await _safe_answer(callback)
 
 
 @router.callback_query(F.data == CALLBACK_DIGEST_SET_TOPIC)
@@ -173,7 +173,7 @@ async def on_menu_digest_set_topic(callback: CallbackQuery, state: FSMContext, d
             input_field_placeholder=get_string("digest_topic_input_placeholder", language)
         ),
     )
-    await callback.answer()
+    await _safe_answer(callback)
 
 
 @router.message(DigestStates.waiting_for_topic)
@@ -200,6 +200,10 @@ async def on_digest_topic_input(message: Message, state: FSMContext, db_path: st
 
     result = await digest.build_digest(topic)
     await message.answer(digest.format_digest_message(result, language))
+    await message.answer(
+        get_string("digest_change_topic_prompt", language),
+        reply_markup=build_digest_topic_keyboard(language, has_saved_topic=True),
+    )
 
 
 @router.callback_query(F.data == CALLBACK_TEXT_HINT)

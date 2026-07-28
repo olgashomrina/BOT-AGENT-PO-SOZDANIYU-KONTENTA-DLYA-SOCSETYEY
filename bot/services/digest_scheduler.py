@@ -39,5 +39,10 @@ def build_digest_scheduler(bot: Bot, db_path: str, hour: int) -> AsyncIOSchedule
         trigger=CronTrigger(hour=hour, minute=0, timezone="Europe/Moscow"),
         args=[bot, db_path],
         id="daily_digest",
+        # Default misfire grace time is 1 second — if the single event loop
+        # is busy for longer than that at the scheduled minute, APScheduler
+        # would silently skip the whole day's run. An hour of slack is far
+        # more than any realistic startup/handler delay.
+        misfire_grace_time=3600,
     )
     return scheduler

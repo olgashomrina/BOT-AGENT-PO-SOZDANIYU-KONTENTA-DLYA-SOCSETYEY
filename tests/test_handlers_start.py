@@ -333,9 +333,14 @@ async def test_digest_topic_input_saves_topic_and_sends_digest(db_path, monkeypa
     assert get_digest_topic(db_path, 2012) == "дизайн интерьеров"
     mock_build.assert_awaited_once_with("дизайн интерьеров")
     assert await state.get_state() is None
-    assert message.answer.await_count == 2
+    assert message.answer.await_count == 3
     first_call_text = message.answer.await_args_list[0].args[0]
     assert first_call_text == get_string("digest_topic_saved", "ru", topic="дизайн интерьеров")
+    second_call_text = message.answer.await_args_list[1].args[0]
+    assert second_call_text == digest_service.format_digest_message(fake_result, "ru")
+    third_call_args, third_call_kwargs = message.answer.await_args_list[2]
+    assert third_call_args[0] == get_string("digest_change_topic_prompt", "ru")
+    assert "reply_markup" in third_call_kwargs
 
 
 @pytest.mark.asyncio
