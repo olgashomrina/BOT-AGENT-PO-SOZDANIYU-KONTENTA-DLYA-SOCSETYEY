@@ -4,11 +4,14 @@ from bot.storage.users import (
     clear_pending_media,
     get_channel_id,
     get_content_language,
+    get_digest_topic,
     get_interface_language,
     get_onboarding_shown,
     get_pending_media,
+    get_users_with_digest_topic,
     set_channel_id,
     set_content_language,
+    set_digest_topic,
     set_interface_language,
     set_onboarding_shown,
     set_pending_media,
@@ -146,3 +149,39 @@ def test_onboarding_shown_is_scoped_per_user(db_path):
     set_onboarding_shown(db_path, 111, True)
 
     assert get_onboarding_shown(db_path, 222) is False
+
+
+def test_unknown_user_has_no_digest_topic(db_path):
+    assert get_digest_topic(db_path, 111) is None
+
+
+def test_set_digest_topic_is_readable(db_path):
+    set_digest_topic(db_path, 111, "психология")
+
+    assert get_digest_topic(db_path, 111) == "психология"
+
+
+def test_digest_topic_can_be_replaced(db_path):
+    set_digest_topic(db_path, 111, "психология")
+    set_digest_topic(db_path, 111, "бухгалтерский учёт")
+
+    assert get_digest_topic(db_path, 111) == "бухгалтерский учёт"
+
+
+def test_digest_topic_is_scoped_per_user(db_path):
+    set_digest_topic(db_path, 111, "психология")
+
+    assert get_digest_topic(db_path, 222) is None
+
+
+def test_get_users_with_digest_topic_returns_empty_list_when_none_set(db_path):
+    assert get_users_with_digest_topic(db_path) == []
+
+
+def test_get_users_with_digest_topic_returns_only_users_with_topic_set(db_path):
+    set_digest_topic(db_path, 111, "психология")
+    set_digest_topic(db_path, 222, "дизайн интерьеров")
+
+    result = get_users_with_digest_topic(db_path)
+
+    assert set(result) == {(111, "психология"), (222, "дизайн интерьеров")}

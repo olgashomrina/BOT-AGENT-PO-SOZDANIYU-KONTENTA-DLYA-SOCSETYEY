@@ -215,3 +215,26 @@ def test_init_db_migrates_pre_phase15_users_table(tmp_path):
         assert row == (42, "ru", "en", -1001234567890, None, None, None)
     finally:
         connection.close()
+
+
+def test_init_db_migrates_existing_database_missing_digest_topic_column(tmp_path):
+    import sqlite3
+
+    from bot.storage.db import init_db
+
+    db_path = str(tmp_path / "legacy.db")
+    connection = sqlite3.connect(db_path)
+    connection.execute(
+        "CREATE TABLE users (telegram_id INTEGER PRIMARY KEY, interface_language TEXT, "
+        "content_language TEXT, channel_id INTEGER, pending_media_file_id TEXT, "
+        "pending_media_type TEXT, onboarding_shown INTEGER)"
+    )
+    connection.commit()
+    connection.close()
+
+    init_db(db_path)
+
+    connection = sqlite3.connect(db_path)
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(users)")}
+    connection.close()
+    assert "digest_topic" in columns
