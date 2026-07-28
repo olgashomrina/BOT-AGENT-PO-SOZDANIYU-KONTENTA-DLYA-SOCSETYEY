@@ -302,7 +302,7 @@ git commit -m "feat: raise style example cap to 10 and add clear_style_examples"
 
 ### Task 3: Строки локализации
 
-18 новых ключей в 4 файлах. Отдельной задачей, потому что от них зависят и клавиатуры, и хендлеры.
+20 новых ключей в 4 файлах. Отдельной задачей, потому что от них зависят и клавиатуры, и хендлеры.
 
 **Files:**
 - Modify: `bot/locales/ru.py`, `bot/locales/en.py`, `bot/locales/vi.py`, `bot/locales/zh.py`
