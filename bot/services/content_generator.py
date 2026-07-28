@@ -68,14 +68,27 @@ def _build_style_section(style_examples: list[str] | None) -> str:
     )
 
 
+# Hashtag instruction for the "authored post from digest" flow (see
+# docs/superpowers/specs/2026-07-28-authorpost-from-digest-design.md).
+# Opt-in via a flag rather than always-on: posts from the main content flow
+# have never carried hashtags, and adding them there unasked would silently
+# change output the user already relies on.
+_HASHTAG_INSTRUCTION = (
+    "End the post with 3-6 relevant hashtags on their own final line, "
+    "written in the same language as the post itself."
+)
+
+
 def build_prompt(
     source_text: str,
     platform: Platform,
     content_language: str,
     extra_instruction: str | None = None,
     style_examples: list[str] | None = None,
+    with_hashtags: bool = False,
 ) -> str:
     extra_line = f"{extra_instruction}\n" if extra_instruction else ""
+    hashtag_line = f"{_HASHTAG_INSTRUCTION}\n" if with_hashtags else ""
     style_section = _build_style_section(style_examples)
     return (
         "You are a social media copywriter. Write ONE ready-to-publish social "
@@ -84,6 +97,7 @@ def build_prompt(
         f"{_TONE_INSTRUCTION}\n"
         f"Write the post in this language (ISO 639-1 code): {content_language}.\n"
         f"{extra_line}"
+        f"{hashtag_line}"
         f"{style_section}"
         "Return only the post text itself, without any preamble, quotes or "
         "explanation.\n\n"
@@ -118,6 +132,7 @@ async def generate_variants(
     count: int = 3,
     extra_instruction: str | None = None,
     style_examples: list[str] | None = None,
+    with_hashtags: bool = False,
 ) -> list[str]:
     # Design call: call generate_text() `count` times with the same prompt
     # rather than asking the model for N variants in one response. Simpler
@@ -126,7 +141,12 @@ async def generate_variants(
     # independent calls always yield N usable variants (relying on the
     # provider's own sampling randomness for variety).
     prompt = build_prompt(
-        source_text, platform, content_language, extra_instruction, style_examples
+        source_text,
+        platform,
+        content_language,
+        extra_instruction,
+        style_examples,
+        with_hashtags,
     )
     variants = []
     for _ in range(count):

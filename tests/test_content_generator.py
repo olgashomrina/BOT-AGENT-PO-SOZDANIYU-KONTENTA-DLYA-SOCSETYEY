@@ -212,3 +212,47 @@ async def test_generate_image_prompt_propagates_ai_gateway_error(monkeypatch):
 
     with pytest.raises(AIGatewayTimeoutError):
         await content_generator.generate_image_prompt("текст поста")
+
+
+def test_build_prompt_includes_hashtag_instruction_when_requested():
+    prompt = content_generator.build_prompt("текст", "telegram", "ru", with_hashtags=True)
+
+    assert content_generator._HASHTAG_INSTRUCTION in prompt
+
+
+def test_build_prompt_without_hashtags_is_unchanged_from_default():
+    prompt = content_generator.build_prompt("текст", "telegram", "ru")
+
+    assert prompt == content_generator.build_prompt(
+        "текст", "telegram", "ru", with_hashtags=False
+    )
+    assert content_generator._HASHTAG_INSTRUCTION not in prompt
+
+
+def test_build_prompt_combines_hashtags_with_style_examples():
+    prompt = content_generator.build_prompt(
+        "текст",
+        "telegram",
+        "ru",
+        style_examples=["Мой старый пост."],
+        with_hashtags=True,
+    )
+
+    assert content_generator._HASHTAG_INSTRUCTION in prompt
+    assert "Мой старый пост." in prompt
+
+
+@pytest.mark.asyncio
+async def test_generate_variants_passes_hashtag_flag_into_prompt(monkeypatch):
+    mock_generate = AsyncMock(return_value="вариант")
+    monkeypatch.setattr(ai_gateway, "generate_text", mock_generate)
+
+    await content_generator.generate_variants(
+        "исходник", "telegram", "ru", count=1, with_hashtags=True
+    )
+
+    called_prompt = mock_generate.await_args.args[0]
+    assert called_prompt == content_generator.build_prompt(
+        "исходник", "telegram", "ru", with_hashtags=True
+    )
+    assert content_generator._HASHTAG_INSTRUCTION in called_prompt
