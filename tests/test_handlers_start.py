@@ -230,14 +230,22 @@ async def test_menu_create_post_blocked_when_not_whitelisted(db_path):
     callback.message.answer.assert_awaited_once_with(get_string("error_not_whitelisted", "ru"))
 
 
+from bot.handlers.start import DigestStates, on_digest_topic_input, on_menu_digest_set_topic
+from bot.keyboards.start import CALLBACK_DIGEST_SET_TOPIC
+from bot.services import digest as digest_service
+from bot.storage.users import get_digest_topic, set_digest_topic
+
+
 @pytest.mark.asyncio
-async def test_menu_news_digest_sends_hint_text(db_path):
+async def test_menu_news_digest_prompts_for_topic_when_none_saved(db_path):
     add_user(db_path, 2007)
     callback = _make_callback(2007, CALLBACK_NEWS_DIGEST)
 
     await on_menu_news_digest(callback, db_path)
 
-    callback.message.answer.assert_awaited_once_with(get_string("menu_news_digest_hint", "ru"))
+    callback.message.answer.assert_awaited_once_with(
+        get_string("digest_prompt_no_topic", "ru"), reply_markup=ANY
+    )
     callback.answer.assert_awaited_once()
 
 
@@ -248,6 +256,119 @@ async def test_menu_news_digest_blocked_when_not_whitelisted(db_path):
     await on_menu_news_digest(callback, db_path)
 
     callback.message.answer.assert_awaited_once_with(get_string("error_not_whitelisted", "ru"))
+
+
+@pytest.mark.asyncio
+async def test_menu_news_digest_builds_digest_immediately_when_topic_saved(db_path, monkeypatch):
+    # _check_limit_or_reply (bot/handlers/refine.py) calls load_settings()
+    # internally, same as test_menu_create_post_shows_submenu_keyboard above —
+    # required env vars must be set or ConfigError raises before the handler
+    # body even runs.
+    monkeypatch.setenv("BOT_TOKEN", "123456:test-token")
+    monkeypatch.setenv("AI_PROXY_API_KEY", "test-ai-key")
+    monkeypatch.setenv("OWNER_CHAT_ID", "42")
+    add_user(db_path, 2009)
+    set_digest_topic(db_path, 2009, "психология")
+    callback = _make_callback(2009, CALLBACK_NEWS_DIGEST)
+
+    fake_result = digest_service.DigestResult(topic="психология", news=[], papers=[], methods_summary=None)
+    mock_build = AsyncMock(return_value=fake_result)
+    monkeypatch.setattr(digest_service, "build_digest", mock_build)
+
+    await on_menu_news_digest(callback, db_path)
+
+    mock_build.assert_awaited_once_with("психология")
+    assert callback.message.answer.await_count == 2
+    first_call_text = callback.message.answer.await_args_list[0].args[0]
+    assert first_call_text == digest_service.format_digest_message(fake_result, "ru")
+    second_call_args, second_call_kwargs = callback.message.answer.await_args_list[1]
+    assert second_call_args[0] == get_string("digest_change_topic_prompt", "ru")
+    assert "reply_markup" in second_call_kwargs
+    callback.answer.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_menu_digest_set_topic_sends_force_reply_and_sets_state(db_path):
+    from aiogram.types import ForceReply
+
+    add_user(db_path, 2010)
+    state = _make_state(2010)
+    callback = _make_callback(2010, CALLBACK_DIGEST_SET_TOPIC)
+
+    await on_menu_digest_set_topic(callback, state, db_path)
+
+    callback.message.answer.assert_awaited_once()
+    args, kwargs = callback.message.answer.call_args
+    assert args[0] == get_string("digest_topic_input_prompt", "ru")
+    assert isinstance(kwargs["reply_markup"], ForceReply)
+    assert await state.get_state() == DigestStates.waiting_for_topic.state
+    callback.answer.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_menu_digest_set_topic_blocked_when_not_whitelisted(db_path):
+    state = _make_state(2011)
+    callback = _make_callback(2011, CALLBACK_DIGEST_SET_TOPIC)
+
+    await on_menu_digest_set_topic(callback, state, db_path)
+
+    callback.message.answer.assert_awaited_once_with(get_string("error_not_whitelisted", "ru"))
+    assert await state.get_state() is None
+
+
+@pytest.mark.asyncio
+async def test_digest_topic_input_saves_topic_and_sends_digest(db_path, monkeypatch):
+    state = _make_state(2012)
+    await state.update_data(language="ru")
+    await state.set_state(DigestStates.waiting_for_topic)
+
+    fake_result = digest_service.DigestResult(topic="дизайн интерьеров", news=[], papers=[], methods_summary=None)
+    mock_build = AsyncMock(return_value=fake_result)
+    monkeypatch.setattr(digest_service, "build_digest", mock_build)
+
+    message = _make_description_message(2012, "дизайн интерьеров")
+
+    await on_digest_topic_input(message, state, db_path)
+
+    assert get_digest_topic(db_path, 2012) == "дизайн интерьеров"
+    mock_build.assert_awaited_once_with("дизайн интерьеров")
+    assert await state.get_state() is None
+    assert message.answer.await_count == 2
+    first_call_text = message.answer.await_args_list[0].args[0]
+    assert first_call_text == get_string("digest_topic_saved", "ru", topic="дизайн интерьеров")
+
+
+@pytest.mark.asyncio
+async def test_digest_topic_input_reprompts_on_empty_text(db_path, monkeypatch):
+    from aiogram.types import ForceReply
+
+    state = _make_state(2013)
+    await state.update_data(language="ru")
+    await state.set_state(DigestStates.waiting_for_topic)
+    mock_build = AsyncMock()
+    monkeypatch.setattr(digest_service, "build_digest", mock_build)
+
+    message = _make_description_message(2013, None)
+
+    await on_digest_topic_input(message, state, db_path)
+
+    mock_build.assert_not_awaited()
+    args, kwargs = message.answer.call_args
+    assert args[0] == get_string("digest_topic_input_prompt", "ru")
+    assert isinstance(kwargs["reply_markup"], ForceReply)
+    assert await state.get_state() == DigestStates.waiting_for_topic.state
+
+
+@pytest.mark.asyncio
+async def test_start_clears_fsm_state_stuck_in_digest_topic_input(db_path):
+    state = _make_state(2014)
+    await state.update_data(language="ru")
+    await state.set_state(DigestStates.waiting_for_topic)
+    message = _make_message(2014, "ru")
+
+    await cmd_start(message, state, db_path)
+
+    assert await state.get_state() is None
 
 
 @pytest.mark.asyncio
