@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 
 DEFAULT_DAILY_LIMIT = 20
 DEFAULT_MONTHLY_LIMIT = 300
+DEFAULT_DIGEST_SEND_HOUR = 9
 DEFAULT_DB_PATH = "bot.db"
 DEFAULT_LOG_LEVEL = "INFO"
 DEFAULT_AI_PROXY_BASE_URL = "https://api.vsegpt.ru/v1"
@@ -51,6 +52,7 @@ class Settings:
     owner_chat_id: int
     daily_limit: int
     monthly_limit: int
+    digest_send_hour: int
     db_path: str
     log_level: str
     mini_app_url: str
@@ -86,8 +88,11 @@ def load_settings(env_file: str | None = None) -> Settings:
     try:
         daily_limit = int(os.environ.get("DAILY_LIMIT", DEFAULT_DAILY_LIMIT))
         monthly_limit = int(os.environ.get("MONTHLY_LIMIT", DEFAULT_MONTHLY_LIMIT))
+        digest_send_hour = int(os.environ.get("DIGEST_SEND_HOUR", DEFAULT_DIGEST_SEND_HOUR))
     except ValueError as exc:
-        raise ConfigError("DAILY_LIMIT и MONTHLY_LIMIT должны быть целыми числами.") from exc
+        raise ConfigError(
+            "DAILY_LIMIT, MONTHLY_LIMIT и DIGEST_SEND_HOUR должны быть целыми числами."
+        ) from exc
 
     db_path = os.environ.get("DB_PATH", DEFAULT_DB_PATH)
     log_level = os.environ.get("LOG_LEVEL", DEFAULT_LOG_LEVEL)
@@ -145,6 +150,7 @@ def load_settings(env_file: str | None = None) -> Settings:
         owner_chat_id=owner_chat_id,
         daily_limit=daily_limit,
         monthly_limit=monthly_limit,
+        digest_send_hour=digest_send_hour,
         db_path=db_path,
         log_level=log_level,
         mini_app_url=mini_app_url,
