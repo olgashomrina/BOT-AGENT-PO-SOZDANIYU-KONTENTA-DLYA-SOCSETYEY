@@ -525,7 +525,7 @@ git commit -m "feat: add authored-post flow strings to all four locales"
   - `CALLBACK_NEW_SAMPLES = "authorpost:new_samples"`
   - `CALLBACK_SAMPLES_DONE = "authorpost:samples_done"`
   - `CALLBACK_PLATFORM_PREFIX = "authorpost:platform"` (данные: `authorpost:platform:telegram|vk|both`)
-  - `build_item_choice_keyboard(item_count: int, lang: str) -> InlineKeyboardMarkup`
+  - `build_item_choice_keyboard(item_count: int) -> InlineKeyboardMarkup` (без `lang`: подписи кнопок — цифры, локализовать нечего)
   - `build_next_step_keyboard(lang: str) -> InlineKeyboardMarkup`
   - `build_saved_examples_keyboard(lang: str) -> InlineKeyboardMarkup`
   - `build_samples_done_keyboard(lang: str) -> InlineKeyboardMarkup`
@@ -556,7 +556,7 @@ from bot.locales.loader import get_string
 
 
 def test_item_choice_keyboard_has_one_button_per_item():
-    keyboard = build_item_choice_keyboard(6, "ru")
+    keyboard = build_item_choice_keyboard(6)
 
     buttons = [button for row in keyboard.inline_keyboard for button in row]
     assert len(buttons) == 6
@@ -564,7 +564,7 @@ def test_item_choice_keyboard_has_one_button_per_item():
 
 
 def test_item_choice_keyboard_uses_zero_based_index_in_callback_data():
-    keyboard = build_item_choice_keyboard(3, "ru")
+    keyboard = build_item_choice_keyboard(3)
 
     buttons = [button for row in keyboard.inline_keyboard for button in row]
     assert [button.callback_data for button in buttons] == [
@@ -575,7 +575,7 @@ def test_item_choice_keyboard_uses_zero_based_index_in_callback_data():
 
 
 def test_item_choice_keyboard_wraps_at_four_per_row():
-    keyboard = build_item_choice_keyboard(8, "ru")
+    keyboard = build_item_choice_keyboard(8)
 
     assert len(keyboard.inline_keyboard) == 2
     assert len(keyboard.inline_keyboard[0]) == 4
@@ -583,14 +583,14 @@ def test_item_choice_keyboard_wraps_at_four_per_row():
 
 
 def test_item_choice_keyboard_partial_last_row():
-    keyboard = build_item_choice_keyboard(5, "ru")
+    keyboard = build_item_choice_keyboard(5)
 
     assert len(keyboard.inline_keyboard) == 2
     assert len(keyboard.inline_keyboard[1]) == 1
 
 
 def test_item_choice_keyboard_is_empty_for_zero_items():
-    keyboard = build_item_choice_keyboard(0, "ru")
+    keyboard = build_item_choice_keyboard(0)
 
     assert keyboard.inline_keyboard == []
 
@@ -666,7 +666,7 @@ CALLBACK_PLATFORM_PREFIX = "authorpost:platform"
 _ITEMS_PER_ROW = 4
 
 
-def build_item_choice_keyboard(item_count: int, lang: str) -> InlineKeyboardMarkup:
+def build_item_choice_keyboard(item_count: int) -> InlineKeyboardMarkup:
     # Buttons carry the item's zero-based index, never its title: Telegram
     # caps callback_data at 64 bytes and a news headline blows straight past
     # that. The titles themselves live in FSM data (see
@@ -1538,7 +1538,7 @@ async def on_authorpost_start(callback: CallbackQuery, state: FSMContext, db_pat
 
     await callback.message.answer(
         get_string("authorpost_choose_item", language),
-        reply_markup=build_item_choice_keyboard(len(items), language),
+        reply_markup=build_item_choice_keyboard(len(items)),
     )
     await _safe_answer(callback)
 
@@ -1599,7 +1599,7 @@ git commit -m "feat: add authored-post router with digest item selection"
 - Consumes: `REQUIRED_EXAMPLES`, `AuthorPostStates` из Task 8; `clear_style_examples` из Task 2
 - Produces:
   - `on_authorpost_next(callback, state, db_path)`
-  - `on_authorpost_use_saved(callback, state, db_path)`
+  - `on_authorpost_use_saved(callback, db_path)`
   - `on_authorpost_new_samples(callback, state, db_path)`
   - `on_authorpost_sample(message, state, db_path)`
   - `on_authorpost_samples_done(callback, state, db_path)`
@@ -1665,10 +1665,9 @@ async def test_next_step_prompts_for_samples_when_stored_below_threshold(db_path
 
 @pytest.mark.asyncio
 async def test_use_saved_goes_straight_to_platform_choice(db_path):
-    state = _make_state()
     callback = _make_callback("authorpost:use_saved")
 
-    await on_authorpost_use_saved(callback, state, db_path)
+    await on_authorpost_use_saved(callback, db_path)
 
     args, kwargs = callback.message.answer.call_args
     assert args[0] == get_string("authorpost_choose_platform", "ru")
@@ -1861,7 +1860,7 @@ async def on_authorpost_next(callback: CallbackQuery, state: FSMContext, db_path
 
 
 @router.callback_query(F.data == CALLBACK_USE_SAVED)
-async def on_authorpost_use_saved(callback: CallbackQuery, state: FSMContext, db_path: str) -> None:
+async def on_authorpost_use_saved(callback: CallbackQuery, db_path: str) -> None:
     telegram_id = callback.from_user.id
     language = _resolve_language(db_path, telegram_id, callback.from_user.language_code)
 
