@@ -89,6 +89,12 @@ STRINGS = {
     "menu_intro": "Tiếp theo chúng ta làm gì?",
     "menu_capabilities_button": "Tôi có thể làm gì",
     "menu_cta_button": "Tạo bài đăng ngay",
+    "menu_news_digest_button": "Tổng hợp tin tức mới nhất",
+    "menu_news_digest_hint": (
+        "Tính năng tổng hợp tin tức vẫn đang được phát triển — sắp tới "
+        "tôi sẽ có thể tổng hợp các liên kết và đoạn trích ngắn của tin "
+        "tức mới nhất theo chủ đề bạn chọn."
+    ),
     "menu_text_generation_button": "Tạo văn bản",
     "menu_text_generation_hint": (
         "Hãy gửi cho tôi đường liên kết bài viết, tin nhắn thoại, hoặc "

@@ -15,6 +15,7 @@ from bot.handlers.refine import _check_whitelist_or_reply
 from bot.keyboards.start import (
     CALLBACK_CAPABILITIES,
     CALLBACK_CREATE_POST,
+    CALLBACK_NEWS_DIGEST,
     CALLBACK_PHOTO_GEN,
     CALLBACK_TEXT_HINT,
     build_create_post_keyboard,
@@ -113,6 +114,18 @@ async def on_menu_create_post(callback: CallbackQuery, db_path: str) -> None:
         get_string("menu_cta_button", language),
         reply_markup=build_create_post_keyboard(settings.mini_app_url, language),
     )
+    await callback.answer()
+
+
+@router.callback_query(F.data == CALLBACK_NEWS_DIGEST)
+async def on_menu_news_digest(callback: CallbackQuery, db_path: str) -> None:
+    telegram_id = callback.from_user.id
+    language = _resolve_language(db_path, telegram_id, callback.from_user.language_code)
+
+    if not await _check_whitelist_or_reply(callback, db_path, language):
+        return
+
+    await callback.message.answer(get_string("menu_news_digest_hint", language))
     await callback.answer()
 
 

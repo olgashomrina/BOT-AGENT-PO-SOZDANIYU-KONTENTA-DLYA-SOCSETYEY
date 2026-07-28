@@ -3,6 +3,7 @@ from __future__ import annotations
 from bot.keyboards.start import (
     CALLBACK_CAPABILITIES,
     CALLBACK_CREATE_POST,
+    CALLBACK_NEWS_DIGEST,
     CALLBACK_PHOTO_GEN,
     CALLBACK_TEXT_HINT,
     build_create_post_keyboard,
@@ -28,6 +29,13 @@ def test_start_menu_keyboard_has_capabilities_and_cta_buttons():
     assert keyboard.inline_keyboard[0][0].callback_data == CALLBACK_CAPABILITIES
     assert keyboard.inline_keyboard[1][0].text == get_string("menu_cta_button", "en")
     assert keyboard.inline_keyboard[1][0].callback_data == CALLBACK_CREATE_POST
+
+
+def test_start_menu_keyboard_has_news_digest_button():
+    keyboard = build_start_menu_keyboard("ru")
+
+    assert keyboard.inline_keyboard[2][0].text == get_string("menu_news_digest_button", "ru")
+    assert keyboard.inline_keyboard[2][0].callback_data == CALLBACK_NEWS_DIGEST
 
 
 def test_create_post_keyboard_includes_site_button_when_url_set():

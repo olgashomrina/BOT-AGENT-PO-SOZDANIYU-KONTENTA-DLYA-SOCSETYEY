@@ -62,6 +62,11 @@ STRINGS = {
     "menu_intro": "接下来做什么？",
     "menu_capabilities_button": "我能做什么",
     "menu_cta_button": "立即创建帖子",
+    "menu_news_digest_button": "整理最新新闻摘要",
+    "menu_news_digest_hint": (
+        "新闻摘要功能仍在开发中——很快我就能为您整理指定主题的最新新闻链接"
+        "和简短摘录了。"
+    ),
     "menu_text_generation_button": "生成文字",
     "menu_text_generation_hint": (
         "给我发送文章链接、语音消息或文字——我会为 Telegram 和 VK 准备好"

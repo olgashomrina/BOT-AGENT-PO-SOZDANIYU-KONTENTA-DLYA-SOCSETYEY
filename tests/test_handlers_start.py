@@ -162,8 +162,18 @@ async def test_help_shows_onboarding_again_for_user_who_already_saw_it(db_path):
     message.answer.assert_has_calls(_onboarding_calls("zh"))
 
 
-from bot.handlers.start import on_menu_capabilities, on_menu_create_post, on_menu_text_hint
-from bot.keyboards.start import CALLBACK_CAPABILITIES, CALLBACK_CREATE_POST, CALLBACK_TEXT_HINT
+from bot.handlers.start import (
+    on_menu_capabilities,
+    on_menu_create_post,
+    on_menu_news_digest,
+    on_menu_text_hint,
+)
+from bot.keyboards.start import (
+    CALLBACK_CAPABILITIES,
+    CALLBACK_CREATE_POST,
+    CALLBACK_NEWS_DIGEST,
+    CALLBACK_TEXT_HINT,
+)
 from bot.storage.whitelist import add_user
 
 
@@ -216,6 +226,26 @@ async def test_menu_create_post_blocked_when_not_whitelisted(db_path):
     callback = _make_callback(2004, CALLBACK_CREATE_POST)
 
     await on_menu_create_post(callback, db_path)
+
+    callback.message.answer.assert_awaited_once_with(get_string("error_not_whitelisted", "ru"))
+
+
+@pytest.mark.asyncio
+async def test_menu_news_digest_sends_hint_text(db_path):
+    add_user(db_path, 2007)
+    callback = _make_callback(2007, CALLBACK_NEWS_DIGEST)
+
+    await on_menu_news_digest(callback, db_path)
+
+    callback.message.answer.assert_awaited_once_with(get_string("menu_news_digest_hint", "ru"))
+    callback.answer.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_menu_news_digest_blocked_when_not_whitelisted(db_path):
+    callback = _make_callback(2008, CALLBACK_NEWS_DIGEST)
+
+    await on_menu_news_digest(callback, db_path)
 
     callback.message.answer.assert_awaited_once_with(get_string("error_not_whitelisted", "ru"))
 

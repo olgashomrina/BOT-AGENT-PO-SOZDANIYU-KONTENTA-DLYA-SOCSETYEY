@@ -86,6 +86,12 @@ STRINGS = {
     "menu_intro": "What shall we do next?",
     "menu_capabilities_button": "What I can do",
     "menu_cta_button": "Create a post now",
+    "menu_news_digest_button": "Gather a fresh news digest",
+    "menu_news_digest_hint": (
+        "The news digest feature is still in development — soon I'll be "
+        "able to gather a summary of links and short excerpts of fresh "
+        "news on your chosen topic."
+    ),
     "menu_text_generation_button": "Text generation",
     "menu_text_generation_hint": (
         "Send me a link to an article, a voice message, or text — "

@@ -12,6 +12,7 @@ from bot.locales.loader import get_string
 
 CALLBACK_CAPABILITIES = "menu:capabilities"
 CALLBACK_CREATE_POST = "menu:create_post"
+CALLBACK_NEWS_DIGEST = "menu:news_digest"
 CALLBACK_TEXT_HINT = "menu:text_hint"
 CALLBACK_PHOTO_GEN = "menu:photo_gen"
 
@@ -36,6 +37,12 @@ def build_start_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text=get_string("menu_cta_button", lang),
                     callback_data=CALLBACK_CREATE_POST,
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=get_string("menu_news_digest_button", lang),
+                    callback_data=CALLBACK_NEWS_DIGEST,
                 )
             ],
         ]
