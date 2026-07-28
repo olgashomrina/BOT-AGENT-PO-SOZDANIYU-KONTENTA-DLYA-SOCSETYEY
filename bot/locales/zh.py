@@ -63,10 +63,18 @@ STRINGS = {
     "menu_capabilities_button": "我能做什么",
     "menu_cta_button": "立即创建帖子",
     "menu_news_digest_button": "整理最新新闻摘要",
-    "menu_news_digest_hint": (
-        "新闻摘要功能仍在开发中——很快我就能为您整理指定主题的最新新闻链接"
-        "和简短摘录了。"
-    ),
+    "menu_digest_write_topic_button": "写下您感兴趣的主题",
+    "menu_digest_change_topic_button": "更换主题",
+    "digest_prompt_no_topic": "要收集摘要，请先告诉我您感兴趣的主题。",
+    "digest_change_topic_prompt": "要收集其他主题的摘要吗？",
+    "digest_topic_input_prompt": "请写下要收集摘要的主题：",
+    "digest_topic_input_placeholder": "例如：心理学",
+    "digest_topic_saved": "主题已保存：「{topic}」。正在收集摘要……",
+    "digest_title": "📋 关于「{topic}」的摘要（{date}）",
+    "digest_section_news": "📰 新闻",
+    "digest_section_papers": "🔬 科学文章",
+    "digest_section_methods": "💡 新方法",
+    "digest_empty_result": "今天没有找到关于「{topic}」的内容。请尝试其他主题或稍后再来看看。",
     "menu_text_generation_button": "生成文字",
     "menu_text_generation_hint": (
         "给我发送文章链接、语音消息或文字——我会为 Telegram 和 VK 准备好"

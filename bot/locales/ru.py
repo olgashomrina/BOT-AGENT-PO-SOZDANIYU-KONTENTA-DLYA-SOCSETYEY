@@ -90,9 +90,22 @@ STRINGS = {
     "menu_capabilities_button": "Я умею",
     "menu_cta_button": "Создать пост сейчас",
     "menu_news_digest_button": "Собрать дайджест свежих новостей",
-    "menu_news_digest_hint": (
-        "Дайджест новостей пока в разработке — скоро я научусь собирать "
-        "сводку ссылок и кратких вырезок свежих новостей по заданной теме."
+    "menu_digest_write_topic_button": "Напиши интересующую тему",
+    "menu_digest_change_topic_button": "Написать тему",
+    "digest_prompt_no_topic": (
+        "Чтобы собрать дайджест, сначала укажите тему, которая вам интересна."
+    ),
+    "digest_change_topic_prompt": "Хотите собрать дайджест по другой теме?",
+    "digest_topic_input_prompt": "Напишите тему, по которой собрать дайджест:",
+    "digest_topic_input_placeholder": "Например: психология",
+    "digest_topic_saved": "Тема сохранена: «{topic}». Собираю дайджест...",
+    "digest_title": "📋 Дайджест по теме «{topic}» за {date}",
+    "digest_section_news": "📰 В новостях",
+    "digest_section_papers": "🔬 Научные статьи",
+    "digest_section_methods": "💡 Новые методики",
+    "digest_empty_result": (
+        "По теме «{topic}» сегодня ничего не нашлось. Попробуйте другую "
+        "тему или загляните попозже."
     ),
     "menu_text_generation_button": "Генерация текста",
     "menu_text_generation_hint": (

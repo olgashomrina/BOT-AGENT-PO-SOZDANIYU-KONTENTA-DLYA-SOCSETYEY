@@ -90,10 +90,22 @@ STRINGS = {
     "menu_capabilities_button": "Tôi có thể làm gì",
     "menu_cta_button": "Tạo bài đăng ngay",
     "menu_news_digest_button": "Tổng hợp tin tức mới nhất",
-    "menu_news_digest_hint": (
-        "Tính năng tổng hợp tin tức vẫn đang được phát triển — sắp tới "
-        "tôi sẽ có thể tổng hợp các liên kết và đoạn trích ngắn của tin "
-        "tức mới nhất theo chủ đề bạn chọn."
+    "menu_digest_write_topic_button": "Viết chủ đề bạn quan tâm",
+    "menu_digest_change_topic_button": "Đổi chủ đề",
+    "digest_prompt_no_topic": (
+        "Để tổng hợp bản tin, trước tiên hãy cho tôi biết chủ đề bạn quan tâm."
+    ),
+    "digest_change_topic_prompt": "Bạn có muốn tổng hợp bản tin theo chủ đề khác không?",
+    "digest_topic_input_prompt": "Viết chủ đề cần tổng hợp bản tin:",
+    "digest_topic_input_placeholder": "Ví dụ: tâm lý học",
+    "digest_topic_saved": "Đã lưu chủ đề: «{topic}». Đang tổng hợp bản tin...",
+    "digest_title": "📋 Bản tin theo chủ đề «{topic}» ngày {date}",
+    "digest_section_news": "📰 Trong tin tức",
+    "digest_section_papers": "🔬 Bài báo khoa học",
+    "digest_section_methods": "💡 Phương pháp mới",
+    "digest_empty_result": (
+        "Không tìm thấy gì về «{topic}» hôm nay. Hãy thử chủ đề khác hoặc "
+        "quay lại sau."
     ),
     "menu_text_generation_button": "Tạo văn bản",
     "menu_text_generation_hint": (
