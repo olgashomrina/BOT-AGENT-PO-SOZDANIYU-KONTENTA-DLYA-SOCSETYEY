@@ -154,3 +154,40 @@ def get_content_language(db_path: str, telegram_id: int) -> str | None:
         return content_language if content_language is not None else interface_language
     finally:
         connection.close()
+
+
+def set_digest_topic(db_path: str, telegram_id: int, topic: str) -> None:
+    connection = get_connection(db_path)
+    try:
+        _ensure_user_row(connection, telegram_id)
+        connection.execute(
+            "UPDATE users SET digest_topic = ? WHERE telegram_id = ?",
+            (topic, telegram_id),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def get_digest_topic(db_path: str, telegram_id: int) -> str | None:
+    connection = get_connection(db_path)
+    try:
+        row = connection.execute(
+            "SELECT digest_topic FROM users WHERE telegram_id = ?",
+            (telegram_id,),
+        ).fetchone()
+        return row[0] if row else None
+    finally:
+        connection.close()
+
+
+def get_users_with_digest_topic(db_path: str) -> list[tuple[int, str]]:
+    connection = get_connection(db_path)
+    try:
+        rows = connection.execute(
+            "SELECT telegram_id, digest_topic FROM users "
+            "WHERE digest_topic IS NOT NULL AND digest_topic != ''"
+        ).fetchall()
+        return [(row[0], row[1]) for row in rows]
+    finally:
+        connection.close()

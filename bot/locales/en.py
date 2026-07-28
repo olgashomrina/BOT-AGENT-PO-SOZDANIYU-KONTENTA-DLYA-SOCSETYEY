@@ -87,10 +87,22 @@ STRINGS = {
     "menu_capabilities_button": "What I can do",
     "menu_cta_button": "Create a post now",
     "menu_news_digest_button": "Gather a fresh news digest",
-    "menu_news_digest_hint": (
-        "The news digest feature is still in development — soon I'll be "
-        "able to gather a summary of links and short excerpts of fresh "
-        "news on your chosen topic."
+    "menu_digest_write_topic_button": "Write the topic you're interested in",
+    "menu_digest_change_topic_button": "Change topic",
+    "digest_prompt_no_topic": (
+        "To collect a digest, first tell me a topic you're interested in."
+    ),
+    "digest_change_topic_prompt": "Want to collect a digest on a different topic?",
+    "digest_topic_input_prompt": "Write the topic to collect a digest for:",
+    "digest_topic_input_placeholder": "For example: psychology",
+    "digest_topic_saved": "Topic saved: \"{topic}\". Collecting the digest...",
+    "digest_title": "📋 Digest on \"{topic}\" for {date}",
+    "digest_section_news": "📰 In the news",
+    "digest_section_papers": "🔬 Scientific papers",
+    "digest_section_methods": "💡 New methods",
+    "digest_empty_result": (
+        "Nothing found on \"{topic}\" today. Try another topic or check "
+        "back later."
     ),
     "menu_text_generation_button": "Text generation",
     "menu_text_generation_hint": (

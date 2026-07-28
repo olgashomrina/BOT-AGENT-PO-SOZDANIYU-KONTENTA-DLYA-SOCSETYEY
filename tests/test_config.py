@@ -138,3 +138,20 @@ def test_load_settings_raises_when_site_api_port_not_numeric(monkeypatch, tmp_pa
 
     with pytest.raises(ConfigError):
         load_settings(env_file=_missing_env_file(tmp_path))
+
+
+def test_digest_send_hour_defaults_to_9(monkeypatch, tmp_path):
+    _set_required_env(monkeypatch)
+    monkeypatch.delenv("DIGEST_SEND_HOUR", raising=False)
+
+    settings = load_settings(env_file=_missing_env_file(tmp_path))
+
+    assert settings.digest_send_hour == 9
+
+
+def test_digest_send_hour_reads_from_env(monkeypatch, tmp_path):
+    _set_required_env(monkeypatch, {"DIGEST_SEND_HOUR": "14"})
+
+    settings = load_settings(env_file=_missing_env_file(tmp_path))
+
+    assert settings.digest_send_hour == 14

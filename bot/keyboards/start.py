@@ -15,6 +15,7 @@ CALLBACK_CREATE_POST = "menu:create_post"
 CALLBACK_NEWS_DIGEST = "menu:news_digest"
 CALLBACK_TEXT_HINT = "menu:text_hint"
 CALLBACK_PHOTO_GEN = "menu:photo_gen"
+CALLBACK_DIGEST_SET_TOPIC = "menu:digest_set_topic"
 
 
 def build_persistent_start_keyboard(lang: str) -> ReplyKeyboardMarkup:
@@ -77,3 +78,19 @@ def build_create_post_keyboard(mini_app_url: str, lang: str) -> InlineKeyboardMa
         ]
     )
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def build_digest_topic_keyboard(lang: str, has_saved_topic: bool) -> InlineKeyboardMarkup:
+    label_key = (
+        "menu_digest_change_topic_button" if has_saved_topic else "menu_digest_write_topic_button"
+    )
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=get_string(label_key, lang),
+                    callback_data=CALLBACK_DIGEST_SET_TOPIC,
+                )
+            ]
+        ]
+    )

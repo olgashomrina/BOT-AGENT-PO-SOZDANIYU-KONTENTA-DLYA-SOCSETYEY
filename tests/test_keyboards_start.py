@@ -63,3 +63,20 @@ def test_create_post_keyboard_text_and_photo_buttons():
     assert text_button.callback_data == CALLBACK_TEXT_HINT
     assert photo_button.text == get_string("menu_photo_generation_button", "vi")
     assert photo_button.callback_data == CALLBACK_PHOTO_GEN
+
+
+from bot.keyboards.start import CALLBACK_DIGEST_SET_TOPIC, build_digest_topic_keyboard
+
+
+def test_digest_topic_keyboard_shows_write_label_when_no_saved_topic():
+    keyboard = build_digest_topic_keyboard("ru", has_saved_topic=False)
+
+    assert keyboard.inline_keyboard[0][0].text == get_string("menu_digest_write_topic_button", "ru")
+    assert keyboard.inline_keyboard[0][0].callback_data == CALLBACK_DIGEST_SET_TOPIC
+
+
+def test_digest_topic_keyboard_shows_change_label_when_topic_saved():
+    keyboard = build_digest_topic_keyboard("en", has_saved_topic=True)
+
+    assert keyboard.inline_keyboard[0][0].text == get_string("menu_digest_change_topic_button", "en")
+    assert keyboard.inline_keyboard[0][0].callback_data == CALLBACK_DIGEST_SET_TOPIC

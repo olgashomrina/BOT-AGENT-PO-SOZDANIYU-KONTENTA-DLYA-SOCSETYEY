@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS users (
     channel_id INTEGER,
     pending_media_file_id TEXT,
     pending_media_type TEXT,
-    onboarding_shown INTEGER
+    onboarding_shown INTEGER,
+    digest_topic TEXT
 );
 
 CREATE TABLE IF NOT EXISTS usage_log (
@@ -75,6 +76,17 @@ def _ensure_onboarding_shown_column(connection: sqlite3.Connection) -> None:
         connection.execute("ALTER TABLE users ADD COLUMN onboarding_shown INTEGER")
 
 
+def _ensure_digest_topic_column(connection: sqlite3.Connection) -> None:
+    # This feature (Plan.md-adjacent digest work, docs/superpowers/specs/
+    # 2026-07-28-topic-digest-design.md) shipped after Phases 0-16 were
+    # already deployed in production. CREATE TABLE IF NOT EXISTS above only
+    # covers fresh installs — existing databases need an explicit migration
+    # so the already-deployed bot doesn't crash on the next release.
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(users)")}
+    if "digest_topic" not in columns:
+        connection.execute("ALTER TABLE users ADD COLUMN digest_topic TEXT")
+
+
 def init_db(db_path: str) -> None:
     connection = sqlite3.connect(db_path)
     try:
@@ -82,6 +94,7 @@ def init_db(db_path: str) -> None:
         _ensure_channel_id_column(connection)
         _ensure_pending_media_columns(connection)
         _ensure_onboarding_shown_column(connection)
+        _ensure_digest_topic_column(connection)
         connection.commit()
     finally:
         connection.close()

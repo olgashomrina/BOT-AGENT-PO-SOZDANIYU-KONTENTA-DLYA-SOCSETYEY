@@ -226,6 +226,7 @@ async def test_run_wrapper_notifies_owner_logs_critical_and_reraises_on_crash(mo
         site_api_host="0.0.0.0",
         site_api_port=0,
         site_media_dir="site_media",
+        digest_send_hour=9,
     )
     monkeypatch.setattr(main_module, "load_settings", lambda: fake_settings)
     # Real setup_logging() sets propagate=False on the "bot" logger, which
@@ -287,6 +288,7 @@ async def test_run_wrapper_still_reraises_when_notify_owner_itself_fails(monkeyp
         site_api_host="0.0.0.0",
         site_api_port=0,
         site_media_dir="site_media",
+        digest_send_hour=9,
     )
     monkeypatch.setattr(main_module, "load_settings", lambda: fake_settings)
     monkeypatch.setattr(main_module, "setup_logging", lambda level: logging.getLogger("bot"))

@@ -7,28 +7,33 @@ from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import BufferedInputFile, CallbackQuery, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, ForceReply, Message
 
 from bot.config import load_settings
 from bot.handlers.content import _AI_ERROR_KEYS, _resolve_language
-from bot.handlers.refine import _check_whitelist_or_reply
+from bot.handlers.refine import _check_limit_or_reply, _check_whitelist_or_reply, _safe_answer
 from bot.keyboards.start import (
     CALLBACK_CAPABILITIES,
     CALLBACK_CREATE_POST,
+    CALLBACK_DIGEST_SET_TOPIC,
     CALLBACK_NEWS_DIGEST,
     CALLBACK_PHOTO_GEN,
     CALLBACK_TEXT_HINT,
     build_create_post_keyboard,
+    build_digest_topic_keyboard,
     build_persistent_start_keyboard,
     build_start_menu_keyboard,
 )
 from bot.locales.loader import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, get_string
 from bot.logging_config import LOGGER_NAME
-from bot.services import ai_gateway, content_generator
+from bot.services import ai_gateway, content_generator, digest
 from bot.services.ai_gateway import AIGatewayError
+from bot.storage.limits import increment_usage
 from bot.storage.users import (
+    get_digest_topic,
     get_interface_language,
     get_onboarding_shown,
+    set_digest_topic,
     set_interface_language,
     set_onboarding_shown,
     set_pending_media,
@@ -41,6 +46,10 @@ logger = logging.getLogger(LOGGER_NAME)
 
 class PhotoGenStates(StatesGroup):
     waiting_for_description = State()
+
+
+class DigestStates(StatesGroup):
+    waiting_for_topic = State()
 
 
 _START_BUTTON_LABELS = frozenset(
@@ -125,8 +134,76 @@ async def on_menu_news_digest(callback: CallbackQuery, db_path: str) -> None:
     if not await _check_whitelist_or_reply(callback, db_path, language):
         return
 
-    await callback.message.answer(get_string("menu_news_digest_hint", language))
-    await callback.answer()
+    topic = get_digest_topic(db_path, telegram_id)
+    if topic is None:
+        await callback.message.answer(
+            get_string("digest_prompt_no_topic", language),
+            reply_markup=build_digest_topic_keyboard(language, has_saved_topic=False),
+        )
+        await _safe_answer(callback)
+        return
+
+    if not await _check_limit_or_reply(callback, db_path, language):
+        return
+
+    result = await digest.build_digest(topic)
+    increment_usage(db_path, telegram_id)
+
+    await callback.message.answer(digest.format_digest_message(result, language))
+    await callback.message.answer(
+        get_string("digest_change_topic_prompt", language),
+        reply_markup=build_digest_topic_keyboard(language, has_saved_topic=True),
+    )
+    await _safe_answer(callback)
+
+
+@router.callback_query(F.data == CALLBACK_DIGEST_SET_TOPIC)
+async def on_menu_digest_set_topic(callback: CallbackQuery, state: FSMContext, db_path: str) -> None:
+    telegram_id = callback.from_user.id
+    language = _resolve_language(db_path, telegram_id, callback.from_user.language_code)
+
+    if not await _check_whitelist_or_reply(callback, db_path, language):
+        return
+
+    await state.update_data(language=language)
+    await state.set_state(DigestStates.waiting_for_topic)
+    await callback.message.answer(
+        get_string("digest_topic_input_prompt", language),
+        reply_markup=ForceReply(
+            input_field_placeholder=get_string("digest_topic_input_placeholder", language)
+        ),
+    )
+    await _safe_answer(callback)
+
+
+@router.message(DigestStates.waiting_for_topic)
+async def on_digest_topic_input(message: Message, state: FSMContext, db_path: str) -> None:
+    telegram_id = message.from_user.id
+    data = await state.get_data()
+    language = data.get("language") or _resolve_language(
+        db_path, telegram_id, message.from_user.language_code
+    )
+    topic = (message.text or "").strip()
+
+    if not topic:
+        await message.answer(
+            get_string("digest_topic_input_prompt", language),
+            reply_markup=ForceReply(
+                input_field_placeholder=get_string("digest_topic_input_placeholder", language)
+            ),
+        )
+        return
+
+    set_digest_topic(db_path, telegram_id, topic)
+    await state.set_state(None)
+    await message.answer(get_string("digest_topic_saved", language, topic=topic))
+
+    result = await digest.build_digest(topic)
+    await message.answer(digest.format_digest_message(result, language))
+    await message.answer(
+        get_string("digest_change_topic_prompt", language),
+        reply_markup=build_digest_topic_keyboard(language, has_saved_topic=True),
+    )
 
 
 @router.callback_query(F.data == CALLBACK_TEXT_HINT)
