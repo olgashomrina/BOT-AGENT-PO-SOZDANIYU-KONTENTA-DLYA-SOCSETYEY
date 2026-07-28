@@ -3,6 +3,7 @@ from __future__ import annotations
 from bot.storage.style_examples import (
     MAX_EXAMPLES_PER_USER,
     add_style_example,
+    clear_style_examples,
     get_style_examples,
 )
 
@@ -54,3 +55,32 @@ def test_style_examples_are_isolated_per_user(db_path):
 
     assert get_style_examples(db_path, TELEGRAM_ID) == ["Пример пользователя А"]
     assert get_style_examples(db_path, OTHER_TELEGRAM_ID) == ["Пример пользователя Б"]
+
+
+def test_cap_allows_ten_examples():
+    assert MAX_EXAMPLES_PER_USER == 10
+
+
+def test_clear_style_examples_removes_all_for_user(db_path):
+    add_style_example(db_path, TELEGRAM_ID, "Первый")
+    add_style_example(db_path, TELEGRAM_ID, "Второй")
+
+    clear_style_examples(db_path, TELEGRAM_ID)
+
+    assert get_style_examples(db_path, TELEGRAM_ID) == []
+
+
+def test_clear_style_examples_leaves_other_users_untouched(db_path):
+    add_style_example(db_path, TELEGRAM_ID, "Пример пользователя А")
+    add_style_example(db_path, OTHER_TELEGRAM_ID, "Пример пользователя Б")
+
+    clear_style_examples(db_path, TELEGRAM_ID)
+
+    assert get_style_examples(db_path, TELEGRAM_ID) == []
+    assert get_style_examples(db_path, OTHER_TELEGRAM_ID) == ["Пример пользователя Б"]
+
+
+def test_clear_style_examples_is_safe_for_unknown_user(db_path):
+    clear_style_examples(db_path, TELEGRAM_ID)
+
+    assert get_style_examples(db_path, TELEGRAM_ID) == []
