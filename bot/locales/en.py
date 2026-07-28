@@ -212,4 +212,42 @@ STRINGS = {
     ),
     "site_push_success": "Done! The card on the site has been updated.",
     "site_push_photo_failed": "Couldn't download the photo for the site — please try again in a moment.",
+    "authorpost_button": "✍️ WRITE MY AUTHORED POST",
+    "authorpost_digest_expired": (
+        "This digest has expired — collect a fresh one and the authored "
+        "post button will work again."
+    ),
+    "authorpost_choose_item": "Which digest item should the post be about?",
+    "authorpost_item_chosen": "Great, going with: {item}",
+    "authorpost_next_button": "I'll help you write it — tap to continue",
+    "authorpost_saved_examples_intro": (
+        "I already know your voice — saved examples: {count}. Write from "
+        "those, or upload fresh ones?"
+    ),
+    "authorpost_use_saved_button": "Write now",
+    "authorpost_new_samples_button": "Upload new examples",
+    "authorpost_samples_cleared": "Old examples deleted. Send the new ones.",
+    "authorpost_samples_prompt": (
+        "Paste examples of your own posts — at least {required}. Send them "
+        "one after another, one per message, as plain text. I'll read your "
+        "personal writing voice from them."
+    ),
+    "authorpost_samples_progress": "Accepted {count} of {required}.",
+    "authorpost_samples_enough": (
+        "Accepted {count} of {required} ✅ That's enough. Send more for "
+        "accuracy, or tap the button."
+    ),
+    "authorpost_samples_done_button": "Done, write the post",
+    "authorpost_sample_too_long": (
+        "This example is too long. Please send a shorter one (up to 2000 "
+        "characters)."
+    ),
+    "authorpost_sample_non_text": (
+        "Please send the example as a plain text message."
+    ),
+    "authorpost_choose_platform": "Where are we posting?",
+    "authorpost_platform_telegram_button": "Telegram",
+    "authorpost_platform_vk_button": "VK",
+    "authorpost_platform_both_button": "Both",
+    "authorpost_generating": "Writing an authored post in your voice...",
 }

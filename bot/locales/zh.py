@@ -161,4 +161,36 @@ STRINGS = {
     "site_pull_empty": "该卡片尚未发布到网站——请先使用'发布到网站'按钮。",
     "site_push_success": "完成！网站上的卡片已更新。",
     "site_push_photo_failed": "未能下载网站用的图片——请稍后重试。",
+    "authorpost_button": "✍️ 撰写我的原创帖子",
+    "authorpost_digest_expired": (
+        "这份摘要已过期——请重新收集一份，原创帖子按钮就会再次可用。"
+    ),
+    "authorpost_choose_item": "要针对摘要中的哪一条撰写帖子？",
+    "authorpost_item_chosen": "好的，就用这条：{item}",
+    "authorpost_next_button": "我来帮您写，点击继续",
+    "authorpost_saved_examples_intro": (
+        "我已经了解您的文风——已保存示例：{count} 个。用它们来写，还是上传新的？"
+    ),
+    "authorpost_use_saved_button": "直接开写",
+    "authorpost_new_samples_button": "上传新示例",
+    "authorpost_samples_cleared": "旧示例已删除。请发送新的示例。",
+    "authorpost_samples_prompt": (
+        "请粘贴您自己的帖子示例——不少于 {required} 篇。请连续发送，"
+        "每条消息一篇，使用纯文本。我会从中读出您的个人文风。"
+    ),
+    "authorpost_samples_progress": "已收到 {count} / {required}。",
+    "authorpost_samples_enough": (
+        "已收到 {count} / {required} ✅ 示例已经足够。可以再发几篇提高准确度，"
+        "或直接点击按钮。"
+    ),
+    "authorpost_samples_done_button": "完成，开始写帖子",
+    "authorpost_sample_too_long": (
+        "这个示例太长了。请发送短一些的示例（不超过 2000 个字符）。"
+    ),
+    "authorpost_sample_non_text": "请以纯文本消息发送示例。",
+    "authorpost_choose_platform": "发布到哪里？",
+    "authorpost_platform_telegram_button": "Telegram",
+    "authorpost_platform_vk_button": "VK",
+    "authorpost_platform_both_button": "两个都要",
+    "authorpost_generating": "正在用您的文风撰写原创帖子……",
 }

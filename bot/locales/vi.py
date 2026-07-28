@@ -215,4 +215,42 @@ STRINGS = {
     ),
     "site_push_success": "Xong! Thẻ trên trang web đã được cập nhật.",
     "site_push_photo_failed": "Không thể tải ảnh cho trang web — vui lòng thử lại sau.",
+    "authorpost_button": "✍️ VIẾT BÀI ĐĂNG CỦA RIÊNG TÔI",
+    "authorpost_digest_expired": (
+        "Bản tin này đã cũ — hãy tổng hợp bản tin mới, nút viết bài sẽ "
+        "hoạt động trở lại."
+    ),
+    "authorpost_choose_item": "Viết bài về mục nào trong bản tin?",
+    "authorpost_item_chosen": "Tuyệt, chọn mục: {item}",
+    "authorpost_next_button": "Tôi sẽ giúp bạn viết — nhấn để tiếp tục",
+    "authorpost_saved_examples_intro": (
+        "Tôi đã biết văn phong của bạn — số ví dụ đã lưu: {count}. Viết "
+        "theo chúng hay tải lên ví dụ mới?"
+    ),
+    "authorpost_use_saved_button": "Viết ngay",
+    "authorpost_new_samples_button": "Tải lên ví dụ mới",
+    "authorpost_samples_cleared": "Đã xóa ví dụ cũ. Hãy gửi ví dụ mới.",
+    "authorpost_samples_prompt": (
+        "Hãy dán các bài đăng của bạn — ít nhất {required} bài. Gửi lần "
+        "lượt, mỗi bài một tin nhắn, dạng văn bản thường. Tôi sẽ đọc ra "
+        "văn phong riêng của bạn."
+    ),
+    "authorpost_samples_progress": "Đã nhận {count} trên {required}.",
+    "authorpost_samples_enough": (
+        "Đã nhận {count} trên {required} ✅ Vậy là đủ. Gửi thêm cho chính "
+        "xác hơn, hoặc nhấn nút."
+    ),
+    "authorpost_samples_done_button": "Xong, viết bài đi",
+    "authorpost_sample_too_long": (
+        "Ví dụ này quá dài. Vui lòng gửi một ví dụ ngắn hơn (tối đa 2000 "
+        "ký tự)."
+    ),
+    "authorpost_sample_non_text": (
+        "Vui lòng gửi ví dụ dưới dạng tin nhắn văn bản thường."
+    ),
+    "authorpost_choose_platform": "Đăng ở đâu?",
+    "authorpost_platform_telegram_button": "Telegram",
+    "authorpost_platform_vk_button": "VK",
+    "authorpost_platform_both_button": "Cả hai",
+    "authorpost_generating": "Đang viết bài theo văn phong của bạn...",
 }

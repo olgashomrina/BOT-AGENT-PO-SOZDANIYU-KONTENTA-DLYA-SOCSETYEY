@@ -220,4 +220,42 @@ STRINGS = {
         "Не получилось скачать фото для сайта — попробуйте ещё раз чуть "
         "позже."
     ),
+    "authorpost_button": "✍️ СОЗДАЙ МОЙ АВТОРСКИЙ ПОСТ",
+    "authorpost_digest_expired": (
+        "Этот дайджест уже устарел — соберите свежий, и кнопка авторского "
+        "поста заработает снова."
+    ),
+    "authorpost_choose_item": "По какому пункту дайджеста написать пост?",
+    "authorpost_item_chosen": "Отлично, берём: {item}",
+    "authorpost_next_button": "Помогу тебе написать, жми дальше",
+    "authorpost_saved_examples_intro": (
+        "Я уже знаю ваш почерк — сохранено образцов: {count}. Писать пост "
+        "по ним или загрузите свежие?"
+    ),
+    "authorpost_use_saved_button": "Писать сразу",
+    "authorpost_new_samples_button": "Загрузить новые образцы",
+    "authorpost_samples_cleared": "Старые образцы удалены. Присылайте новые.",
+    "authorpost_samples_prompt": (
+        "Вставьте образцы своих постов — не менее {required}. Присылайте их "
+        "подряд, каждый отдельным сообщением, обычным текстом. По ним я "
+        "считаю ваш личный почерк."
+    ),
+    "authorpost_samples_progress": "Принято {count} из {required}.",
+    "authorpost_samples_enough": (
+        "Принято {count} из {required} ✅ Образцов достаточно. Можно прислать "
+        "ещё для точности или нажать кнопку."
+    ),
+    "authorpost_samples_done_button": "Готово, пиши пост",
+    "authorpost_sample_too_long": (
+        "Этот образец слишком длинный. Пришлите, пожалуйста, покороче "
+        "(до 2000 символов)."
+    ),
+    "authorpost_sample_non_text": (
+        "Пришлите, пожалуйста, образец обычным текстовым сообщением."
+    ),
+    "authorpost_choose_platform": "Куда пишем?",
+    "authorpost_platform_telegram_button": "Telegram",
+    "authorpost_platform_vk_button": "VK",
+    "authorpost_platform_both_button": "И туда, и туда",
+    "authorpost_generating": "Пишу авторский пост в вашем стиле...",
 }
