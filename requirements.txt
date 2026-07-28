@@ -5,3 +5,4 @@ trafilatura==2.1.0
 pytest==8.3.4
 pytest-asyncio==0.25.2
 respx==0.22.0
+feedparser==6.0.11
