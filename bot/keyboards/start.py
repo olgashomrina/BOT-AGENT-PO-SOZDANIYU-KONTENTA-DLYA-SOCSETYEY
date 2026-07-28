@@ -8,6 +8,7 @@ from aiogram.types import (
     WebAppInfo,
 )
 
+from bot.keyboards.authorpost import CALLBACK_START as CALLBACK_AUTHORPOST_START
 from bot.locales.loader import get_string
 
 CALLBACK_CAPABILITIES = "menu:capabilities"
@@ -91,6 +92,16 @@ def build_digest_topic_keyboard(lang: str, has_saved_topic: bool) -> InlineKeybo
                     text=get_string(label_key, lang),
                     callback_data=CALLBACK_DIGEST_SET_TOPIC,
                 )
-            ]
+            ],
+            # Offered even when the digest turned up empty: the button leads
+            # to a "digest expired / collect a fresh one" reply rather than a
+            # dead end, and keeping the keyboard shape constant means the
+            # user's muscle memory for the button position always holds.
+            [
+                InlineKeyboardButton(
+                    text=get_string("authorpost_button", lang),
+                    callback_data=CALLBACK_AUTHORPOST_START,
+                )
+            ],
         ]
     )
