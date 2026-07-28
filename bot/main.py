@@ -20,6 +20,7 @@ from bot.locales.loader import SUPPORTED_LANGUAGES, get_string
 from bot.logging_config import setup_logging
 from bot.middlewares.rate_limit_middleware import RateLimitMiddleware
 from bot.middlewares.whitelist_middleware import WhitelistMiddleware
+from bot.services.digest_scheduler import build_digest_scheduler
 from bot.services.owner_notifier import notify_owner
 from bot.services.site_api import build_site_api_app
 from bot.storage.db import init_db
@@ -74,6 +75,9 @@ async def run() -> None:
     await _configure_start_menu_button(bot)
     dispatcher = build_dispatcher(settings.daily_limit, settings.monthly_limit)
 
+    digest_scheduler = build_digest_scheduler(bot, settings.db_path, settings.digest_send_hour)
+    digest_scheduler.start()
+
     site_api_app = build_site_api_app(settings.db_path, settings.site_media_dir)
     runner = web.AppRunner(site_api_app)
     await runner.setup()
@@ -95,6 +99,7 @@ async def run() -> None:
             logger.critical("Не удалось уведомить владельца о падении бота", exc_info=True)
         raise
     finally:
+        digest_scheduler.shutdown()
         await runner.cleanup()
         await bot.session.close()
 
