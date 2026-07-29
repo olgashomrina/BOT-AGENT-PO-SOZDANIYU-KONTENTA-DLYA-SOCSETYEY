@@ -29,6 +29,7 @@ from bot.services.ai_gateway import (
     TranscriptionError,
 )
 from bot.services.input_processor import LinkExtractionError
+from bot.storage.refine_context import save_refine_context
 from bot.storage.style_examples import get_style_examples
 from bot.storage.users import (
     clear_pending_media,
@@ -229,12 +230,35 @@ async def on_transcript_edited_text(message: Message, state: FSMContext) -> None
 # Public because bot/handlers/authorpost.py sends its variants through the
 # same path — same formatting, same refine keyboard — and duplicating this
 # there would let the two output formats drift apart.
-async def send_variants(message: Message, language: str, platform: str, variants: list[str]) -> None:
+async def send_variants(
+    message: Message,
+    language: str,
+    platform: str,
+    variants: list[str],
+    db_path: str,
+    source_text: str,
+    content_language: str,
+    with_hashtags: bool,
+) -> None:
     for index, variant in enumerate(variants, start=1):
-        await message.answer(
+        # WHY the sent message is captured and recorded: the refine buttons
+        # attached below regenerate from the source of THIS post. Telegram
+        # keeps old messages and their buttons alive indefinitely, so a single
+        # shared per-chat value would be overwritten by the next generation and
+        # a later tap would regenerate the wrong thing entirely.
+        sent = await message.answer(
             output_formatter.format_variant(variant),
             parse_mode=output_formatter.PARSE_MODE,
             reply_markup=build_refine_keyboard(platform, index, language),
+        )
+        save_refine_context(
+            db_path,
+            message.chat.id,
+            sent.message_id,
+            source_text,
+            content_language,
+            with_hashtags,
+            platform,
         )
 
 
@@ -292,5 +316,23 @@ async def _finish(
         await message.answer(get_string(error_key, language))
         return
 
-    await send_variants(message, language, "telegram", telegram_variants)
-    await send_variants(message, language, "vk", vk_variants)
+    await send_variants(
+        message,
+        language,
+        "telegram",
+        telegram_variants,
+        db_path=db_path,
+        source_text=text,
+        content_language=content_language,
+        with_hashtags=False,
+    )
+    await send_variants(
+        message,
+        language,
+        "vk",
+        vk_variants,
+        db_path=db_path,
+        source_text=text,
+        content_language=content_language,
+        with_hashtags=False,
+    )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -21,6 +22,7 @@ from bot.handlers.content import (
 from bot.locales.loader import get_string
 from bot.services import content_generator, input_processor, output_formatter
 from bot.services.ai_gateway import AIGatewayTimeoutError, TranscriptionError
+from bot.storage.refine_context import get_refine_context
 from bot.storage.style_examples import add_style_example
 from bot.storage.users import (
     get_pending_media,
@@ -30,6 +32,18 @@ from bot.storage.users import (
 )
 
 TELEGRAM_ID = 111
+CHAT_ID = 222
+
+# send_variants (bot/handlers/content.py) now records a refine_contexts row
+# keyed on the sent message's real id, so every AsyncMock standing in for
+# Message.answer here must return something with a genuine int message_id
+# (sqlite rejects binding a MagicMock) — a shared counter keeps every
+# generated id unique across a test's several sent messages.
+_sent_message_ids = itertools.count(1000)
+
+
+def _make_sent_message():
+    return SimpleNamespace(message_id=next(_sent_message_ids))
 
 
 @pytest.fixture(autouse=True)
@@ -60,6 +74,8 @@ def _make_message(
 ):
     message = AsyncMock()
     message.from_user = SimpleNamespace(id=telegram_id, language_code="ru")
+    message.chat = SimpleNamespace(id=telegram_id)
+    message.answer = AsyncMock(side_effect=lambda *args, **kwargs: _make_sent_message())
     message.text = text
     message.voice = voice
     message.audio = audio
@@ -90,6 +106,8 @@ def _make_callback(telegram_id: int = TELEGRAM_ID, data: str = ""):
     callback.from_user = SimpleNamespace(id=telegram_id, language_code="ru")
     callback.data = data
     callback.message = AsyncMock()
+    callback.message.chat = SimpleNamespace(id=telegram_id)
+    callback.message.answer = AsyncMock(side_effect=lambda *args, **kwargs: _make_sent_message())
     return callback
 
 
@@ -551,8 +569,11 @@ async def test_normal_generation_resets_hashtag_flag(db_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_send_variants_sends_one_message_per_variant_with_refine_keyboard():
+async def test_send_variants_sends_one_message_per_variant_with_refine_keyboard(db_path):
     message = _make_message()
+    sent = [SimpleNamespace(message_id=201), SimpleNamespace(message_id=202)]
+    message.answer = AsyncMock(side_effect=sent)
+    message.chat = SimpleNamespace(id=CHAT_ID)
     # Deliberately contain HTML-special characters so that format_variant's
     # escaping is a non-trivial transform: an identity-transform input would
     # let a "drop format_variant" mutation slip through undetected.
@@ -569,7 +590,16 @@ async def test_send_variants_sends_one_message_per_variant_with_refine_keyboard(
         "Второй &lt;script&gt;alert(1)&lt;/script&gt; &amp; больше",
     ]
 
-    await content_module.send_variants(message, "ru", "telegram", variants)
+    await content_module.send_variants(
+        message,
+        "ru",
+        "telegram",
+        variants,
+        db_path=db_path,
+        source_text="Исходник",
+        content_language="ru",
+        with_hashtags=False,
+    )
 
     assert message.answer.await_count == 2
     for call, expected_text, index in zip(
@@ -586,3 +616,28 @@ async def test_send_variants_sends_one_message_per_variant_with_refine_keyboard(
         more_button, shorten_button = keyboard.inline_keyboard[0]
         assert more_button.callback_data == f"refine:more:telegram:{index}"
         assert shorten_button.callback_data == f"refine:shorten:telegram:{index}"
+
+
+@pytest.mark.asyncio
+async def test_send_variants_records_context_for_each_sent_message(db_path):
+    message = _make_message()
+    sent = [SimpleNamespace(message_id=101), SimpleNamespace(message_id=102)]
+    message.answer = AsyncMock(side_effect=sent)
+    message.chat = SimpleNamespace(id=CHAT_ID)
+
+    await content_module.send_variants(
+        message,
+        "ru",
+        "telegram",
+        ["Первый", "Второй"],
+        db_path=db_path,
+        source_text="Исходник",
+        content_language="ru",
+        with_hashtags=True,
+    )
+
+    for message_id in (101, 102):
+        context = get_refine_context(db_path, CHAT_ID, message_id)
+        assert context["source_text"] == "Исходник"
+        assert context["with_hashtags"] is True
+        assert context["platform"] == "telegram"
