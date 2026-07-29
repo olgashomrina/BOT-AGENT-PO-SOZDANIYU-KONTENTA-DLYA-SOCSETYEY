@@ -60,6 +60,23 @@ def test_load_settings_reads_optional_overrides(monkeypatch, tmp_path):
     assert settings.log_level == "DEBUG"
 
 
+def test_load_settings_premium_image_model_defaults_to_flux_pro(monkeypatch, tmp_path):
+    _set_required_env(monkeypatch)
+    monkeypatch.delenv("AI_GATEWAY_PREMIUM_IMAGE_MODEL", raising=False)
+
+    settings = load_settings(env_file=_missing_env_file(tmp_path))
+
+    assert settings.ai_gateway_premium_image_model == "img-flux/pro1.1"
+
+
+def test_load_settings_premium_image_model_reads_from_env(monkeypatch, tmp_path):
+    _set_required_env(monkeypatch, {"AI_GATEWAY_PREMIUM_IMAGE_MODEL": "img-flux/kontext-max"})
+
+    settings = load_settings(env_file=_missing_env_file(tmp_path))
+
+    assert settings.ai_gateway_premium_image_model == "img-flux/kontext-max"
+
+
 def test_load_settings_raises_when_bot_token_missing(monkeypatch, tmp_path):
     _set_required_env(monkeypatch)
     monkeypatch.delenv("BOT_TOKEN", raising=False)

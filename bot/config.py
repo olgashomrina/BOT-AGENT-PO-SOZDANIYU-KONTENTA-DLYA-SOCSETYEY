@@ -26,6 +26,10 @@ DEFAULT_AI_GATEWAY_TRANSCRIPTION_MODEL = "stt-openai/whisper-1"
 # Set AI_GATEWAY_IMAGE_MODEL=img-flux/pro1.1 to opt back in deliberately.
 DEFAULT_AI_GATEWAY_IMAGE_MODEL = "img-flux/flux-2-klein-4b"
 DEFAULT_AI_GATEWAY_IMAGE_SIZE = "1024x1024"
+# Separate from AI_GATEWAY_IMAGE_MODEL so the "Сделать реалистичнее" upgrade
+# button (bot/handlers/refine.py::on_image_upgrade) keeps working regardless
+# of which model the default (cheap) generation is pinned to.
+DEFAULT_AI_GATEWAY_PREMIUM_IMAGE_MODEL = "img-flux/pro1.1"
 DEFAULT_AI_GATEWAY_MAX_RETRIES = 2
 DEFAULT_AI_GATEWAY_TIMEOUT_SECONDS = 30.0
 DEFAULT_CONTENT_VARIANTS_COUNT = 2
@@ -49,6 +53,7 @@ class Settings:
     ai_gateway_transcription_model: str
     ai_gateway_image_model: str
     ai_gateway_image_size: str
+    ai_gateway_premium_image_model: str
     ai_gateway_max_retries: int
     ai_gateway_timeout_seconds: float
     content_variants_count: int
@@ -108,6 +113,9 @@ def load_settings(env_file: str | None = None) -> Settings:
     )
     ai_gateway_image_model = os.environ.get("AI_GATEWAY_IMAGE_MODEL", DEFAULT_AI_GATEWAY_IMAGE_MODEL)
     ai_gateway_image_size = os.environ.get("AI_GATEWAY_IMAGE_SIZE", DEFAULT_AI_GATEWAY_IMAGE_SIZE)
+    ai_gateway_premium_image_model = os.environ.get(
+        "AI_GATEWAY_PREMIUM_IMAGE_MODEL", DEFAULT_AI_GATEWAY_PREMIUM_IMAGE_MODEL
+    )
 
     try:
         ai_gateway_max_retries = int(
@@ -147,6 +155,7 @@ def load_settings(env_file: str | None = None) -> Settings:
         ai_gateway_transcription_model=ai_gateway_transcription_model,
         ai_gateway_image_model=ai_gateway_image_model,
         ai_gateway_image_size=ai_gateway_image_size,
+        ai_gateway_premium_image_model=ai_gateway_premium_image_model,
         ai_gateway_max_retries=ai_gateway_max_retries,
         ai_gateway_timeout_seconds=ai_gateway_timeout_seconds,
         content_variants_count=content_variants_count,
