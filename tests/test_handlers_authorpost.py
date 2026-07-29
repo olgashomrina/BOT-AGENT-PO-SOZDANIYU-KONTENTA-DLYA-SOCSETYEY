@@ -336,3 +336,147 @@ async def test_samples_done_clears_state_and_asks_for_platform(db_path):
     args, kwargs = callback.message.answer.call_args
     assert args[0] == get_string("authorpost_choose_platform", "ru")
     assert "reply_markup" in kwargs
+
+
+from bot.handlers.authorpost import on_authorpost_platform
+from bot.services import content_generator
+from bot.services.ai_gateway import AIGatewayTimeoutError
+from bot.storage.limits import get_daily_count
+
+
+async def _seed_ready_session(state: FSMContext, db_path: str) -> None:
+    for index in range(REQUIRED_EXAMPLES):
+        add_style_example(db_path, TELEGRAM_ID, f"Пост {index}")
+    await state.update_data(
+        digest_items=DIGEST_ITEMS,
+        source_text="Научная статья",
+        content_language="ru",
+        language="ru",
+    )
+    await state.set_state(None)
+
+
+@pytest.mark.asyncio
+async def test_platform_telegram_generates_with_style_and_hashtags(db_path, monkeypatch):
+    state = _make_state()
+    await _seed_ready_session(state, db_path)
+    mock_generate = AsyncMock(return_value=["Вариант 1", "Вариант 2", "Вариант 3"])
+    monkeypatch.setattr(content_generator, "generate_variants", mock_generate)
+    callback = _make_callback("authorpost:platform:telegram")
+
+    await on_authorpost_platform(callback, state, db_path)
+
+    mock_generate.assert_awaited_once()
+    kwargs = mock_generate.await_args.kwargs
+    assert mock_generate.await_args.args[1] == "telegram"
+    assert kwargs["with_hashtags"] is True
+    assert len(kwargs["style_examples"]) == REQUIRED_EXAMPLES
+
+
+@pytest.mark.asyncio
+async def test_platform_both_generates_for_two_platforms(db_path, monkeypatch):
+    state = _make_state()
+    await _seed_ready_session(state, db_path)
+    mock_generate = AsyncMock(return_value=["Вариант"])
+    monkeypatch.setattr(content_generator, "generate_variants", mock_generate)
+    callback = _make_callback("authorpost:platform:both")
+
+    await on_authorpost_platform(callback, state, db_path)
+
+    platforms = [call.args[1] for call in mock_generate.await_args_list]
+    assert platforms == ["telegram", "vk"]
+
+
+@pytest.mark.asyncio
+async def test_platform_choice_sets_hashtag_flag_in_fsm(db_path, monkeypatch):
+    state = _make_state()
+    await _seed_ready_session(state, db_path)
+    monkeypatch.setattr(
+        content_generator, "generate_variants", AsyncMock(return_value=["Вариант"])
+    )
+    callback = _make_callback("authorpost:platform:vk")
+
+    await on_authorpost_platform(callback, state, db_path)
+
+    data = await state.get_data()
+    assert data["with_hashtags"] is True
+
+
+@pytest.mark.asyncio
+async def test_platform_choice_without_source_reports_expired(db_path, monkeypatch):
+    state = _make_state()
+    mock_generate = AsyncMock(return_value=["Вариант"])
+    monkeypatch.setattr(content_generator, "generate_variants", mock_generate)
+    callback = _make_callback("authorpost:platform:telegram")
+
+    await on_authorpost_platform(callback, state, db_path)
+
+    args, _ = callback.message.answer.call_args
+    assert args[0] == get_string("authorpost_digest_expired", "ru")
+    mock_generate.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_platform_choice_refuses_user_outside_whitelist(db_path, monkeypatch):
+    state = _make_state(telegram_id=999)
+    mock_generate = AsyncMock(return_value=["Вариант"])
+    monkeypatch.setattr(content_generator, "generate_variants", mock_generate)
+    callback = _make_callback("authorpost:platform:telegram", telegram_id=999)
+
+    await on_authorpost_platform(callback, state, db_path)
+
+    args, _ = callback.message.answer.call_args
+    assert args[0] == get_string("error_not_whitelisted", "ru")
+    mock_generate.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_platform_choice_reports_ai_error_without_spending_quota(db_path, monkeypatch):
+    state = _make_state()
+    await _seed_ready_session(state, db_path)
+    monkeypatch.setattr(
+        content_generator,
+        "generate_variants",
+        AsyncMock(side_effect=AIGatewayTimeoutError("timed out")),
+    )
+    callback = _make_callback("authorpost:platform:telegram")
+
+    await on_authorpost_platform(callback, state, db_path)
+
+    args, _ = callback.message.answer.call_args
+    assert args[0] == get_string("error_ai_timeout", "ru")
+    assert get_daily_count(db_path, TELEGRAM_ID) == 0
+
+
+@pytest.mark.asyncio
+async def test_platform_choice_spends_quota_on_success(db_path, monkeypatch):
+    state = _make_state()
+    await _seed_ready_session(state, db_path)
+    monkeypatch.setattr(
+        content_generator, "generate_variants", AsyncMock(return_value=["Вариант"])
+    )
+    callback = _make_callback("authorpost:platform:telegram")
+
+    await on_authorpost_platform(callback, state, db_path)
+
+    assert get_daily_count(db_path, TELEGRAM_ID) == 1
+
+
+@pytest.mark.asyncio
+async def test_platform_choice_forged_callback_data_reports_expired(db_path, monkeypatch):
+    # callback.data is client-supplied, same as in on_authorpost_item: a
+    # modified client can send a suffix that isn't one of this bot's own
+    # keyboard's "telegram"/"vk"/"both" values. A raw dict lookup would raise
+    # KeyError before _safe_answer runs, leaving the button's spinner hanging.
+    state = _make_state()
+    await _seed_ready_session(state, db_path)
+    mock_generate = AsyncMock(return_value=["Вариант"])
+    monkeypatch.setattr(content_generator, "generate_variants", mock_generate)
+    callback = _make_callback("authorpost:platform:unknown")
+
+    await on_authorpost_platform(callback, state, db_path)
+
+    args, _ = callback.message.answer.call_args
+    assert args[0] == get_string("authorpost_digest_expired", "ru")
+    mock_generate.assert_not_awaited()
+    callback.answer.assert_awaited_once()

@@ -7,13 +7,19 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
-from bot.handlers.content import _resolve_language
-from bot.handlers.refine import _check_whitelist_or_reply, _safe_answer
+from bot.config import load_settings
+from bot.handlers.content import _AI_ERROR_KEYS, _resolve_language, send_variants
+from bot.handlers.refine import (
+    _check_limit_or_reply,
+    _check_whitelist_or_reply,
+    _safe_answer,
+)
 from bot.handlers.settov import MAX_EXAMPLE_LENGTH
 from bot.keyboards.authorpost import (
     CALLBACK_ITEM_PREFIX,
     CALLBACK_NEW_SAMPLES,
     CALLBACK_NEXT,
+    CALLBACK_PLATFORM_PREFIX,
     CALLBACK_SAMPLES_DONE,
     CALLBACK_START,
     CALLBACK_USE_SAVED,
@@ -25,11 +31,15 @@ from bot.keyboards.authorpost import (
 )
 from bot.locales.loader import get_string
 from bot.logging_config import LOGGER_NAME
+from bot.services import content_generator
+from bot.services.ai_gateway import AIGatewayError
+from bot.storage.limits import increment_usage
 from bot.storage.style_examples import (
     add_style_example,
     clear_style_examples,
     get_style_examples,
 )
+from bot.storage.users import get_content_language
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -241,3 +251,96 @@ async def on_authorpost_samples_done(
     # (StateFilter(None)) never fires and the bot ignores ordinary messages.
     await state.set_state(None)
     await _ask_for_platform(callback, language)
+
+
+# callback_data suffix -> the platforms to generate for, in output order.
+_PLATFORM_TARGETS: dict[str, tuple[str, ...]] = {
+    "telegram": ("telegram",),
+    "vk": ("vk",),
+    "both": ("telegram", "vk"),
+}
+
+
+@router.callback_query(F.data.startswith(f"{CALLBACK_PLATFORM_PREFIX}:"))
+async def on_authorpost_platform(
+    callback: CallbackQuery, state: FSMContext, db_path: str
+) -> None:
+    telegram_id = callback.from_user.id
+    data = await state.get_data()
+    language = data.get("language") or _resolve_language(
+        db_path, telegram_id, callback.from_user.language_code
+    )
+
+    if not await _check_whitelist_or_reply(callback, db_path, language):
+        return
+
+    source_text = data.get("source_text")
+    if not source_text:
+        await _report_expired_digest(callback, language)
+        return
+
+    if not await _check_limit_or_reply(callback, db_path, language):
+        return
+
+    # callback.data is client-supplied, same reasoning as on_authorpost_item:
+    # a modified client can send a suffix outside {"telegram", "vk", "both"},
+    # the only values this bot's own keyboard emits. A raw dict lookup would
+    # raise KeyError past _safe_answer and leave the button's spinner
+    # hanging, so an unrecognised suffix is treated the same as a stale
+    # digest reference rather than trusted to match the keyboard sent.
+    try:
+        platforms = _PLATFORM_TARGETS[callback.data.rsplit(":", 1)[1]]
+    except KeyError:
+        await _report_expired_digest(callback, language)
+        return
+
+    content_language = data.get("content_language") or get_content_language(
+        db_path, telegram_id
+    ) or language
+    settings = load_settings()
+    style_examples = get_style_examples(db_path, telegram_id)
+
+    # Recorded so bot/handlers/refine.py keeps the hashtags when the user
+    # taps "Ещё"/"Короче" under one of these variants.
+    await state.update_data(
+        source_text=source_text, content_language=content_language, with_hashtags=True
+    )
+
+    await callback.message.answer(get_string("authorpost_generating", language))
+
+    generated: list[tuple[str, list[str]]] = []
+    for platform in platforms:
+        try:
+            variants = await content_generator.generate_variants(
+                source_text,
+                platform,
+                content_language,
+                count=settings.content_variants_count,
+                style_examples=style_examples,
+                with_hashtags=True,
+            )
+        except AIGatewayError as exc:
+            error_key = _AI_ERROR_KEYS.get(type(exc), "error_unexpected")
+            logger.warning(
+                "AI Gateway error during authored post generation",
+                extra={
+                    "user_id": telegram_id,
+                    "operation": "authorpost_generate",
+                    "error_class": type(exc).__name__,
+                },
+            )
+            await callback.message.answer(get_string(error_key, language))
+            await _safe_answer(callback)
+            return
+        generated.append((platform, variants))
+
+    # One usage unit per platform, charged only after every call succeeded:
+    # a failed generation above returns early and costs the user nothing,
+    # matching how bot/handlers/refine.py bills its own regenerations.
+    for _ in platforms:
+        increment_usage(db_path, telegram_id)
+
+    for platform, variants in generated:
+        await send_variants(callback.message, language, platform, variants)
+
+    await _safe_answer(callback)
