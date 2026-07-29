@@ -9,7 +9,13 @@ from aiogram.types import BufferedInputFile, CallbackQuery
 
 from bot.config import load_settings
 from bot.handlers.content import _AI_ERROR_KEYS, _resolve_language
-from bot.keyboards.refine import build_image_upgrade_keyboard, build_refine_keyboard
+from bot.keyboards.refine import (
+    CALLBACK_IMAGE_UPGRADE,
+    CALLBACK_IMAGE_UPGRADE_DONE,
+    build_image_upgrade_keyboard,
+    build_image_upgraded_keyboard,
+    build_refine_keyboard,
+)
 from bot.locales.loader import get_string
 from bot.logging_config import LOGGER_NAME
 from bot.services import ai_gateway, content_generator, output_formatter, platform_package
@@ -352,4 +358,87 @@ async def on_refine_image(callback: CallbackQuery, state: FSMContext, db_path: s
     set_pending_media(db_path, telegram_id, file_id, "photo")
 
     await callback.message.answer(get_string("image_attached_confirmation", language))
+    await _safe_answer(callback)
+
+
+@router.callback_query(F.data == CALLBACK_IMAGE_UPGRADE)
+async def on_image_upgrade(callback: CallbackQuery, state: FSMContext, db_path: str, bot: Bot) -> None:
+    telegram_id = callback.from_user.id
+    data = await state.get_data()
+    language = data.get("language") or _resolve_language(
+        db_path, telegram_id, callback.from_user.language_code
+    )
+
+    if not await _check_whitelist_or_reply(callback, db_path, language):
+        return
+
+    if not await _check_limit_or_reply(callback, db_path, language):
+        return
+
+    image_prompt = data.get("last_image_prompt")
+    if not image_prompt:
+        await callback.message.answer(get_string("error_refine_missing_context", language))
+        await _safe_answer(callback)
+        return
+
+    settings = load_settings()
+
+    try:
+        image_bytes = await ai_gateway.generate_image(
+            image_prompt, model=settings.ai_gateway_premium_image_model
+        )
+    except AIGatewayError as exc:
+        error_key = _AI_ERROR_KEYS.get(type(exc), "error_unexpected")
+        logger.warning(
+            "AI Gateway error during image upgrade",
+            extra={
+                "user_id": telegram_id,
+                "operation": "generate_image_upgrade",
+                "error_class": type(exc).__name__,
+            },
+        )
+        await callback.message.answer(get_string(error_key, language))
+        await _safe_answer(callback)
+        return
+
+    try:
+        sent_message = await bot.send_photo(
+            callback.message.chat.id,
+            photo=BufferedInputFile(image_bytes, filename="ai_image_upgraded.png"),
+            caption=get_string("image_upgraded_caption", language),
+        )
+    except TelegramAPIError:
+        logger.warning(
+            "Failed to deliver upgraded image to user",
+            extra={"user_id": telegram_id, "operation": "generate_image_upgrade"},
+        )
+        await callback.message.answer(get_string("image_delivery_failed", language))
+        await _safe_answer(callback)
+        return
+
+    increment_usage(db_path, telegram_id)
+
+    file_id = sent_message.photo[-1].file_id
+    set_pending_media(db_path, telegram_id, file_id, "photo")
+
+    # WHY swallow TelegramBadRequest here specifically: same "stale
+    # callback" class of failure as _safe_answer below — the upgraded photo
+    # has already been delivered and billed by this point, so a cosmetic
+    # failure to disable the now-redundant button must not surface as an
+    # error to the user.
+    try:
+        await callback.message.edit_reply_markup(reply_markup=build_image_upgraded_keyboard(language))
+    except TelegramBadRequest as exc:
+        logger.warning(
+            "Failed to replace image-upgrade button (likely stale)", extra={"error_message": str(exc)}
+        )
+
+    await _safe_answer(callback)
+
+
+@router.callback_query(F.data == CALLBACK_IMAGE_UPGRADE_DONE)
+async def on_image_upgrade_done(callback: CallbackQuery) -> None:
+    # The "✅ Готово" button left behind after a successful upgrade is
+    # inert by design (see design doc) — this only stops the client-side
+    # loading spinner if someone taps it anyway.
     await _safe_answer(callback)

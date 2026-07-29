@@ -644,3 +644,144 @@ async def test_refine_more_defaults_hashtag_flag_to_false(db_path, monkeypatch):
     await on_refine_more(_make_callback(data="refine:more:telegram:1"), state, db_path)
 
     assert mock_generate.await_args.kwargs["with_hashtags"] is False
+
+
+from bot.handlers.refine import on_image_upgrade, on_image_upgrade_done
+from bot.keyboards.refine import CALLBACK_IMAGE_UPGRADE, build_image_upgraded_keyboard
+
+
+async def _seed_upgrade_session(state: FSMContext, prompt: str = "a vivid english prompt") -> None:
+    await state.update_data(language="ru", last_image_prompt=prompt)
+    await state.set_state(None)
+
+
+@pytest.mark.asyncio
+async def test_image_upgrade_success_uses_premium_model_and_sends_new_photo(db_path, monkeypatch):
+    state = _make_state()
+    await _seed_upgrade_session(state)
+
+    mock_generate_image = AsyncMock(return_value=b"fake-premium-png-bytes")
+    monkeypatch.setattr(ai_gateway, "generate_image", mock_generate_image)
+
+    callback = _make_callback(data=CALLBACK_IMAGE_UPGRADE)
+    callback.message.chat = SimpleNamespace(id=TELEGRAM_ID)
+    callback.message.edit_reply_markup = AsyncMock()
+    bot = AsyncMock()
+    bot.send_photo = AsyncMock(return_value=_fake_sent_photo_message("premium-file-id"))
+
+    await on_image_upgrade(callback, state, db_path, bot)
+
+    mock_generate_image.assert_awaited_once_with("a vivid english prompt", model="img-flux/pro1.1")
+    bot.send_photo.assert_awaited_once()
+    args, kwargs = bot.send_photo.call_args
+    assert args[0] == TELEGRAM_ID
+    assert kwargs["photo"].data == b"fake-premium-png-bytes"
+    assert kwargs["caption"] == get_string("image_upgraded_caption", "ru")
+
+    assert get_pending_media(db_path, TELEGRAM_ID) == ("premium-file-id", "photo")
+    assert get_daily_count(db_path, TELEGRAM_ID) == 1
+
+    callback.message.edit_reply_markup.assert_awaited_once()
+    _, edit_kwargs = callback.message.edit_reply_markup.call_args
+    expected_keyboard = build_image_upgraded_keyboard("ru")
+    assert edit_kwargs["reply_markup"].inline_keyboard[0][0].callback_data == (
+        expected_keyboard.inline_keyboard[0][0].callback_data
+    )
+    callback.answer.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_image_upgrade_ai_error_replies_friendly_message_and_keeps_button(db_path, monkeypatch):
+    state = _make_state()
+    await _seed_upgrade_session(state)
+
+    mock_generate_image = AsyncMock(side_effect=AIGatewayTimeoutError("timed out"))
+    monkeypatch.setattr(ai_gateway, "generate_image", mock_generate_image)
+
+    callback = _make_callback(data=CALLBACK_IMAGE_UPGRADE)
+    callback.message.chat = SimpleNamespace(id=TELEGRAM_ID)
+    callback.message.edit_reply_markup = AsyncMock()
+    bot = AsyncMock()
+
+    await on_image_upgrade(callback, state, db_path, bot)
+
+    bot.send_photo.assert_not_awaited()
+    callback.message.answer.assert_awaited_once_with(get_string("error_ai_timeout", "ru"))
+    callback.message.edit_reply_markup.assert_not_awaited()
+    assert get_pending_media(db_path, TELEGRAM_ID) is None
+    assert get_daily_count(db_path, TELEGRAM_ID) == 0
+
+
+@pytest.mark.asyncio
+async def test_image_upgrade_missing_prompt_replies_friendly_error_and_does_not_call_ai(db_path, monkeypatch):
+    state = _make_state()
+    await state.update_data(language="ru")
+    await state.set_state(None)
+
+    mock_generate_image = AsyncMock()
+    monkeypatch.setattr(ai_gateway, "generate_image", mock_generate_image)
+
+    callback = _make_callback(data=CALLBACK_IMAGE_UPGRADE)
+    callback.message.chat = SimpleNamespace(id=TELEGRAM_ID)
+    bot = AsyncMock()
+
+    await on_image_upgrade(callback, state, db_path, bot)
+
+    mock_generate_image.assert_not_awaited()
+    callback.message.answer.assert_awaited_once_with(get_string("error_refine_missing_context", "ru"))
+
+
+@pytest.mark.asyncio
+async def test_image_upgrade_blocked_when_not_whitelisted_does_not_call_ai(db_path, monkeypatch):
+    NOT_WHITELISTED_ID = 998
+    state = _make_state(NOT_WHITELISTED_ID)
+    await _seed_upgrade_session(state)
+
+    mock_generate_image = AsyncMock()
+    monkeypatch.setattr(ai_gateway, "generate_image", mock_generate_image)
+
+    callback = _make_callback(telegram_id=NOT_WHITELISTED_ID, data=CALLBACK_IMAGE_UPGRADE)
+    callback.message.chat = SimpleNamespace(id=NOT_WHITELISTED_ID)
+    bot = AsyncMock()
+
+    await on_image_upgrade(callback, state, db_path, bot)
+
+    mock_generate_image.assert_not_awaited()
+    callback.message.answer.assert_awaited_once_with(get_string("error_not_whitelisted", "ru"))
+
+
+@pytest.mark.asyncio
+async def test_image_upgrade_delivery_failure_replies_friendly_error_and_does_not_attach_or_charge(
+    db_path, monkeypatch
+):
+    state = _make_state()
+    await _seed_upgrade_session(state)
+
+    mock_generate_image = AsyncMock(return_value=b"fake-premium-png-bytes")
+    monkeypatch.setattr(ai_gateway, "generate_image", mock_generate_image)
+
+    callback = _make_callback(data=CALLBACK_IMAGE_UPGRADE)
+    callback.message.chat = SimpleNamespace(id=TELEGRAM_ID)
+    callback.message.edit_reply_markup = AsyncMock()
+    bot = AsyncMock()
+    bot.send_photo = AsyncMock(
+        side_effect=TelegramBadRequest(
+            method=SendMessage(chat_id=TELEGRAM_ID, text="x"), message="failed to fetch image"
+        )
+    )
+
+    await on_image_upgrade(callback, state, db_path, bot)
+
+    callback.message.answer.assert_awaited_once_with(get_string("image_delivery_failed", "ru"))
+    callback.message.edit_reply_markup.assert_not_awaited()
+    assert get_pending_media(db_path, TELEGRAM_ID) is None
+    assert get_daily_count(db_path, TELEGRAM_ID) == 0
+
+
+@pytest.mark.asyncio
+async def test_image_upgrade_done_button_just_acknowledges(db_path):
+    callback = _make_callback(data="img:upgrade:done")
+
+    await on_image_upgrade_done(callback)
+
+    callback.answer.assert_awaited_once()
