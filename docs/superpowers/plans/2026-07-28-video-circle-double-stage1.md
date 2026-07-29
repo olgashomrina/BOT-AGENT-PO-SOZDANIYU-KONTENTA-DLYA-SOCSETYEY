@@ -1321,10 +1321,17 @@ git commit -m "feat: add ElevenLabs voice cloning gateway"
 
 ---
 
-### Task 7: Клавиатуры двойника
+### Task 7: Клавиатуры двойника и все строки интерфейса
+
+Все 20 строк сценария добавляются здесь и сразу во всех четырёх локалях.
+Причина жёсткая: `tests/test_localization.py::test_all_locales_have_identical_keys`
+требует одинакового набора ключей во всех локалях, поэтому добавление русских
+строк без остальных языков оставило бы ветку красной на несколько коммитов.
+Задачи 8–10 только используют готовые ключи и локали не трогают.
 
 **Files:**
 - Create: `bot/keyboards/circle.py`
+- Modify: `bot/locales/ru.py`, `bot/locales/en.py`, `bot/locales/vi.py`, `bot/locales/zh.py`
 - Test: `tests/test_keyboards_circle.py`
 
 **Interfaces:**
@@ -1487,9 +1494,7 @@ def build_delete_confirm_keyboard(lang: str) -> InlineKeyboardMarkup:
     )
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
-
-Тесты упадут на отсутствующих ключах локали — это ожидаемо, ключи добавляются в Task 11. Чтобы задача была самодостаточной, добавьте пять ключей в **`bot/locales/ru.py`** прямо сейчас (остальные три языка — в Task 11):
+- [ ] **Step 4: Добавить все 20 строк в `bot/locales/ru.py`**
 
 ```python
     "double_consent_accept_button": "Согласен, создаём двойника",
@@ -1497,16 +1502,97 @@ def build_delete_confirm_keyboard(lang: str) -> InlineKeyboardMarkup:
     "double_add_donors_button": "Добавить кружки",
     "double_delete_button": "Удалить двойника",
     "double_delete_confirm_button": "Да, удалить всё",
+    "double_consent_text": (
+        "Сделаю твоего двойника для кружков.\n\n"
+        "Возьму твои кружки, сниму с них лицо, мимику и голос. "
+        "Храню у себя, удалить можно в любой момент одной кнопкой."
+    ),
+    "double_donors_invite": (
+        "Перешли {minimum}–5 своих кружков подлиннее — те, которые тебе самому нравятся.\n"
+        "Присылай по одному, я буду считать."
+    ),
+    "double_donor_saved": "Принято {collected} из {minimum}.",
+    "double_donor_too_short": (
+        "Этот кружок короче {minimum} секунд — на нём не получится собрать речь. "
+        "Пришли подлиннее."
+    ),
+    "double_expected_video_note": "Жду именно кружок — запиши или перешли видеосообщение.",
+    "double_status_text": "Твой двойник: доноров {donors}, голос — {voice}.",
+    "double_voice_ready": "готов",
+    "double_voice_missing": "ещё не создан",
+    "double_need_more_donors": "Нужно хотя бы {minimum} кружка. Пришли ещё.",
+    "double_voice_building": "Собираю голос, это займёт около минуты…",
+    "double_voice_failed": (
+        "Не получилось создать голос. Попробуй ещё раз чуть позже — "
+        "кружки я сохранил, заново присылать не нужно."
+    ),
+    "double_ready": "Двойник готов: {donors} кружка в основе, голос создан.",
+    "double_delete_confirm_text": (
+        "Удалю кружки, расшифровки и голос. Отменить это будет нельзя — "
+        "двойника придётся собирать заново."
+    ),
+    "double_deleted": "Двойник и все его данные удалены.",
+    "menu_my_double_button": "🎭 Мой двойник",
 ```
 
-Run: `pytest tests/test_keyboards_circle.py -v`
-Expected: PASS, 6 passed
+- [ ] **Step 5: Добавить те же 20 ключей в `bot/locales/en.py`**
 
-- [ ] **Step 5: Commit**
+```python
+    "double_consent_accept_button": "Agreed, build my double",
+    "double_donors_done_button": "Done, build the double",
+    "double_add_donors_button": "Add circles",
+    "double_delete_button": "Delete double",
+    "double_delete_confirm_button": "Yes, delete everything",
+    "double_consent_text": (
+        "I'll build your double for video circles.\n\n"
+        "I'll take your circles and learn your face, expressions and voice from them. "
+        "Stored on my side, and one button deletes it all whenever you want."
+    ),
+    "double_donors_invite": (
+        "Forward me {minimum}-5 of your longer circles — the ones you like yourself.\n"
+        "Send them one by one, I'll keep count."
+    ),
+    "double_donor_saved": "Got {collected} of {minimum}.",
+    "double_donor_too_short": (
+        "This circle is shorter than {minimum} seconds — too short to carry speech. "
+        "Send a longer one."
+    ),
+    "double_expected_video_note": "I need a circle — record or forward a video message.",
+    "double_status_text": "Your double: {donors} donor circles, voice — {voice}.",
+    "double_voice_ready": "ready",
+    "double_voice_missing": "not built yet",
+    "double_need_more_donors": "I need at least {minimum} circles. Send more.",
+    "double_voice_building": "Building the voice, this takes about a minute…",
+    "double_voice_failed": (
+        "Couldn't build the voice. Try again a bit later — "
+        "your circles are saved, no need to resend them."
+    ),
+    "double_ready": "Double ready: built on {donors} circles, voice created.",
+    "double_delete_confirm_text": (
+        "This deletes the circles, the transcripts and the voice. "
+        "It can't be undone — the double would have to be built from scratch."
+    ),
+    "double_deleted": "The double and all of its data are deleted.",
+    "menu_my_double_button": "🎭 My double",
+```
+
+- [ ] **Step 6: Добавить те же 20 ключей в `bot/locales/vi.py` и `bot/locales/zh.py`**
+
+Переводить с русского оригинала выше. Плейсхолдеры `{minimum}`, `{collected}`,
+`{donors}`, `{voice}` обязаны сохраниться дословно — иначе `get_string()` упадёт
+на `KeyError` при форматировании. Тон и длина строк — как у соседних ключей
+в этих же файлах.
+
+- [ ] **Step 7: Run tests to verify they pass**
+
+Run: `pytest tests/test_keyboards_circle.py tests/test_localization.py -v`
+Expected: PASS — включая `test_all_locales_have_identical_keys`
+
+- [ ] **Step 8: Commit**
 
 ```bash
-git add bot/keyboards/circle.py bot/locales/ru.py tests/test_keyboards_circle.py
-git commit -m "feat: add keyboards for the double flow"
+git add bot/keyboards/circle.py bot/locales tests/test_keyboards_circle.py
+git commit -m "feat: add keyboards and localised strings for the double flow"
 ```
 
 ---
@@ -1873,28 +1959,7 @@ async def on_non_video_note(message: Message, db_path: str) -> None:
     )
 ```
 
-Добавить недостающие ключи в `bot/locales/ru.py`:
-
-```python
-    "double_consent_text": (
-        "Сделаю твоего двойника для кружков.\n\n"
-        "Возьму твои кружки, сниму с них лицо, мимику и голос. "
-        "Храню у себя, удалить можно в любой момент одной кнопкой."
-    ),
-    "double_donors_invite": (
-        "Перешли {minimum}–5 своих кружков подлиннее — те, которые тебе самому нравятся.\n"
-        "Присылай по одному, я буду считать."
-    ),
-    "double_donor_saved": "Принято {collected} из {minimum}.",
-    "double_donor_too_short": (
-        "Этот кружок короче {minimum} секунд — на нём не получится собрать речь. "
-        "Пришли подлиннее."
-    ),
-    "double_expected_video_note": "Жду именно кружок — запиши или перешли видеосообщение.",
-    "double_status_text": "Твой двойник: доноров {donors}, голос — {voice}.",
-    "double_voice_ready": "готов",
-    "double_voice_missing": "ещё не создан",
-```
+Все строки этого сценария уже добавлены в Task 7 — локали здесь не трогаем.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -1904,7 +1969,7 @@ Expected: PASS, 7 passed
 - [ ] **Step 5: Commit**
 
 ```bash
-git add bot/handlers/circle.py bot/locales/ru.py tests/test_handlers_circle_donors.py
+git add bot/handlers/circle.py tests/test_handlers_circle_donors.py
 git commit -m "feat: collect donor circles with consent and transcription"
 ```
 
@@ -2129,17 +2194,7 @@ async def on_donors_done(
     await callback.answer()
 ```
 
-Добавить ключи в `bot/locales/ru.py`:
-
-```python
-    "double_need_more_donors": "Нужно хотя бы {minimum} кружка. Пришли ещё.",
-    "double_voice_building": "Собираю голос, это займёт около минуты…",
-    "double_voice_failed": (
-        "Не получилось создать голос. Попробуй ещё раз чуть позже — "
-        "кружки я сохранил, заново присылать не нужно."
-    ),
-    "double_ready": "Двойник готов: {donors} кружка в основе, голос создан.",
-```
+Все строки этого сценария уже добавлены в Task 7 — локали здесь не трогаем.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -2149,7 +2204,7 @@ Expected: PASS, 5 passed
 - [ ] **Step 5: Commit**
 
 ```bash
-git add bot/handlers/circle.py bot/locales/ru.py tests/test_handlers_circle_voice.py
+git add bot/handlers/circle.py tests/test_handlers_circle_voice.py
 git commit -m "feat: build a cloned voice from collected donor circles"
 ```
 
@@ -2349,15 +2404,7 @@ async def on_delete_confirm(
     await callback.answer()
 ```
 
-Добавить ключи в `bot/locales/ru.py`:
-
-```python
-    "double_delete_confirm_text": (
-        "Удалю кружки, расшифровки и голос. Отменить это будет нельзя — "
-        "двойника придётся собирать заново."
-    ),
-    "double_deleted": "Двойник и все его данные удалены.",
-```
+Все строки этого сценария уже добавлены в Task 7 — локали здесь не трогаем.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -2367,7 +2414,7 @@ Expected: PASS, 5 passed
 - [ ] **Step 5: Commit**
 
 ```bash
-git add bot/handlers/circle.py bot/locales/ru.py tests/test_handlers_circle_delete.py
+git add bot/handlers/circle.py tests/test_handlers_circle_delete.py
 git commit -m "feat: delete the double and all of its data on request"
 ```
 
@@ -2376,7 +2423,7 @@ git commit -m "feat: delete the double and all of its data on request"
 ### Task 11: Подключение к боту, локализация и деплой
 
 **Files:**
-- Modify: `bot/main.py`, `bot/keyboards/start.py`, `bot/locales/en.py`, `bot/locales/vi.py`, `bot/locales/zh.py`, `tests/conftest.py`, `docs/manual-checklist.md`, `deploy/README-deploy.md`
+- Modify: `bot/main.py`, `bot/keyboards/start.py`, `tests/conftest.py`, `docs/manual-checklist.md`, `deploy/README-deploy.md`
 - Test: `tests/test_localization.py` (проходит автоматически), `tests/test_keyboards_start.py` (дописать)
 
 **Interfaces:**
@@ -2427,60 +2474,10 @@ from bot.keyboards.circle import CALLBACK_MY_DOUBLE
             ],
 ```
 
-Добавить в `bot/locales/ru.py`:
+Ключ `menu_my_double_button` уже добавлен во все четыре локали в Task 7 —
+локали здесь не трогаем.
 
-```python
-    "menu_my_double_button": "🎭 Мой двойник",
-```
-
-- [ ] **Step 4: Перевести все новые ключи на три остальных языка**
-
-Скопировать в `bot/locales/en.py`, `bot/locales/vi.py`, `bot/locales/zh.py` все 20 новых ключей, добавленных в Tasks 7–11:
-
-`double_consent_accept_button`, `double_donors_done_button`, `double_add_donors_button`, `double_delete_button`, `double_delete_confirm_button`, `double_consent_text`, `double_donors_invite`, `double_donor_saved`, `double_donor_too_short`, `double_expected_video_note`, `double_status_text`, `double_voice_ready`, `double_voice_missing`, `double_need_more_donors`, `double_voice_building`, `double_voice_failed`, `double_ready`, `double_delete_confirm_text`, `double_deleted`, `menu_my_double_button`
-
-Английский вариант для образца:
-
-```python
-    "double_consent_accept_button": "Agreed, build my double",
-    "double_donors_done_button": "Done, build the double",
-    "double_add_donors_button": "Add circles",
-    "double_delete_button": "Delete double",
-    "double_delete_confirm_button": "Yes, delete everything",
-    "double_consent_text": (
-        "I'll build your double for video circles.\n\n"
-        "I'll take your circles and learn your face, expressions and voice from them. "
-        "Stored on my side, and one button deletes it all whenever you want."
-    ),
-    "double_donors_invite": (
-        "Forward me {minimum}-5 of your longer circles — the ones you like yourself.\n"
-        "Send them one by one, I'll keep count."
-    ),
-    "double_donor_saved": "Got {collected} of {minimum}.",
-    "double_donor_too_short": (
-        "This circle is shorter than {minimum} seconds — too short to carry speech. "
-        "Send a longer one."
-    ),
-    "double_expected_video_note": "I need a circle — record or forward a video message.",
-    "double_status_text": "Your double: {donors} donor circles, voice — {voice}.",
-    "double_voice_ready": "ready",
-    "double_voice_missing": "not built yet",
-    "double_need_more_donors": "I need at least {minimum} circles. Send more.",
-    "double_voice_building": "Building the voice, this takes about a minute…",
-    "double_voice_failed": (
-        "Couldn't build the voice. Try again a bit later — "
-        "your circles are saved, no need to resend them."
-    ),
-    "double_ready": "Double ready: built on {donors} circles, voice created.",
-    "double_delete_confirm_text": (
-        "This deletes the circles, the transcripts and the voice. "
-        "It can't be undone — the double would have to be built from scratch."
-    ),
-    "double_deleted": "The double and all of its data are deleted.",
-    "menu_my_double_button": "🎭 My double",
-```
-
-- [ ] **Step 5: Зарегистрировать роутер**
+- [ ] **Step 4: Зарегистрировать роутер**
 
 В `bot/main.py` добавить импорт:
 
@@ -2494,7 +2491,7 @@ from bot.handlers.circle import router as circle_router
     dispatcher.include_router(circle_router)
 ```
 
-- [ ] **Step 6: Добавить роутер в conftest**
+- [ ] **Step 5: Добавить роутер в conftest**
 
 В `tests/conftest.py` добавить импорт и элемент кортежа:
 
@@ -2516,12 +2513,12 @@ _SINGLETON_ROUTERS = (
 )
 ```
 
-- [ ] **Step 7: Run the whole suite**
+- [ ] **Step 6: Run the whole suite**
 
 Run: `pytest -q`
 Expected: PASS, включая `tests/test_localization.py` (он проверяет совпадение ключей во всех локалях)
 
-- [ ] **Step 8: Задокументировать ffmpeg как зависимость деплоя**
+- [ ] **Step 7: Задокументировать ffmpeg как зависимость деплоя**
 
 Дописать в `deploy/README-deploy.md`:
 
@@ -2538,7 +2535,7 @@ ffmpeg -version && ffprobe -version
 Без них бот запустится, но сбор доноров будет падать на замере длительности.
 ```
 
-- [ ] **Step 9: Дописать ручной чеклист**
+- [ ] **Step 8: Дописать ручной чеклист**
 
 Дописать в `docs/manual-checklist.md`:
 
@@ -2556,10 +2553,10 @@ ffmpeg -version && ffprobe -version
 - [ ] Сценарий авторского поста не потерял письменные образцы стиля
 ```
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add bot/main.py bot/keyboards/start.py bot/locales tests/conftest.py tests/test_keyboards_start.py docs/manual-checklist.md deploy/README-deploy.md
+git add bot/main.py bot/keyboards/start.py tests/conftest.py tests/test_keyboards_start.py docs/manual-checklist.md deploy/README-deploy.md
 git commit -m "feat: wire the double flow into the bot, localise it, document ffmpeg"
 ```
 
@@ -2584,6 +2581,6 @@ git commit -m "feat: wire the double flow into the bot, localise it, document ff
 | Удаление двойника и всех данных | Task 10 |
 | Видео на диске не хранятся | Task 8, 9 (временные файлы удаляются в `finally`) |
 | ffmpeg как зависимость деплоя | Task 11 |
-| Локализация на 4 языка | Task 7–11 |
+| Локализация на 4 языка | Task 7 |
 
 **Вне этапа 1 и осознанно не покрыто планом:** кнопка «🎥 ЗАПИШИ КРУЖОК» под дайджестом, `circle_jobs`, `circle_usage`, `lipsync_gateway`, `circle_pipeline`, `circle_worker`, `video_note.py`, `plan_donor_fit`, синтез речи, ротация доноров по `last_used_at`, «Перетренировать голос». Всё это — этап 2.
