@@ -41,6 +41,18 @@ CREATE TABLE IF NOT EXISTS site_content (
     updated_at TEXT,
     PRIMARY KEY (page, block_id)
 );
+
+CREATE TABLE IF NOT EXISTS refine_contexts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id INTEGER NOT NULL,
+    message_id INTEGER NOT NULL,
+    source_text TEXT NOT NULL,
+    content_language TEXT NOT NULL,
+    with_hashtags INTEGER NOT NULL,
+    platform TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (chat_id, message_id)
+);
 """
 
 
