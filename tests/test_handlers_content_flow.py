@@ -553,12 +553,36 @@ async def test_normal_generation_resets_hashtag_flag(db_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_send_variants_sends_one_message_per_variant_with_refine_keyboard():
     message = _make_message()
-    variants = ["Первый вариант текста", "Второй вариант текста"]
+    # Deliberately contain HTML-special characters so that format_variant's
+    # escaping is a non-trivial transform: an identity-transform input would
+    # let a "drop format_variant" mutation slip through undetected.
+    variants = [
+        "Первый <b>вариант</b> & <i>текст</i>",
+        "Второй <script>alert(1)</script> & больше",
+    ]
+    # Expected output written as a literal (NOT recomputed via
+    # output_formatter.format_variant) so the test actually pins down what
+    # format_variant is supposed to produce, per bot/services/output_formatter.py:
+    # & -> &amp;, then < -> &lt;, then > -> &gt; (in that order).
+    expected_escaped = [
+        "Первый &lt;b&gt;вариант&lt;/b&gt; &amp; &lt;i&gt;текст&lt;/i&gt;",
+        "Второй &lt;script&gt;alert(1)&lt;/script&gt; &amp; больше",
+    ]
 
     await content_module.send_variants(message, "ru", "telegram", variants)
 
     assert message.answer.await_count == 2
-    for call, variant in zip(message.answer.await_args_list, variants, strict=True):
-        assert call.args[0] == output_formatter.format_variant(variant)
+    for call, expected_text, index in zip(
+        message.answer.await_args_list, expected_escaped, [1, 2], strict=True
+    ):
+        assert call.args[0] == expected_text
         assert call.kwargs["parse_mode"] == output_formatter.PARSE_MODE
-        assert call.kwargs["reply_markup"] is not None
+        keyboard = call.kwargs["reply_markup"]
+        # Inspect actual callback_data contents (not just "is not None") so a
+        # language/platform swap in send_variants's signature, or a broken
+        # per-call index, makes this assertion fail. build_refine_keyboard's
+        # first row is [more_button, shorten_button]; callback_data format is
+        # "<prefix>:<platform>:<variant_index>" per bot/keyboards/refine.py.
+        more_button, shorten_button = keyboard.inline_keyboard[0]
+        assert more_button.callback_data == f"refine:more:telegram:{index}"
+        assert shorten_button.callback_data == f"refine:shorten:telegram:{index}"
