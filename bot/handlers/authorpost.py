@@ -5,18 +5,31 @@ import logging
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery
+from aiogram.types import CallbackQuery, Message
 
 from bot.handlers.content import _resolve_language
 from bot.handlers.refine import _check_whitelist_or_reply, _safe_answer
+from bot.handlers.settov import MAX_EXAMPLE_LENGTH
 from bot.keyboards.authorpost import (
     CALLBACK_ITEM_PREFIX,
+    CALLBACK_NEW_SAMPLES,
+    CALLBACK_NEXT,
+    CALLBACK_SAMPLES_DONE,
     CALLBACK_START,
+    CALLBACK_USE_SAVED,
     build_item_choice_keyboard,
     build_next_step_keyboard,
+    build_platform_keyboard,
+    build_samples_done_keyboard,
+    build_saved_examples_keyboard,
 )
 from bot.locales.loader import get_string
 from bot.logging_config import LOGGER_NAME
+from bot.storage.style_examples import (
+    add_style_example,
+    clear_style_examples,
+    get_style_examples,
+)
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -110,3 +123,121 @@ async def on_authorpost_item(callback: CallbackQuery, state: FSMContext, db_path
         reply_markup=build_next_step_keyboard(language),
     )
     await _safe_answer(callback)
+
+
+async def _ask_for_samples(callback: CallbackQuery, state: FSMContext, language: str) -> None:
+    await state.set_state(AuthorPostStates.collecting_examples)
+    await callback.message.answer(
+        get_string("authorpost_samples_prompt", language, required=REQUIRED_EXAMPLES)
+    )
+    await _safe_answer(callback)
+
+
+async def _ask_for_platform(callback: CallbackQuery, language: str) -> None:
+    await callback.message.answer(
+        get_string("authorpost_choose_platform", language),
+        reply_markup=build_platform_keyboard(language),
+    )
+    await _safe_answer(callback)
+
+
+def _stored_example_count(db_path: str, telegram_id: int) -> int:
+    return len(get_style_examples(db_path, telegram_id))
+
+
+@router.callback_query(F.data == CALLBACK_NEXT)
+async def on_authorpost_next(callback: CallbackQuery, state: FSMContext, db_path: str) -> None:
+    telegram_id = callback.from_user.id
+    language = _resolve_language(db_path, telegram_id, callback.from_user.language_code)
+
+    if not await _check_whitelist_or_reply(callback, db_path, language):
+        return
+
+    count = _stored_example_count(db_path, telegram_id)
+    if count >= REQUIRED_EXAMPLES:
+        await callback.message.answer(
+            get_string("authorpost_saved_examples_intro", language, count=count),
+            reply_markup=build_saved_examples_keyboard(language),
+        )
+        await _safe_answer(callback)
+        return
+
+    await _ask_for_samples(callback, state, language)
+
+
+@router.callback_query(F.data == CALLBACK_USE_SAVED)
+async def on_authorpost_use_saved(callback: CallbackQuery, db_path: str) -> None:
+    telegram_id = callback.from_user.id
+    language = _resolve_language(db_path, telegram_id, callback.from_user.language_code)
+
+    if not await _check_whitelist_or_reply(callback, db_path, language):
+        return
+
+    await _ask_for_platform(callback, language)
+
+
+@router.callback_query(F.data == CALLBACK_NEW_SAMPLES)
+async def on_authorpost_new_samples(
+    callback: CallbackQuery, state: FSMContext, db_path: str
+) -> None:
+    telegram_id = callback.from_user.id
+    language = _resolve_language(db_path, telegram_id, callback.from_user.language_code)
+
+    if not await _check_whitelist_or_reply(callback, db_path, language):
+        return
+
+    # Wipe rather than append: leaving the old examples in would blend two
+    # eras of the user's writing under one cap, and "загрузить новые" would
+    # quietly mean "загрузить ещё".
+    clear_style_examples(db_path, telegram_id)
+    await callback.message.answer(get_string("authorpost_samples_cleared", language))
+    await _ask_for_samples(callback, state, language)
+
+
+@router.message(AuthorPostStates.collecting_examples)
+async def on_authorpost_sample(message: Message, state: FSMContext, db_path: str) -> None:
+    telegram_id = message.from_user.id
+    language = _resolve_language(db_path, telegram_id, message.from_user.language_code)
+
+    if not message.text:
+        await message.answer(get_string("authorpost_sample_non_text", language))
+        return
+
+    if len(message.text) > MAX_EXAMPLE_LENGTH:
+        await message.answer(get_string("authorpost_sample_too_long", language))
+        return
+
+    add_style_example(db_path, telegram_id, message.text)
+    # The counter reports everything in storage, not just this session's
+    # messages: "не менее 5" means "the bot holds 5 samples of your voice",
+    # so a user who already had 2 saved is done after 3 more.
+    count = _stored_example_count(db_path, telegram_id)
+
+    if count >= REQUIRED_EXAMPLES:
+        await message.answer(
+            get_string(
+                "authorpost_samples_enough", language, count=count, required=REQUIRED_EXAMPLES
+            ),
+            reply_markup=build_samples_done_keyboard(language),
+        )
+        return
+
+    await message.answer(
+        get_string("authorpost_samples_progress", language, count=count, required=REQUIRED_EXAMPLES)
+    )
+
+
+@router.callback_query(F.data == CALLBACK_SAMPLES_DONE, AuthorPostStates.collecting_examples)
+async def on_authorpost_samples_done(
+    callback: CallbackQuery, state: FSMContext, db_path: str
+) -> None:
+    telegram_id = callback.from_user.id
+    language = _resolve_language(db_path, telegram_id, callback.from_user.language_code)
+
+    if not await _check_whitelist_or_reply(callback, db_path, language):
+        return
+
+    # Back to None before anything else: while a state is set, route_content
+    # (StateFilter(None)) never fires and the bot ignores ordinary messages.
+    await state.set_state(None)
+    await _ask_for_platform(callback, language)

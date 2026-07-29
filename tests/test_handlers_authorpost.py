@@ -171,3 +171,168 @@ async def test_item_choice_without_digest_items_reports_expired(db_path):
 
     args, _ = callback.message.answer.call_args
     assert args[0] == get_string("authorpost_digest_expired", "ru")
+
+
+from bot.handlers.authorpost import (
+    REQUIRED_EXAMPLES,
+    AuthorPostStates,
+    on_authorpost_new_samples,
+    on_authorpost_next,
+    on_authorpost_sample,
+    on_authorpost_samples_done,
+    on_authorpost_use_saved,
+)
+from bot.handlers.settov import MAX_EXAMPLE_LENGTH
+from bot.storage.style_examples import add_style_example, get_style_examples
+
+
+@pytest.mark.asyncio
+async def test_next_step_prompts_for_samples_when_storage_empty(db_path):
+    state = _make_state()
+    callback = _make_callback("authorpost:next")
+
+    await on_authorpost_next(callback, state, db_path)
+
+    args, _ = callback.message.answer.call_args
+    assert args[0] == get_string("authorpost_samples_prompt", "ru", required=REQUIRED_EXAMPLES)
+    assert await state.get_state() == AuthorPostStates.collecting_examples.state
+
+
+@pytest.mark.asyncio
+async def test_next_step_offers_saved_examples_when_enough_stored(db_path):
+    for index in range(REQUIRED_EXAMPLES):
+        add_style_example(db_path, TELEGRAM_ID, f"Пост {index}")
+    state = _make_state()
+    callback = _make_callback("authorpost:next")
+
+    await on_authorpost_next(callback, state, db_path)
+
+    args, kwargs = callback.message.answer.call_args
+    assert args[0] == get_string(
+        "authorpost_saved_examples_intro", "ru", count=REQUIRED_EXAMPLES
+    )
+    assert "reply_markup" in kwargs
+    assert await state.get_state() is None
+
+
+@pytest.mark.asyncio
+async def test_next_step_prompts_for_samples_when_stored_below_threshold(db_path):
+    add_style_example(db_path, TELEGRAM_ID, "Единственный пост")
+    state = _make_state()
+    callback = _make_callback("authorpost:next")
+
+    await on_authorpost_next(callback, state, db_path)
+
+    args, _ = callback.message.answer.call_args
+    assert args[0] == get_string("authorpost_samples_prompt", "ru", required=REQUIRED_EXAMPLES)
+
+
+@pytest.mark.asyncio
+async def test_use_saved_goes_straight_to_platform_choice(db_path):
+    callback = _make_callback("authorpost:use_saved")
+
+    await on_authorpost_use_saved(callback, db_path)
+
+    args, kwargs = callback.message.answer.call_args
+    assert args[0] == get_string("authorpost_choose_platform", "ru")
+    assert "reply_markup" in kwargs
+
+
+@pytest.mark.asyncio
+async def test_new_samples_wipes_storage_and_starts_collecting(db_path):
+    add_style_example(db_path, TELEGRAM_ID, "Старый пост")
+    state = _make_state()
+    callback = _make_callback("authorpost:new_samples")
+
+    await on_authorpost_new_samples(callback, state, db_path)
+
+    assert get_style_examples(db_path, TELEGRAM_ID) == []
+    assert await state.get_state() == AuthorPostStates.collecting_examples.state
+
+
+@pytest.mark.asyncio
+async def test_sample_below_threshold_shows_progress_without_done_button(db_path):
+    state = _make_state()
+    await state.set_state(AuthorPostStates.collecting_examples)
+    message = _make_message(text="Мой пост")
+
+    await on_authorpost_sample(message, state, db_path)
+
+    args, kwargs = message.answer.call_args
+    assert args[0] == get_string(
+        "authorpost_samples_progress", "ru", count=1, required=REQUIRED_EXAMPLES
+    )
+    assert kwargs.get("reply_markup") is None
+
+
+@pytest.mark.asyncio
+async def test_sample_at_threshold_offers_done_button(db_path):
+    for index in range(REQUIRED_EXAMPLES - 1):
+        add_style_example(db_path, TELEGRAM_ID, f"Пост {index}")
+    state = _make_state()
+    await state.set_state(AuthorPostStates.collecting_examples)
+    message = _make_message(text="Пятый пост")
+
+    await on_authorpost_sample(message, state, db_path)
+
+    args, kwargs = message.answer.call_args
+    assert args[0] == get_string(
+        "authorpost_samples_enough", "ru", count=REQUIRED_EXAMPLES, required=REQUIRED_EXAMPLES
+    )
+    assert kwargs["reply_markup"] is not None
+
+
+@pytest.mark.asyncio
+async def test_sample_counter_includes_previously_stored_examples(db_path):
+    add_style_example(db_path, TELEGRAM_ID, "Ранее сохранённый")
+    add_style_example(db_path, TELEGRAM_ID, "И ещё один")
+    state = _make_state()
+    await state.set_state(AuthorPostStates.collecting_examples)
+    message = _make_message(text="Третий")
+
+    await on_authorpost_sample(message, state, db_path)
+
+    args, _ = message.answer.call_args
+    assert args[0] == get_string(
+        "authorpost_samples_progress", "ru", count=3, required=REQUIRED_EXAMPLES
+    )
+
+
+@pytest.mark.asyncio
+async def test_non_text_sample_is_rejected_without_counting(db_path):
+    state = _make_state()
+    await state.set_state(AuthorPostStates.collecting_examples)
+    message = _make_message(text=None)
+
+    await on_authorpost_sample(message, state, db_path)
+
+    args, _ = message.answer.call_args
+    assert args[0] == get_string("authorpost_sample_non_text", "ru")
+    assert get_style_examples(db_path, TELEGRAM_ID) == []
+
+
+@pytest.mark.asyncio
+async def test_overlong_sample_is_rejected_without_counting(db_path):
+    state = _make_state()
+    await state.set_state(AuthorPostStates.collecting_examples)
+    message = _make_message(text="я" * (MAX_EXAMPLE_LENGTH + 1))
+
+    await on_authorpost_sample(message, state, db_path)
+
+    args, _ = message.answer.call_args
+    assert args[0] == get_string("authorpost_sample_too_long", "ru")
+    assert get_style_examples(db_path, TELEGRAM_ID) == []
+
+
+@pytest.mark.asyncio
+async def test_samples_done_clears_state_and_asks_for_platform(db_path):
+    state = _make_state()
+    await state.set_state(AuthorPostStates.collecting_examples)
+    callback = _make_callback("authorpost:samples_done")
+
+    await on_authorpost_samples_done(callback, state, db_path)
+
+    assert await state.get_state() is None
+    args, kwargs = callback.message.answer.call_args
+    assert args[0] == get_string("authorpost_choose_platform", "ru")
+    assert "reply_markup" in kwargs
