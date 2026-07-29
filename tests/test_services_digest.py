@@ -312,3 +312,38 @@ def test_format_digest_message_truncates_to_telegram_limit():
     text = digest.format_digest_message(result, "ru")
 
     assert len(text) <= 4096
+
+
+# --- flatten_digest_items ---
+
+
+def test_flatten_digest_items_orders_news_then_papers_then_methods():
+    result = digest.DigestResult(
+        topic="ИИ",
+        news=[digest.DigestItem(title="Новость 1", url="https://n1")],
+        papers=[digest.DigestItem(title="Статья 1", url="https://p1")],
+        methods_summary="Новая методика X.",
+    )
+
+    assert digest.flatten_digest_items(result) == [
+        "Новость 1",
+        "Статья 1",
+        "Новая методика X.",
+    ]
+
+
+def test_flatten_digest_items_omits_absent_methods_summary():
+    result = digest.DigestResult(
+        topic="ИИ",
+        news=[digest.DigestItem(title="Новость 1", url="https://n1")],
+        papers=[],
+        methods_summary=None,
+    )
+
+    assert digest.flatten_digest_items(result) == ["Новость 1"]
+
+
+def test_flatten_digest_items_empty_for_empty_result():
+    result = digest.DigestResult(topic="ИИ", news=[], papers=[], methods_summary=None)
+
+    assert digest.flatten_digest_items(result) == []

@@ -240,8 +240,9 @@ from bot.storage.users import get_digest_topic, set_digest_topic
 async def test_menu_news_digest_prompts_for_topic_when_none_saved(db_path):
     add_user(db_path, 2007)
     callback = _make_callback(2007, CALLBACK_NEWS_DIGEST)
+    state = _make_state(2007)
 
-    await on_menu_news_digest(callback, db_path)
+    await on_menu_news_digest(callback, state, db_path)
 
     callback.message.answer.assert_awaited_once_with(
         get_string("digest_prompt_no_topic", "ru"), reply_markup=ANY
@@ -252,8 +253,9 @@ async def test_menu_news_digest_prompts_for_topic_when_none_saved(db_path):
 @pytest.mark.asyncio
 async def test_menu_news_digest_blocked_when_not_whitelisted(db_path):
     callback = _make_callback(2008, CALLBACK_NEWS_DIGEST)
+    state = _make_state(2008)
 
-    await on_menu_news_digest(callback, db_path)
+    await on_menu_news_digest(callback, state, db_path)
 
     callback.message.answer.assert_awaited_once_with(get_string("error_not_whitelisted", "ru"))
 
@@ -270,12 +272,13 @@ async def test_menu_news_digest_builds_digest_immediately_when_topic_saved(db_pa
     add_user(db_path, 2009)
     set_digest_topic(db_path, 2009, "психология")
     callback = _make_callback(2009, CALLBACK_NEWS_DIGEST)
+    state = _make_state(2009)
 
     fake_result = digest_service.DigestResult(topic="психология", news=[], papers=[], methods_summary=None)
     mock_build = AsyncMock(return_value=fake_result)
     monkeypatch.setattr(digest_service, "build_digest", mock_build)
 
-    await on_menu_news_digest(callback, db_path)
+    await on_menu_news_digest(callback, state, db_path)
 
     mock_build.assert_awaited_once_with("психология")
     assert callback.message.answer.await_count == 2
@@ -519,3 +522,65 @@ async def test_start_clears_fsm_state_stuck_in_photo_gen(db_path):
     await cmd_start(message, state, db_path)
 
     assert await state.get_state() is None
+
+
+from bot.services import digest as digest_service
+from bot.storage.users import set_digest_topic
+from bot.storage.whitelist import add_user
+
+
+# on_menu_news_digest goes through _check_limit_or_reply, which calls
+# load_settings() — without these the whole test errors on missing env.
+@pytest.fixture
+def _settings_env(monkeypatch):
+    monkeypatch.setenv("BOT_TOKEN", "123456:test-token")
+    monkeypatch.setenv("AI_PROXY_API_KEY", "test-ai-key")
+    monkeypatch.setenv("OWNER_CHAT_ID", "42")
+
+
+def _sample_digest_result():
+    return digest_service.DigestResult(
+        topic="ИИ",
+        news=[digest_service.DigestItem(title="Новость 1", url="https://n1")],
+        papers=[digest_service.DigestItem(title="Статья 1", url="https://p1")],
+        methods_summary="Новая методика X.",
+    )
+
+
+def _make_digest_callback(telegram_id: int):
+    callback = AsyncMock()
+    callback.from_user = SimpleNamespace(id=telegram_id, language_code="ru")
+    callback.message = AsyncMock()
+    return callback
+
+
+@pytest.mark.asyncio
+async def test_menu_news_digest_stores_items_in_fsm(db_path, monkeypatch, _settings_env):
+    telegram_id = 555
+    add_user(db_path, telegram_id)
+    set_digest_topic(db_path, telegram_id, "ИИ")
+    monkeypatch.setattr(
+        digest_service, "build_digest", AsyncMock(return_value=_sample_digest_result())
+    )
+    state = _make_state(telegram_id)
+
+    await on_menu_news_digest(_make_digest_callback(telegram_id), state, db_path)
+
+    data = await state.get_data()
+    assert data["digest_items"] == ["Новость 1", "Статья 1", "Новая методика X."]
+
+
+@pytest.mark.asyncio
+async def test_digest_topic_input_stores_items_in_fsm(db_path, monkeypatch):
+    telegram_id = 556
+    add_user(db_path, telegram_id)
+    monkeypatch.setattr(
+        digest_service, "build_digest", AsyncMock(return_value=_sample_digest_result())
+    )
+    state = _make_state(telegram_id)
+    message = _make_message(telegram_id, "ru", text="ИИ")
+
+    await on_digest_topic_input(message, state, db_path)
+
+    data = await state.get_data()
+    assert data["digest_items"] == ["Новость 1", "Статья 1", "Новая методика X."]

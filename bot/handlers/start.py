@@ -127,7 +127,7 @@ async def on_menu_create_post(callback: CallbackQuery, db_path: str) -> None:
 
 
 @router.callback_query(F.data == CALLBACK_NEWS_DIGEST)
-async def on_menu_news_digest(callback: CallbackQuery, db_path: str) -> None:
+async def on_menu_news_digest(callback: CallbackQuery, state: FSMContext, db_path: str) -> None:
     telegram_id = callback.from_user.id
     language = _resolve_language(db_path, telegram_id, callback.from_user.language_code)
 
@@ -148,6 +148,11 @@ async def on_menu_news_digest(callback: CallbackQuery, db_path: str) -> None:
 
     result = await digest.build_digest(topic)
     increment_usage(db_path, telegram_id)
+
+    # Stash the digest's items for the authored-post flow
+    # (bot/handlers/authorpost.py): its number buttons carry only an index,
+    # because a headline never fits Telegram's 64-byte callback_data.
+    await state.update_data(digest_items=digest.flatten_digest_items(result))
 
     await callback.message.answer(digest.format_digest_message(result, language))
     await callback.message.answer(
@@ -199,6 +204,8 @@ async def on_digest_topic_input(message: Message, state: FSMContext, db_path: st
     await message.answer(get_string("digest_topic_saved", language, topic=topic))
 
     result = await digest.build_digest(topic)
+    await state.update_data(digest_items=digest.flatten_digest_items(result))
+
     await message.answer(digest.format_digest_message(result, language))
     await message.answer(
         get_string("digest_change_topic_prompt", language),

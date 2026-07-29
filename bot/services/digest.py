@@ -177,3 +177,19 @@ def format_digest_message(result: DigestResult, language: str) -> str:
     if len(message) > _TELEGRAM_MESSAGE_LIMIT:
         message = message[: _TELEGRAM_MESSAGE_LIMIT - 1] + "…"
     return message
+
+
+def flatten_digest_items(result: DigestResult) -> list[str]:
+    # One flat, index-addressable list matching the order the user sees in
+    # format_digest_message() — news, then papers, then the synthesized
+    # methods paragraph. The authored-post flow numbers its buttons off this
+    # list, so the two orderings must never drift apart.
+    #
+    # News and papers contribute their title only, not the URL: the title is
+    # what the model writes the post about, and a Google News redirect URL is
+    # 400-900 chars of noise in the prompt.
+    items = [item.title for item in result.news]
+    items.extend(item.title for item in result.papers)
+    if result.methods_summary:
+        items.append(result.methods_summary)
+    return items
