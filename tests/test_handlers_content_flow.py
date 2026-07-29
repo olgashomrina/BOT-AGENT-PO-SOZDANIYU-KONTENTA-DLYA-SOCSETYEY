@@ -8,6 +8,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
 from aiogram.fsm.storage.memory import MemoryStorage
 
+from bot.handlers import content as content_module
 from bot.handlers.content import (
     VoiceConfirmStates,
     cmd_clear_media,
@@ -535,9 +536,6 @@ async def test_clear_media_command_with_nothing_pending(db_path):
     message.answer.assert_awaited_once_with(get_string("media_nothing_to_clear", "ru"))
 
 
-from bot.handlers import content as content_module
-
-
 @pytest.mark.asyncio
 async def test_normal_generation_resets_hashtag_flag(db_path, monkeypatch):
     state = _make_state()
@@ -552,5 +550,15 @@ async def test_normal_generation_resets_hashtag_flag(db_path, monkeypatch):
     assert data["with_hashtags"] is False
 
 
-def test_send_variants_is_public():
-    assert hasattr(content_module, "send_variants")
+@pytest.mark.asyncio
+async def test_send_variants_sends_one_message_per_variant_with_refine_keyboard():
+    message = _make_message()
+    variants = ["Первый вариант текста", "Второй вариант текста"]
+
+    await content_module.send_variants(message, "ru", "telegram", variants)
+
+    assert message.answer.await_count == 2
+    for call, variant in zip(message.answer.await_args_list, variants, strict=True):
+        assert call.args[0] == output_formatter.format_variant(variant)
+        assert call.kwargs["parse_mode"] == output_formatter.PARSE_MODE
+        assert call.kwargs["reply_markup"] is not None
