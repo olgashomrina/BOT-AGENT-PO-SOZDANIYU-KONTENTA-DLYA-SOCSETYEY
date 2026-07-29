@@ -71,7 +71,13 @@ async def test_refine_more_generates_and_sends_new_variant(db_path, monkeypatch)
     await on_refine_more(callback, state, db_path)
 
     mock_generate.assert_awaited_once_with(
-        "Исходный текст статьи.", "telegram", "ru", count=1, extra_instruction=None
+        "Исходный текст статьи.",
+        "telegram",
+        "ru",
+        count=1,
+        extra_instruction=None,
+        style_examples=[],
+        with_hashtags=False,
     )
     callback.message.answer.assert_awaited_once()
     args, kwargs = callback.message.answer.call_args
@@ -99,6 +105,8 @@ async def test_refine_shorten_passes_shorten_instruction(db_path, monkeypatch):
         "ru",
         count=1,
         extra_instruction=content_generator.SHORTEN_INSTRUCTION,
+        style_examples=[],
+        with_hashtags=False,
     )
     callback.message.answer.assert_awaited_once()
     args, _ = callback.message.answer.call_args
@@ -567,3 +575,44 @@ async def test_refine_image_blocked_when_not_whitelisted_does_not_call_ai(db_pat
     bot.send_photo.assert_not_awaited()
     callback.message.answer.assert_awaited_once_with(get_string("error_not_whitelisted", "ru"))
     callback.answer.assert_awaited_once()
+
+
+from bot.storage.style_examples import add_style_example
+
+
+@pytest.mark.asyncio
+async def test_refine_more_forwards_stored_style_examples(db_path, monkeypatch):
+    add_style_example(db_path, TELEGRAM_ID, "Мой старый пост.")
+    state = _make_state()
+    await _seed_finished_session(state)
+    mock_generate = AsyncMock(return_value=["Новый вариант"])
+    monkeypatch.setattr(content_generator, "generate_variants", mock_generate)
+
+    await on_refine_more(_make_callback(data="refine:more:telegram:1"), state, db_path)
+
+    assert mock_generate.await_args.kwargs["style_examples"] == ["Мой старый пост."]
+
+
+@pytest.mark.asyncio
+async def test_refine_more_forwards_hashtag_flag_from_fsm(db_path, monkeypatch):
+    state = _make_state()
+    await _seed_finished_session(state)
+    await state.update_data(with_hashtags=True)
+    mock_generate = AsyncMock(return_value=["Новый вариант"])
+    monkeypatch.setattr(content_generator, "generate_variants", mock_generate)
+
+    await on_refine_more(_make_callback(data="refine:more:telegram:1"), state, db_path)
+
+    assert mock_generate.await_args.kwargs["with_hashtags"] is True
+
+
+@pytest.mark.asyncio
+async def test_refine_more_defaults_hashtag_flag_to_false(db_path, monkeypatch):
+    state = _make_state()
+    await _seed_finished_session(state)
+    mock_generate = AsyncMock(return_value=["Новый вариант"])
+    monkeypatch.setattr(content_generator, "generate_variants", mock_generate)
+
+    await on_refine_more(_make_callback(data="refine:more:telegram:1"), state, db_path)
+
+    assert mock_generate.await_args.kwargs["with_hashtags"] is False

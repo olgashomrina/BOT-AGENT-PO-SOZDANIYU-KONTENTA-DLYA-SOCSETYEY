@@ -16,6 +16,7 @@ from bot.services import ai_gateway, content_generator, output_formatter
 from bot.services.ai_gateway import AIGatewayError
 from bot.services.content_generator import SHORTEN_INSTRUCTION
 from bot.storage.limits import LimitStatus, check_limit_status, increment_usage
+from bot.storage.style_examples import get_style_examples
 from bot.storage.users import clear_pending_media, get_channel_id, get_pending_media, set_pending_media
 from bot.storage.whitelist import is_whitelisted
 
@@ -112,9 +113,23 @@ async def _generate_and_send(
         await _safe_answer(callback)
         return
 
+    # WHY read these here rather than trusting the caller: "Ещё вариант" and
+    # "Короче" must produce a post indistinguishable in voice from the batch
+    # they sit under. Before this, refine called generate_variants() with
+    # neither the user's style examples nor the hashtag flag, so one tap on
+    # "Короче" silently stripped the personal voice off an authored post.
+    style_examples = get_style_examples(db_path, telegram_id)
+    with_hashtags = bool(data.get("with_hashtags"))
+
     try:
         variants = await content_generator.generate_variants(
-            source_text, platform, content_language, count=1, extra_instruction=extra_instruction
+            source_text,
+            platform,
+            content_language,
+            count=1,
+            extra_instruction=extra_instruction,
+            style_examples=style_examples,
+            with_hashtags=with_hashtags,
         )
     except AIGatewayError as exc:
         error_key = _AI_ERROR_KEYS.get(type(exc), "error_unexpected")
