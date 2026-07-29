@@ -12,6 +12,7 @@ from aiogram.types import BufferedInputFile, CallbackQuery, ForceReply, Message
 from bot.config import load_settings
 from bot.handlers.content import _AI_ERROR_KEYS, _resolve_language
 from bot.handlers.refine import _check_limit_or_reply, _check_whitelist_or_reply, _safe_answer
+from bot.keyboards.refine import build_image_upgrade_keyboard
 from bot.keyboards.start import (
     CALLBACK_CAPABILITIES,
     CALLBACK_CREATE_POST,
@@ -256,6 +257,7 @@ async def on_photo_gen_description(
 
     try:
         image_prompt = await content_generator.generate_image_prompt(description)
+        await state.update_data(last_image_prompt=image_prompt)
         image_bytes = await ai_gateway.generate_image(image_prompt)
     except AIGatewayError as exc:
         error_key = _AI_ERROR_KEYS.get(type(exc), "error_unexpected")
@@ -271,6 +273,7 @@ async def on_photo_gen_description(
             message.chat.id,
             photo=BufferedInputFile(image_bytes, filename="ai_image.png"),
             caption=get_string("image_preview_caption", language),
+            reply_markup=build_image_upgrade_keyboard(language),
         )
     except TelegramAPIError:
         logger.warning(

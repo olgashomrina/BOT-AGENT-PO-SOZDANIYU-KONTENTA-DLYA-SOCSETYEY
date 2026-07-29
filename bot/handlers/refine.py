@@ -9,10 +9,10 @@ from aiogram.types import BufferedInputFile, CallbackQuery
 
 from bot.config import load_settings
 from bot.handlers.content import _AI_ERROR_KEYS, _resolve_language
-from bot.keyboards.refine import build_refine_keyboard
+from bot.keyboards.refine import build_image_upgrade_keyboard, build_refine_keyboard
 from bot.locales.loader import get_string
 from bot.logging_config import LOGGER_NAME
-from bot.services import ai_gateway, content_generator, output_formatter
+from bot.services import ai_gateway, content_generator, output_formatter, platform_package
 from bot.services.ai_gateway import AIGatewayError
 from bot.services.content_generator import SHORTEN_INSTRUCTION
 from bot.storage.limits import LimitStatus, check_limit_status, increment_usage
@@ -229,6 +229,68 @@ async def on_refine_publish(callback: CallbackQuery, state: FSMContext, db_path:
     await _safe_answer(callback)
 
 
+def _render_package(package: platform_package.PlatformPackage, language: str) -> str:
+    """Собирает сообщение по одному пакету.
+
+    Текст для копирования уходит в <pre>: Telegram рисует у таких блоков
+    кнопку копирования, то есть «скопировал и вставил в приложение площадки»
+    занимает одно касание. Расплата — моноширинный шрифт в превью; это
+    осознанный размен внешнего вида на то, ради чего пакет и делается.
+    """
+    lines = [f"<b>{output_formatter.format_variant(package.display_name)}</b>", ""]
+
+    if package.title:
+        lines.append(get_string("package_title_label", language))
+        lines.append(f"<pre>{output_formatter.format_variant(package.title)}</pre>")
+        lines.append(get_string("package_body_label", language))
+
+    body = package.caption
+    if package.hashtags:
+        body = f"{body}\n\n{' '.join(package.hashtags)}".strip()
+    if body:
+        lines.append(f"<pre>{output_formatter.format_variant(body)}</pre>")
+
+    lines.append("")
+    lines.append(get_string(package.media_spec.key, language, **package.media_spec.params))
+    for note in package.notes:
+        lines.append(get_string(note.key, language, **note.params))
+
+    return "\n".join(lines)
+
+
+@router.callback_query(F.data.startswith("refine:package:"))
+async def on_refine_package(callback: CallbackQuery, state: FSMContext, db_path: str) -> None:
+    """Отдаёт пост, разложенный под Instagram, YouTube Shorts и Facebook.
+
+    Никакой доставки: бот не публикует, не хранит токены площадок и не ходит
+    к их API — обоснование в docstring bot/services/platform_package.py и в
+    socseti.md. Поэтому здесь нет ни _check_limit_or_reply (платного вызова
+    не происходит), ни обращения к bot: всё уходит ответом в личку.
+    """
+    telegram_id = callback.from_user.id
+    data = await state.get_data()
+    language = data.get("language") or _resolve_language(
+        db_path, telegram_id, callback.from_user.language_code
+    )
+
+    if not await _check_whitelist_or_reply(callback, db_path, language):
+        return
+
+    # Тот же приём, что и в on_refine_publish выше: кнопка висит под одним
+    # конкретным показанным вариантом, и его текст — это текст сообщения,
+    # под которым она стоит.
+    post_text = callback.message.text or ""
+
+    await callback.message.answer(get_string("package_intro", language))
+    for package in platform_package.build_all_packages(post_text):
+        await callback.message.answer(
+            _render_package(package, language),
+            parse_mode=output_formatter.PARSE_MODE,
+        )
+
+    await _safe_answer(callback)
+
+
 @router.callback_query(F.data.startswith("refine:image:"))
 async def on_refine_image(callback: CallbackQuery, state: FSMContext, db_path: str, bot: Bot) -> None:
     telegram_id = callback.from_user.id
@@ -251,6 +313,7 @@ async def on_refine_image(callback: CallbackQuery, state: FSMContext, db_path: s
 
     try:
         image_prompt = await content_generator.generate_image_prompt(post_text)
+        await state.update_data(last_image_prompt=image_prompt)
         image_bytes = await ai_gateway.generate_image(image_prompt)
     except AIGatewayError as exc:
         error_key = _AI_ERROR_KEYS.get(type(exc), "error_unexpected")
@@ -267,6 +330,7 @@ async def on_refine_image(callback: CallbackQuery, state: FSMContext, db_path: s
             callback.message.chat.id,
             photo=BufferedInputFile(image_bytes, filename="ai_image.png"),
             caption=get_string("image_preview_caption", language),
+            reply_markup=build_image_upgrade_keyboard(language),
         )
     except TelegramAPIError:
         logger.warning(

@@ -440,6 +440,34 @@ async def test_refine_image_success_stores_telegram_file_id(db_path, monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_refine_image_success_attaches_upgrade_button_and_stores_prompt(db_path, monkeypatch):
+    from bot.keyboards.refine import build_image_upgrade_keyboard
+
+    state = _make_state()
+    await _seed_finished_session(state)
+
+    mock_prompt = AsyncMock(return_value="a vivid english prompt")
+    mock_generate_image = AsyncMock(return_value=b"fake-png-bytes")
+    monkeypatch.setattr(content_generator, "generate_image_prompt", mock_prompt)
+    monkeypatch.setattr(ai_gateway, "generate_image", mock_generate_image)
+
+    callback = _make_callback(data="refine:image:telegram:1")
+    callback.message.text = "Готовый вариант поста"
+    callback.message.chat = SimpleNamespace(id=TELEGRAM_ID)
+    bot = AsyncMock()
+    bot.send_photo = AsyncMock(return_value=_fake_sent_photo_message("telegram-cdn-file-id"))
+
+    await on_refine_image(callback, state, db_path, bot)
+
+    _, kwargs = bot.send_photo.call_args
+    expected_keyboard = build_image_upgrade_keyboard("ru")
+    assert kwargs["reply_markup"].inline_keyboard[0][0].callback_data == (
+        expected_keyboard.inline_keyboard[0][0].callback_data
+    )
+    assert (await state.get_data())["last_image_prompt"] == "a vivid english prompt"
+
+
+@pytest.mark.asyncio
 async def test_refine_image_stale_callback_answer_does_not_raise(db_path, monkeypatch):
     # Reproduces a production bug: a slow/retried AI Gateway call can push
     # elapsed time past Telegram's callback-query validity window, so the

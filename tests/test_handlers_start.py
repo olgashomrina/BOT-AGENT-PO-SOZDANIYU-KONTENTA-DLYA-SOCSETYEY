@@ -475,6 +475,34 @@ async def test_photo_gen_description_generates_and_attaches_image(db_path, monke
 
 
 @pytest.mark.asyncio
+async def test_photo_gen_description_attaches_upgrade_button_and_stores_prompt(db_path, monkeypatch):
+    from bot.keyboards.refine import build_image_upgrade_keyboard
+
+    add_user(db_path, 3005)
+    state = _make_state(3005)
+    await state.update_data(language="ru")
+    await state.set_state(PhotoGenStates.waiting_for_description)
+
+    mock_prompt = AsyncMock(return_value="a vivid english prompt")
+    mock_generate_image = AsyncMock(return_value=b"fake-png-bytes")
+    monkeypatch.setattr(content_generator, "generate_image_prompt", mock_prompt)
+    monkeypatch.setattr(ai_gateway, "generate_image", mock_generate_image)
+
+    message = _make_description_message(3005, "горы на рассвете")
+    bot = AsyncMock()
+    bot.send_photo = AsyncMock(return_value=_fake_sent_photo_message("telegram-cdn-file-id"))
+
+    await on_photo_gen_description(message, state, db_path, bot)
+
+    _, kwargs = bot.send_photo.call_args
+    expected_keyboard = build_image_upgrade_keyboard("ru")
+    assert kwargs["reply_markup"].inline_keyboard[0][0].callback_data == (
+        expected_keyboard.inline_keyboard[0][0].callback_data
+    )
+    assert (await state.get_data())["last_image_prompt"] == "a vivid english prompt"
+
+
+@pytest.mark.asyncio
 async def test_photo_gen_description_empty_text_reprompts_without_calling_ai(db_path, monkeypatch):
     state = _make_state(3004)
     await state.update_data(language="ru")
