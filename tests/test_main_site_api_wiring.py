@@ -92,3 +92,12 @@ async def test_run_configures_native_menu_button_before_polling(monkeypatch, tmp
         # Menu button must be configured before polling starts, not after.
         assert mock_bot.set_my_commands.await_count > 0
         mock_start_polling.assert_awaited_once()
+
+
+def test_dispatcher_includes_authorpost_router():
+    from bot.handlers.authorpost import router as authorpost_router
+    from bot.main import build_dispatcher
+
+    dispatcher = build_dispatcher(daily_limit=10, monthly_limit=100)
+
+    assert authorpost_router in dispatcher.sub_routers

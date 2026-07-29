@@ -8,6 +8,7 @@ from aiogram.types import BotCommand, MenuButtonCommands
 from aiohttp import web
 
 from bot.config import load_settings
+from bot.handlers.authorpost import router as authorpost_router
 from bot.handlers.channel import router as channel_router
 from bot.handlers.content import router as content_router
 from bot.handlers.errors import router as errors_router
@@ -44,6 +45,11 @@ def build_dispatcher(daily_limit: int, monthly_limit: int) -> Dispatcher:
     dispatcher.include_router(channel_router)
     dispatcher.include_router(site_router)
     dispatcher.include_router(settov_router)
+    # Before content_router: its message handler is state-filtered to
+    # AuthorPostStates.collecting_examples, and keeping the state-specific
+    # router ahead of content_router's catch-all StateFilter(None) matches
+    # how settov_router is already ordered.
+    dispatcher.include_router(authorpost_router)
     dispatcher.include_router(content_router)
     dispatcher.include_router(refine_router)
     # Registered last: per-request errors are already handled locally inside

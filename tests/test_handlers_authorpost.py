@@ -463,6 +463,20 @@ async def test_platform_choice_spends_quota_on_success(db_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_platform_both_charges_quota_once_per_platform(db_path, monkeypatch):
+    state = _make_state()
+    await _seed_ready_session(state, db_path)
+    monkeypatch.setattr(
+        content_generator, "generate_variants", AsyncMock(return_value=["Вариант"])
+    )
+    callback = _make_callback("authorpost:platform:both")
+
+    await on_authorpost_platform(callback, state, db_path)
+
+    assert get_daily_count(db_path, TELEGRAM_ID) == 2
+
+
+@pytest.mark.asyncio
 async def test_platform_choice_forged_callback_data_reports_expired(db_path, monkeypatch):
     # callback.data is client-supplied, same as in on_authorpost_item: a
     # modified client can send a suffix that isn't one of this bot's own
