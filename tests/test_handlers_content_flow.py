@@ -533,3 +533,24 @@ async def test_clear_media_command_with_nothing_pending(db_path):
 
     assert get_pending_media(db_path, TELEGRAM_ID) is None
     message.answer.assert_awaited_once_with(get_string("media_nothing_to_clear", "ru"))
+
+
+from bot.handlers import content as content_module
+
+
+@pytest.mark.asyncio
+async def test_normal_generation_resets_hashtag_flag(db_path, monkeypatch):
+    state = _make_state()
+    # Simulate leftovers from an earlier authored-post run in the same chat.
+    await state.update_data(with_hashtags=True)
+    _mock_generate_variants(monkeypatch)
+    message = _make_message(text="Исходный текст")
+
+    await route_content(message, db_path, _make_bot(), state)
+
+    data = await state.get_data()
+    assert data["with_hashtags"] is False
+
+
+def test_send_variants_is_public():
+    assert hasattr(content_module, "send_variants")

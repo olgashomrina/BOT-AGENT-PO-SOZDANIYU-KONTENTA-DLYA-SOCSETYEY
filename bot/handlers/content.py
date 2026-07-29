@@ -226,7 +226,10 @@ async def on_transcript_edited_text(message: Message, state: FSMContext) -> None
     await _show_transcript_confirmation(message, language, message.text, state)
 
 
-async def _send_variants(message: Message, language: str, platform: str, variants: list[str]) -> None:
+# Public because bot/handlers/authorpost.py sends its variants through the
+# same path — same formatting, same refine keyboard — and duplicating this
+# there would let the two output formats drift apart.
+async def send_variants(message: Message, language: str, platform: str, variants: list[str]) -> None:
     for index, variant in enumerate(variants, start=1):
         await message.answer(
             output_formatter.format_variant(variant),
@@ -246,7 +249,16 @@ async def _finish(
     # (bot/handlers/refine.py) read source_text/content_language/language
     # back out of this same FSM data to regenerate without asking the user
     # to resend anything.
-    await state.update_data(source_text=text, content_language=content_language, language=language)
+    # with_hashtags is written explicitly, not merely left alone: FSM data
+    # persists per chat, so a True left over from an earlier authored-post
+    # run would make bot/handlers/refine.py bolt hashtags onto ordinary
+    # posts the user never asked to tag.
+    await state.update_data(
+        source_text=text,
+        content_language=content_language,
+        language=language,
+        with_hashtags=False,
+    )
     await state.set_state(None)
     logger.info(
         "Content ready for generation",
@@ -280,5 +292,5 @@ async def _finish(
         await message.answer(get_string(error_key, language))
         return
 
-    await _send_variants(message, language, "telegram", telegram_variants)
-    await _send_variants(message, language, "vk", vk_variants)
+    await send_variants(message, language, "telegram", telegram_variants)
+    await send_variants(message, language, "vk", vk_variants)
