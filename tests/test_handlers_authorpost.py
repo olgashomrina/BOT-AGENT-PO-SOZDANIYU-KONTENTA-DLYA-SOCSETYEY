@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -41,17 +42,36 @@ def _make_state(telegram_id: int = TELEGRAM_ID) -> FSMContext:
     return FSMContext(storage=storage, key=key)
 
 
+# send_variants (bot/handlers/content.py) records a refine_contexts row keyed
+# on the sent message's real id, so every AsyncMock standing in for
+# Message.answer here must return something with a genuine int message_id
+# (sqlite rejects binding a MagicMock) — a shared counter keeps every
+# generated id unique across a test's several sent messages. Same pattern as
+# tests/test_handlers_content_flow.py.
+_sent_message_ids = itertools.count(1000)
+
+
+def _make_sent_message():
+    return SimpleNamespace(message_id=next(_sent_message_ids))
+
+
 def _make_callback(data: str, telegram_id: int = TELEGRAM_ID):
     callback = AsyncMock()
     callback.from_user = SimpleNamespace(id=telegram_id, language_code="ru")
     callback.data = data
     callback.message = AsyncMock()
+    callback.message.chat = SimpleNamespace(id=telegram_id)
+    callback.message.answer = AsyncMock(
+        side_effect=lambda *args, **kwargs: _make_sent_message()
+    )
     return callback
 
 
 def _make_message(text: str | None = None, telegram_id: int = TELEGRAM_ID):
     message = AsyncMock()
     message.from_user = SimpleNamespace(id=telegram_id, language_code="ru")
+    message.chat = SimpleNamespace(id=telegram_id)
+    message.answer = AsyncMock(side_effect=lambda *args, **kwargs: _make_sent_message())
     message.text = text
     return message
 
@@ -494,3 +514,37 @@ async def test_platform_choice_forged_callback_data_reports_expired(db_path, mon
     assert args[0] == get_string("authorpost_digest_expired", "ru")
     mock_generate.assert_not_awaited()
     callback.answer.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_authored_variants_record_a_refine_context_with_hashtags_kept(db_path, monkeypatch):
+    # An authored post is generated WITH hashtags, so the per-message refine
+    # context has to say so — otherwise tapping "Ещё"/"Короче" under one of
+    # these variants would regenerate it stripped of them.
+    from bot.storage.refine_context import get_refine_context
+
+    state = _make_state()
+    await _seed_ready_session(state, db_path)
+    monkeypatch.setattr(
+        content_generator, "generate_variants", AsyncMock(return_value=["Вариант"])
+    )
+    callback = _make_callback("authorpost:platform:vk")
+    sent_ids: list[int] = []
+
+    def _record(*args, **kwargs):
+        sent = _make_sent_message()
+        sent_ids.append(sent.message_id)
+        return sent
+
+    callback.message.answer = AsyncMock(side_effect=_record)
+
+    await on_authorpost_platform(callback, state, db_path)
+
+    # The last message sent is the variant itself (the "generating..." notice
+    # goes out before it), so its id is the one the context is keyed on.
+    context = get_refine_context(db_path, TELEGRAM_ID, sent_ids[-1])
+    assert context is not None
+    assert context["with_hashtags"] is True
+    assert context["platform"] == "vk"
+    assert context["source_text"] == "Научная статья"
+    assert context["content_language"] == "ru"

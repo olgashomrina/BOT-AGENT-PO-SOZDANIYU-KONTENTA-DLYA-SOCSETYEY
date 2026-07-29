@@ -341,6 +341,19 @@ async def on_authorpost_platform(
         increment_usage(db_path, telegram_id)
 
     for platform, variants in generated:
-        await send_variants(callback.message, language, platform, variants)
+        # with_hashtags=True mirrors the generate_variants call above and the
+        # FSM data recorded earlier: an authored post carries hashtags, and the
+        # per-message refine context has to say so, or tapping "Ещё"/"Короче"
+        # under one of these variants would regenerate it without them.
+        await send_variants(
+            callback.message,
+            language,
+            platform,
+            variants,
+            db_path,
+            source_text,
+            content_language,
+            True,
+        )
 
     await _safe_answer(callback)

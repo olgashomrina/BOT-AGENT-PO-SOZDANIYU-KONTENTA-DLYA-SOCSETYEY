@@ -1,6 +1,7 @@
 # tests/test_handlers_site.py
 from __future__ import annotations
 
+import itertools
 import pathlib
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -20,6 +21,18 @@ from bot.storage.users import get_pending_media, set_pending_media
 from bot.storage.whitelist import add_user
 
 TELEGRAM_ID = 111
+
+# send_variants (bot/handlers/content.py) records a refine_contexts row keyed
+# on the sent message's real id, so every AsyncMock standing in for
+# Message.answer here must return something with a genuine int message_id
+# (sqlite rejects binding a MagicMock) — a shared counter keeps every
+# generated id unique across a test's several sent messages. Same pattern as
+# tests/test_handlers_content_flow.py.
+_sent_message_ids = itertools.count(1000)
+
+
+def _make_sent_message():
+    return SimpleNamespace(message_id=next(_sent_message_ids))
 
 
 @pytest.fixture(autouse=True)
@@ -59,6 +72,8 @@ def _make_state(telegram_id: int = TELEGRAM_ID) -> FSMContext:
 def _make_message(telegram_id: int = TELEGRAM_ID):
     message = AsyncMock()
     message.from_user = SimpleNamespace(id=telegram_id, language_code="ru")
+    message.chat = SimpleNamespace(id=telegram_id)
+    message.answer = AsyncMock(side_effect=lambda *args, **kwargs: _make_sent_message())
     return message
 
 
@@ -67,6 +82,10 @@ def _make_callback(telegram_id: int = TELEGRAM_ID, data: str = ""):
     callback.from_user = SimpleNamespace(id=telegram_id, language_code="ru")
     callback.data = data
     callback.message = AsyncMock()
+    callback.message.chat = SimpleNamespace(id=telegram_id)
+    callback.message.answer = AsyncMock(
+        side_effect=lambda *args, **kwargs: _make_sent_message()
+    )
     return callback
 
 
