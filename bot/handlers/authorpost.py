@@ -78,8 +78,20 @@ async def on_authorpost_item(callback: CallbackQuery, state: FSMContext, db_path
 
     data = await state.get_data()
     items = data.get("digest_items") or []
-    index = int(callback.data.rsplit(":", 1)[1])
-    if index >= len(items):
+    # callback.data is client-supplied: a modified client can send any string
+    # matching the startswith filter above, not just the indices this bot's
+    # own keyboard emitted via range(len(items)). So the index is both parsed
+    # defensively and bounds-checked on both ends here, rather than trusted
+    # to match the keyboard the bot sent — a non-integer would otherwise raise
+    # past _safe_answer and leave the button's spinner hanging, and a negative
+    # value would otherwise silently select the last item via Python's
+    # negative indexing instead of the one the user actually asked for.
+    try:
+        index = int(callback.data.rsplit(":", 1)[1])
+    except ValueError:
+        await _report_expired_digest(callback, language)
+        return
+    if not 0 <= index < len(items):
         await _report_expired_digest(callback, language)
         return
 

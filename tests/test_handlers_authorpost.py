@@ -135,6 +135,34 @@ async def test_item_choice_out_of_range_reports_expired_digest(db_path):
 
 
 @pytest.mark.asyncio
+async def test_item_choice_negative_index_reports_expired_digest(db_path):
+    state = _make_state()
+    await state.update_data(digest_items=DIGEST_ITEMS)
+    callback = _make_callback(f"{CALLBACK_ITEM_PREFIX}:-1")
+
+    await on_authorpost_item(callback, state, db_path)
+
+    args, _ = callback.message.answer.call_args
+    assert args[0] == get_string("authorpost_digest_expired", "ru")
+    data = await state.get_data()
+    assert "source_text" not in data
+
+
+@pytest.mark.asyncio
+async def test_item_choice_malformed_index_reports_expired_digest(db_path):
+    state = _make_state()
+    await state.update_data(digest_items=DIGEST_ITEMS)
+    callback = _make_callback(f"{CALLBACK_ITEM_PREFIX}:abc")
+
+    await on_authorpost_item(callback, state, db_path)
+
+    args, _ = callback.message.answer.call_args
+    assert args[0] == get_string("authorpost_digest_expired", "ru")
+    data = await state.get_data()
+    assert "source_text" not in data
+
+
+@pytest.mark.asyncio
 async def test_item_choice_without_digest_items_reports_expired(db_path):
     state = _make_state()
     callback = _make_callback(f"{CALLBACK_ITEM_PREFIX}:0")
