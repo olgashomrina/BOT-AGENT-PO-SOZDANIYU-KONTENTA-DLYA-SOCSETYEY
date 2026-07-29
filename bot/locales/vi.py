@@ -183,6 +183,9 @@ STRINGS = {
         "bài đăng tiếp theo bạn đăng lên kênh. Để bỏ tệp đính kèm, hãy dùng "
         "lệnh /clear_media."
     ),
+    "image_upgrade_button": "🎨 Làm ảnh chân thực hơn (~15₽)",
+    "image_upgraded_button": "✅ Xong",
+    "image_upgraded_caption": "✨ Phiên bản chân thực hơn",
     "settov_instructions": (
         "Hãy gửi cho tôi một vài bài đăng cũ của bạn — mỗi bài một tin "
         "nhắn riêng, dạng văn bản thường. Tôi sẽ dùng chúng làm tham chiếu "
@@ -253,4 +256,32 @@ STRINGS = {
     "authorpost_platform_vk_button": "VK",
     "authorpost_platform_both_button": "Cả hai",
     "authorpost_generating": "Đang viết bài theo văn phong của bạn...",
+    "package_button": "📦 Gói cho mạng xã hội",
+    "package_intro": (
+        "Các gói sẵn sàng cho Instagram, YouTube Shorts và Facebook.\n\n"
+        "Phần văn bản trong khung có thể sao chép bằng một chạm — hãy dán vào "
+        "ứng dụng của nền tảng và tự đăng. Bot không đăng thay bạn và không "
+        "yêu cầu quyền truy cập tài khoản của bạn."
+    ),
+    "package_title_label": "Tiêu đề:",
+    "package_body_label": "Mô tả:",
+    "package_media_spec": "📐 Video: {aspect}, {resolution}, {seconds}",
+    "package_note_links_not_clickable": (
+        "🔗 Liên kết trong chú thích ở đây không bấm được — hãy đưa liên kết "
+        "vào phần tiểu sử hồ sơ (tìm thấy trong văn bản: {count})"
+    ),
+    "package_note_caption_truncated": (
+        "✂️ Văn bản đã bị cắt theo giới hạn của nền tảng — {limit} ký tự"
+    ),
+    "package_note_hashtags_trimmed": (
+        "#️⃣ Hashtag đã rút còn {max} — mức phù hợp với nền tảng này"
+    ),
+    "package_note_preview": (
+        "👀 Chỉ {preview} ký tự đầu hiển thị trước «xem thêm» — hãy đặt câu móc "
+        "vào trong đó"
+    ),
+    "package_note_ai_disclosure": (
+        "🤖 Khi tải lên, hãy đánh dấu video được tạo bằng AI — trên YouTube đây "
+        "là yêu cầu bắt buộc"
+    ),
 }

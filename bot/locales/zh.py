@@ -138,6 +138,9 @@ STRINGS = {
         "AI 生成的图片已准备好并已附加——它将用于您下一次发布到频道的帖子。"
         "如需移除，请使用 /clear_media 命令。"
     ),
+    "image_upgrade_button": "🎨 生成更逼真的照片 (~15₽)",
+    "image_upgraded_button": "✅ 完成",
+    "image_upgraded_caption": "✨ 更逼真的版本",
     "settov_instructions": (
         "请发送几篇您自己以前发布的帖子——每条消息发一篇，纯文本形式。"
         "我会用它们作为参考，在生成新帖子时贴近您的风格。\n\n"
@@ -193,4 +196,21 @@ STRINGS = {
     "authorpost_platform_vk_button": "VK",
     "authorpost_platform_both_button": "两个都要",
     "authorpost_generating": "正在用您的文风撰写原创帖子……",
+    "package_button": "📦 社交平台素材包",
+    "package_intro": (
+        "已为 Instagram、YouTube Shorts 和 Facebook 准备好素材包。\n\n"
+        "方框内的文字可一键复制——粘贴到对应平台的应用中自行发布。"
+        "机器人不会代您发布，也不会索取您的账号权限。"
+    ),
+    "package_title_label": "标题：",
+    "package_body_label": "描述：",
+    "package_media_spec": "📐 视频：{aspect}，{resolution}，{seconds}",
+    "package_note_links_not_clickable": (
+        "🔗 此平台简介中的链接不可点击——请把链接放到主页简介里"
+        "（文中找到 {count} 个）"
+    ),
+    "package_note_caption_truncated": "✂️ 文字已按平台上限截断——{limit} 个字符",
+    "package_note_hashtags_trimmed": "#️⃣ 话题标签已精简至 {max} 个——这是该平台的合适数量",
+    "package_note_preview": "👀 «展开»前只显示前 {preview} 个字符——请把钩子放在这里面",
+    "package_note_ai_disclosure": "🤖 上传时请标注视频由 AI 生成——在 YouTube 上这是强制要求",
 }

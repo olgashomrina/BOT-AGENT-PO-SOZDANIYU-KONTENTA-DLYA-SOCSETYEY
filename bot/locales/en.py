@@ -180,6 +180,9 @@ STRINGS = {
         "for the next post you publish to your channel. To remove it, use "
         "the /clear_media command."
     ),
+    "image_upgrade_button": "🎨 Make it more realistic (~15₽)",
+    "image_upgraded_button": "✅ Done",
+    "image_upgraded_caption": "✨ More realistic version",
     "settov_instructions": (
         "Send me a few of your own past posts — one per message, plain "
         "text. I'll use them as a reference for your style when generating "
@@ -250,4 +253,32 @@ STRINGS = {
     "authorpost_platform_vk_button": "VK",
     "authorpost_platform_both_button": "Both",
     "authorpost_generating": "Writing an authored post in your voice...",
+    "package_button": "📦 Social media pack",
+    "package_intro": (
+        "Ready-made packs for Instagram, YouTube Shorts and Facebook.\n\n"
+        "The boxed text copies with one tap — paste it into the platform's app "
+        "and publish it yourself. The bot never publishes on your behalf and "
+        "never asks for access to your accounts."
+    ),
+    "package_title_label": "Title:",
+    "package_body_label": "Description:",
+    "package_media_spec": "📐 Video: {aspect}, {resolution}, {seconds}",
+    "package_note_links_not_clickable": (
+        "🔗 Links aren't clickable in captions here — put the link in your "
+        "profile bio instead (found in the text: {count})"
+    ),
+    "package_note_caption_truncated": (
+        "✂️ Text trimmed to the platform limit — {limit} characters"
+    ),
+    "package_note_hashtags_trimmed": (
+        "#️⃣ Hashtags cut down to {max} — that's what fits this platform"
+    ),
+    "package_note_preview": (
+        "👀 Only the first {preview} characters show before \"more\" — keep the "
+        "hook inside them"
+    ),
+    "package_note_ai_disclosure": (
+        "🤖 When uploading, mark the video as AI-generated — on YouTube this is "
+        "mandatory"
+    ),
 }

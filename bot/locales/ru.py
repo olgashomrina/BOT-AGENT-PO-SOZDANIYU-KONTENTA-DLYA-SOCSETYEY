@@ -184,6 +184,9 @@ STRINGS = {
         "следующей публикации в канал. Чтобы убрать вложение, используйте "
         "команду /clear_media."
     ),
+    "image_upgrade_button": "🎨 Сделать реалистичнее (~15₽)",
+    "image_upgraded_button": "✅ Готово",
+    "image_upgraded_caption": "✨ Более реалистичная версия",
     "settov_instructions": (
         "Пришлите несколько своих старых постов — каждый отдельным "
         "сообщением, обычным текстом. По ним я буду ориентироваться на ваш "
@@ -258,4 +261,32 @@ STRINGS = {
     "authorpost_platform_vk_button": "VK",
     "authorpost_platform_both_button": "И туда, и туда",
     "authorpost_generating": "Пишу авторский пост в вашем стиле...",
+    "package_button": "📦 Пакет для соцсетей",
+    "package_intro": (
+        "Готовые пакеты для Instagram, YouTube Shorts и Facebook.\n\n"
+        "Текст в рамке копируется одним касанием — вставьте его в приложение "
+        "площадки и опубликуйте сами. Бот никуда не публикует за вас и не "
+        "просит доступ к вашим аккаунтам."
+    ),
+    "package_title_label": "Заголовок:",
+    "package_body_label": "Описание:",
+    "package_media_spec": "📐 Видео: {aspect}, {resolution}, {seconds}",
+    "package_note_links_not_clickable": (
+        "🔗 Ссылки в подписи здесь не кликабельны — вынесите ссылку в шапку "
+        "профиля (в тексте найдено: {count})"
+    ),
+    "package_note_caption_truncated": (
+        "✂️ Текст обрезан под лимит площадки — {limit} символов"
+    ),
+    "package_note_hashtags_trimmed": (
+        "#️⃣ Хештеги сокращены до {max} — столько уместно на этой площадке"
+    ),
+    "package_note_preview": (
+        "👀 До «ещё» видны первые {preview} символов — крючок должен уместиться "
+        "в них"
+    ),
+    "package_note_ai_disclosure": (
+        "🤖 При загрузке отметьте, что видео создано с помощью ИИ — на YouTube "
+        "это обязательное требование"
+    ),
 }
