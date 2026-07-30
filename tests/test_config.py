@@ -60,6 +60,67 @@ def test_load_settings_reads_optional_overrides(monkeypatch, tmp_path):
     assert settings.log_level == "DEBUG"
 
 
+def test_load_settings_transcription_model_defaults_to_cheapest_stt(monkeypatch, tmp_path):
+    _set_required_env(monkeypatch)
+    monkeypatch.delenv("AI_GATEWAY_TRANSCRIPTION_MODEL", raising=False)
+
+    settings = load_settings(env_file=_missing_env_file(tmp_path))
+
+    # 0.96 ₽/мин против 1.20 ₽/мин у stt-openai/whisper-1 (см. dengi.md).
+    assert settings.ai_gateway_transcription_model == "stt-openai/gpt-4o-mini-transcribe"
+
+
+def test_load_settings_spend_guards_have_defaults(monkeypatch, tmp_path):
+    _set_required_env(monkeypatch)
+    for key in (
+        "MAX_VOICE_DURATION_SECONDS",
+        "DAILY_IMAGE_LIMIT",
+        "BALANCE_ALERT_THRESHOLD_RUB",
+        "BALANCE_CHECK_INTERVAL_SECONDS",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    settings = load_settings(env_file=_missing_env_file(tmp_path))
+
+    assert settings.max_voice_duration_seconds == 180
+    assert settings.daily_image_limit == 3
+    assert settings.balance_alert_threshold_rub == 50.0
+    assert settings.balance_check_interval_seconds == 3600
+
+
+def test_load_settings_reads_spend_guard_overrides(monkeypatch, tmp_path):
+    _set_required_env(
+        monkeypatch,
+        {
+            "MAX_VOICE_DURATION_SECONDS": "60",
+            "DAILY_IMAGE_LIMIT": "1",
+            "BALANCE_ALERT_THRESHOLD_RUB": "12.5",
+            "BALANCE_CHECK_INTERVAL_SECONDS": "600",
+        },
+    )
+
+    settings = load_settings(env_file=_missing_env_file(tmp_path))
+
+    assert settings.max_voice_duration_seconds == 60
+    assert settings.daily_image_limit == 1
+    assert settings.balance_alert_threshold_rub == 12.5
+    assert settings.balance_check_interval_seconds == 600
+
+
+def test_load_settings_raises_when_daily_image_limit_not_numeric(monkeypatch, tmp_path):
+    _set_required_env(monkeypatch, {"DAILY_IMAGE_LIMIT": "три"})
+
+    with pytest.raises(ConfigError):
+        load_settings(env_file=_missing_env_file(tmp_path))
+
+
+def test_load_settings_raises_when_balance_threshold_not_numeric(monkeypatch, tmp_path):
+    _set_required_env(monkeypatch, {"BALANCE_ALERT_THRESHOLD_RUB": "мало"})
+
+    with pytest.raises(ConfigError):
+        load_settings(env_file=_missing_env_file(tmp_path))
+
+
 def test_load_settings_premium_image_model_defaults_to_flux_pro(monkeypatch, tmp_path):
     _set_required_env(monkeypatch)
     monkeypatch.delenv("AI_GATEWAY_PREMIUM_IMAGE_MODEL", raising=False)

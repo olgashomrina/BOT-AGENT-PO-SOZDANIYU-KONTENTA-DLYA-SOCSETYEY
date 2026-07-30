@@ -9,6 +9,7 @@ from aiogram.types import BufferedInputFile, CallbackQuery
 
 from bot.config import load_settings
 from bot.handlers.content import _AI_ERROR_KEYS, _resolve_language
+from bot.handlers.image_budget import ensure_image_budget
 from bot.keyboards.refine import (
     CALLBACK_IMAGE_UPGRADE,
     CALLBACK_IMAGE_UPGRADE_DONE,
@@ -18,11 +19,23 @@ from bot.keyboards.refine import (
 )
 from bot.locales.loader import get_string
 from bot.logging_config import LOGGER_NAME
-from bot.services import ai_gateway, content_generator, output_formatter, platform_package
+from bot.services import (
+    ai_gateway,
+    content_generator,
+    cost_tracker,
+    output_formatter,
+    platform_package,
+)
 from bot.services.ai_gateway import AIGatewayError
 from bot.services.content_generator import SHORTEN_INSTRUCTION
+from bot.storage.costs import record_cost
 from bot.storage.image_prompts import claim_image_prompt, save_image_prompt
-from bot.storage.limits import LimitStatus, check_limit_status, increment_usage
+from bot.storage.limits import (
+    LimitStatus,
+    check_limit_status,
+    increment_image_usage,
+    increment_usage,
+)
 from bot.storage.refine_context import get_refine_context, save_refine_context
 from bot.storage.style_examples import get_style_examples
 from bot.storage.users import clear_pending_media, get_channel_id, get_pending_media, set_pending_media
@@ -323,6 +336,10 @@ async def on_refine_image(callback: CallbackQuery, state: FSMContext, db_path: s
     if not await _check_limit_or_reply(callback, db_path, language):
         return
 
+    if not await ensure_image_budget(callback.message.answer, db_path, telegram_id, language):
+        await _safe_answer(callback)
+        return
+
     # WHY read the text off callback.message rather than FSM data: same
     # reasoning as on_refine_publish above — the image button sits under one
     # already-generated variant message specifically, and that message's
@@ -359,6 +376,11 @@ async def on_refine_image(callback: CallbackQuery, state: FSMContext, db_path: s
         return
 
     increment_usage(db_path, telegram_id)
+    increment_image_usage(db_path, telegram_id)
+    image_model = load_settings().ai_gateway_image_model
+    record_cost(
+        db_path, telegram_id, "generate_image", image_model, cost_tracker.image_cost(image_model)
+    )
 
     # WHY store Telegram's own file_id instead of re-sending the raw bytes:
     # the AI Gateway only hands back the image once, as base64 in memory —
@@ -393,6 +415,13 @@ async def on_image_upgrade(callback: CallbackQuery, state: FSMContext, db_path: 
         return
 
     if not await _check_limit_or_reply(callback, db_path, language):
+        return
+
+    # Checked before claim_image_prompt: claiming deletes the stored prompt,
+    # and a refusal must leave this photo upgradeable tomorrow rather than
+    # silently consuming its one-shot prompt.
+    if not await ensure_image_budget(callback.message.answer, db_path, telegram_id, language):
+        await _safe_answer(callback)
         return
 
     image_prompt = claim_image_prompt(db_path, callback.message.chat.id, callback.message.message_id)
@@ -456,6 +485,15 @@ async def on_image_upgrade(callback: CallbackQuery, state: FSMContext, db_path: 
         return
 
     increment_usage(db_path, telegram_id)
+    increment_image_usage(db_path, telegram_id)
+    premium_model = settings.ai_gateway_premium_image_model
+    record_cost(
+        db_path,
+        telegram_id,
+        "generate_image_upgrade",
+        premium_model,
+        cost_tracker.image_cost(premium_model),
+    )
 
     file_id = sent_message.photo[-1].file_id
     set_pending_media(db_path, telegram_id, file_id, "photo")

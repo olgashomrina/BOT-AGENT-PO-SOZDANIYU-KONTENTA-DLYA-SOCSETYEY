@@ -33,6 +33,14 @@ STRINGS = {
         "Không thể nhận dạng tin nhắn thoại. Vui lòng gửi lại hoặc nhập "
         "văn bản thay thế — cách đó cũng có tác dụng."
     ),
+    "error_voice_too_long": (
+        "Tin nhắn thoại dài hơn {limit_minutes} phút — tôi không nhận dạng "
+        "được. Vui lòng ghi ngắn hơn hoặc gửi văn bản."
+    ),
+    "error_daily_image_limit": (
+        "Hôm nay đã hết ảnh — giới hạn là {limit} ảnh mỗi ngày. Văn bản bài "
+        "viết vẫn hoạt động, ảnh sẽ mở lại vào ngày mai."
+    ),
     "error_link_extraction": (
         "Không thể trích xuất văn bản từ đường liên kết này — có thể "
         "trang web được bảo vệ khỏi việc đọc tự động hoặc tạm thời không "

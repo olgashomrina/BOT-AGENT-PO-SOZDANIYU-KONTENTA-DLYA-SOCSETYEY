@@ -406,6 +406,7 @@ from bot.keyboards.start import CALLBACK_PHOTO_GEN
 from bot.services import ai_gateway, content_generator
 from bot.services.ai_gateway import AIGatewayTimeoutError
 from bot.storage.image_prompts import claim_image_prompt
+from bot.storage.limits import get_daily_image_count, increment_image_usage
 from bot.storage.users import get_pending_media
 
 
@@ -473,6 +474,54 @@ async def test_photo_gen_description_generates_and_attaches_image(db_path, monke
     assert get_pending_media(db_path, 3003) == ("telegram-cdn-file-id", "photo")
     assert await state.get_state() is None
     message.answer.assert_awaited_once_with(get_string("photo_gen_ready", "ru"))
+
+
+@pytest.mark.asyncio
+async def test_photo_gen_description_counts_towards_daily_image_budget(db_path, monkeypatch):
+    add_user(db_path, 3009)
+    state = _make_state(3009)
+    await state.update_data(language="ru")
+    await state.set_state(PhotoGenStates.waiting_for_description)
+
+    monkeypatch.setattr(content_generator, "generate_image_prompt", AsyncMock(return_value="p"))
+    monkeypatch.setattr(ai_gateway, "generate_image", AsyncMock(return_value=b"fake-png-bytes"))
+
+    message = _make_description_message(3009, "закат над морем")
+    bot = AsyncMock()
+    bot.send_photo = AsyncMock(return_value=_fake_sent_photo_message())
+
+    await on_photo_gen_description(message, state, db_path, bot)
+
+    assert get_daily_image_count(db_path, 3009) == 1
+
+
+@pytest.mark.asyncio
+async def test_photo_gen_description_refused_once_daily_image_limit_reached(db_path, monkeypatch):
+    monkeypatch.setenv("DAILY_IMAGE_LIMIT", "2")
+    add_user(db_path, 3010)
+    state = _make_state(3010)
+    await state.update_data(language="ru")
+    await state.set_state(PhotoGenStates.waiting_for_description)
+
+    for _ in range(2):
+        increment_image_usage(db_path, 3010)
+
+    mock_prompt = AsyncMock(return_value="p")
+    mock_generate_image = AsyncMock(return_value=b"fake-png-bytes")
+    monkeypatch.setattr(content_generator, "generate_image_prompt", mock_prompt)
+    monkeypatch.setattr(ai_gateway, "generate_image", mock_generate_image)
+
+    message = _make_description_message(3010, "закат над морем")
+    bot = AsyncMock()
+
+    await on_photo_gen_description(message, state, db_path, bot)
+
+    mock_prompt.assert_not_awaited()
+    mock_generate_image.assert_not_awaited()
+    bot.send_photo.assert_not_awaited()
+    message.answer.assert_awaited_once_with(
+        get_string("error_daily_image_limit", "ru", limit=2)
+    )
 
 
 @pytest.mark.asyncio

@@ -17,6 +17,7 @@ from bot.services.ai_gateway import (
     TranscriptionError,
     generate_image,
     generate_text,
+    get_balance,
     transcribe,
 )
 
@@ -30,6 +31,7 @@ BASE_URL = "https://fake-ai-proxy.test/v1"
 CHAT_URL = f"{BASE_URL}/chat/completions"
 TRANSCRIBE_URL = f"{BASE_URL}/audio/transcriptions"
 IMAGE_URL = f"{BASE_URL}/images/generations"
+BALANCE_URL = f"{BASE_URL}/balance"
 
 
 @pytest.fixture(autouse=True)
@@ -486,3 +488,74 @@ async def test_logs_required_fields_on_final_failure(caplog):
 
     warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert len(warning_records) == 2
+
+
+# --- get_balance ---
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_get_balance_reads_a_flat_balance_field():
+    respx.get(BALANCE_URL).mock(return_value=httpx.Response(200, json={"balance": 123.45}))
+
+    assert await get_balance() == pytest.approx(123.45)
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_get_balance_reads_a_nested_balance_field():
+    # vsegpt.ru does not document the response shape, so the parser has to
+    # cope with the plausible variants rather than one guessed schema.
+    respx.get(BALANCE_URL).mock(
+        return_value=httpx.Response(200, json={"data": {"credits": 7.5, "other": "x"}})
+    )
+
+    assert await get_balance() == pytest.approx(7.5)
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_get_balance_reads_a_numeric_string():
+    respx.get(BALANCE_URL).mock(return_value=httpx.Response(200, json={"balance": "0.42"}))
+
+    assert await get_balance() == pytest.approx(0.42)
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_get_balance_reads_zero_as_zero_not_as_missing():
+    # An empty account is exactly the case this exists for — it must not be
+    # mistaken for "shape not recognised".
+    respx.get(BALANCE_URL).mock(return_value=httpx.Response(200, json={"balance": 0}))
+
+    assert await get_balance() == 0.0
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_get_balance_raises_on_unrecognisable_shape():
+    respx.get(BALANCE_URL).mock(return_value=httpx.Response(200, json={"status": "ok"}))
+
+    with pytest.raises(AIGatewayInvalidResponseError):
+        await get_balance()
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_get_balance_raises_on_non_json_body():
+    respx.get(BALANCE_URL).mock(return_value=httpx.Response(200, text="not json"))
+
+    with pytest.raises(AIGatewayInvalidResponseError):
+        await get_balance()
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_get_balance_raises_on_rejected_api_key():
+    # The real symptom of a wrong key, verified live against api.vsegpt.ru.
+    respx.get(BALANCE_URL).mock(
+        return_value=httpx.Response(403, json={"error": {"message": "Incorrect API key.", "code": 403}})
+    )
+
+    with pytest.raises(AIGatewayInvalidResponseError):
+        await get_balance()

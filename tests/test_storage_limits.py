@@ -6,8 +6,11 @@ from bot.storage.limits import (
     LimitStatus,
     check_limit_status,
     get_daily_count,
+    get_daily_image_count,
     get_monthly_count,
+    increment_image_usage,
     increment_usage,
+    is_image_limit_reached,
 )
 
 DAY_1 = datetime(2026, 7, 17, 10, 0, tzinfo=timezone.utc)
@@ -110,3 +113,59 @@ def test_usage_is_scoped_per_user(db_path):
     increment_usage(db_path, 111, now=DAY_1)
 
     assert get_daily_count(db_path, 222, now=DAY_1) == 0
+
+
+def test_new_user_has_zero_images(db_path):
+    assert get_daily_image_count(db_path, 111, now=DAY_1) == 0
+
+
+def test_increment_image_usage_accumulates_within_same_day(db_path):
+    increment_image_usage(db_path, 111, now=DAY_1)
+    increment_image_usage(db_path, 111, now=DAY_1_LATER)
+
+    assert get_daily_image_count(db_path, 111, now=DAY_1) == 2
+
+
+def test_image_count_resets_on_new_day(db_path):
+    increment_image_usage(db_path, 111, now=DAY_1)
+    increment_image_usage(db_path, 111, now=DAY_1_LATER)
+
+    assert get_daily_image_count(db_path, 111, now=DAY_2) == 0
+
+
+def test_image_count_is_scoped_per_user(db_path):
+    increment_image_usage(db_path, 111, now=DAY_1)
+
+    assert get_daily_image_count(db_path, 222, now=DAY_1) == 0
+
+
+def test_image_usage_does_not_count_towards_general_usage(db_path):
+    # The two counters must stay independent: a picture is billed ~16x a post
+    # text, so it gets its own, much tighter budget (see dengi.md).
+    increment_image_usage(db_path, 111, now=DAY_1)
+
+    assert get_daily_count(db_path, 111, now=DAY_1) == 0
+
+
+def test_image_limit_not_reached_below_limit(db_path):
+    increment_image_usage(db_path, 111, now=DAY_1)
+
+    assert is_image_limit_reached(db_path, 111, daily_image_limit=3, now=DAY_1) is False
+
+
+def test_image_limit_reached_at_limit(db_path):
+    for _ in range(3):
+        increment_image_usage(db_path, 111, now=DAY_1)
+
+    assert is_image_limit_reached(db_path, 111, daily_image_limit=3, now=DAY_1) is True
+
+
+def test_image_limit_clears_after_daily_rollover(db_path):
+    for _ in range(3):
+        increment_image_usage(db_path, 111, now=DAY_1)
+
+    assert is_image_limit_reached(db_path, 111, daily_image_limit=3, now=DAY_2) is False
+
+
+def test_image_limit_of_zero_blocks_everything(db_path):
+    assert is_image_limit_reached(db_path, 111, daily_image_limit=0, now=DAY_1) is True

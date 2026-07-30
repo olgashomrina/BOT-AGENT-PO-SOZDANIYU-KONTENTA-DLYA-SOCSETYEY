@@ -77,7 +77,9 @@ async def test_link_extraction_failure_gives_friendly_message_and_no_crash(db_pa
 
 @pytest.mark.asyncio
 async def test_transcription_failure_gives_friendly_message_and_no_crash(db_path, monkeypatch):
-    message = _make_message(voice=SimpleNamespace(file_id="abc"))
+    # duration: real Telegram Voice objects always carry it, and the handler
+    # reads it to reject overlong recordings before paying to transcribe.
+    message = _make_message(voice=SimpleNamespace(file_id="abc", duration=5))
     bot = _make_bot()
     state = _make_state()
 
@@ -99,7 +101,9 @@ async def test_transcription_failure_gives_friendly_message_and_no_crash(db_path
 async def test_ai_gateway_rate_limit_during_transcription_gives_friendly_message(
     db_path, monkeypatch
 ):
-    message = _make_message(voice=SimpleNamespace(file_id="abc"))
+    # duration: real Telegram Voice objects always carry it, and the handler
+    # reads it to reject overlong recordings before paying to transcribe.
+    message = _make_message(voice=SimpleNamespace(file_id="abc", duration=5))
     bot = _make_bot()
     state = _make_state()
 
@@ -121,7 +125,9 @@ async def test_ai_gateway_rate_limit_during_transcription_gives_friendly_message
 async def test_ai_gateway_unavailable_during_transcription_gives_friendly_message(
     db_path, monkeypatch
 ):
-    message = _make_message(voice=SimpleNamespace(file_id="abc"))
+    # duration: real Telegram Voice objects always carry it, and the handler
+    # reads it to reject overlong recordings before paying to transcribe.
+    message = _make_message(voice=SimpleNamespace(file_id="abc", duration=5))
     bot = _make_bot()
     state = _make_state()
 
@@ -227,6 +233,11 @@ async def test_run_wrapper_notifies_owner_logs_critical_and_reraises_on_crash(mo
         site_api_port=0,
         site_media_dir="site_media",
         digest_send_hour=9,
+        # Spend guards (dengi.md): run() now also starts the balance watcher.
+        balance_alert_threshold_rub=50.0,
+        balance_check_interval_seconds=3600,
+        ai_gateway_image_model="test-image-model",
+        ai_gateway_transcription_model="test-transcription-model",
     )
     monkeypatch.setattr(main_module, "load_settings", lambda: fake_settings)
     # Real setup_logging() sets propagate=False on the "bot" logger, which
@@ -289,6 +300,11 @@ async def test_run_wrapper_still_reraises_when_notify_owner_itself_fails(monkeyp
         site_api_port=0,
         site_media_dir="site_media",
         digest_send_hour=9,
+        # Spend guards (dengi.md): run() now also starts the balance watcher.
+        balance_alert_threshold_rub=50.0,
+        balance_check_interval_seconds=3600,
+        ai_gateway_image_model="test-image-model",
+        ai_gateway_transcription_model="test-transcription-model",
     )
     monkeypatch.setattr(main_module, "load_settings", lambda: fake_settings)
     monkeypatch.setattr(main_module, "setup_logging", lambda level: logging.getLogger("bot"))

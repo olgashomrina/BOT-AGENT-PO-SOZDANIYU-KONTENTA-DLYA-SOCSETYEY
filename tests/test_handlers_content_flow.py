@@ -87,6 +87,13 @@ def _make_message(
     return message
 
 
+def _make_voice(duration: int = 5, file_id: str = "abc"):
+    # Real aiogram Voice/Audio objects always carry a duration, and the
+    # handler now reads it to reject overlong recordings before paying for
+    # transcription — so the stand-ins must carry one too.
+    return SimpleNamespace(file_id=file_id, duration=duration)
+
+
 def _make_bot(audio_bytes: bytes = b"fake-bytes"):
     import io
 
@@ -125,7 +132,7 @@ def test_detects_link_from_url_entity():
 
 
 def test_detects_voice():
-    message = _make_message(voice=SimpleNamespace(file_id="abc"))
+    message = _make_message(voice=_make_voice())
 
     assert detect_input_type(message) == "voice"
 
@@ -218,7 +225,7 @@ async def test_route_content_link_failure_replies_with_friendly_error(db_path, m
 
 @pytest.mark.asyncio
 async def test_route_content_voice_shows_transcript_for_confirmation(db_path, monkeypatch):
-    message = _make_message(voice=SimpleNamespace(file_id="abc"))
+    message = _make_message(voice=_make_voice())
     bot = _make_bot()
     state = _make_state()
 
@@ -239,8 +246,62 @@ async def test_route_content_voice_shows_transcript_for_confirmation(db_path, mo
 
 
 @pytest.mark.asyncio
+async def test_route_content_rejects_voice_longer_than_limit_without_transcribing(
+    db_path, monkeypatch
+):
+    monkeypatch.setenv("MAX_VOICE_DURATION_SECONDS", "180")
+    message = _make_message(voice=_make_voice(duration=181))
+    bot = _make_bot()
+    state = _make_state()
+
+    transcribe_mock = AsyncMock(return_value="Не должно вызваться.")
+    monkeypatch.setattr(input_processor, "handle_voice", transcribe_mock)
+
+    await route_content(message, db_path, bot, state)
+
+    transcribe_mock.assert_not_awaited()
+    message.answer.assert_awaited_once_with(
+        get_string("error_voice_too_long", "ru", limit_minutes=3)
+    )
+    assert await state.get_state() is None
+
+
+@pytest.mark.asyncio
+async def test_route_content_accepts_voice_exactly_at_limit(db_path, monkeypatch):
+    monkeypatch.setenv("MAX_VOICE_DURATION_SECONDS", "180")
+    message = _make_message(voice=_make_voice(duration=180))
+    bot = _make_bot()
+    state = _make_state()
+
+    transcribe_mock = AsyncMock(return_value="Расшифрованный текст.")
+    monkeypatch.setattr(input_processor, "handle_voice", transcribe_mock)
+
+    await route_content(message, db_path, bot, state)
+
+    transcribe_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_route_content_rejects_long_audio_file_too(db_path, monkeypatch):
+    monkeypatch.setenv("MAX_VOICE_DURATION_SECONDS", "60")
+    message = _make_message(audio=_make_voice(duration=600, file_id="xyz"))
+    bot = _make_bot()
+    state = _make_state()
+
+    transcribe_mock = AsyncMock(return_value="Не должно вызваться.")
+    monkeypatch.setattr(input_processor, "handle_voice", transcribe_mock)
+
+    await route_content(message, db_path, bot, state)
+
+    transcribe_mock.assert_not_awaited()
+    message.answer.assert_awaited_once_with(
+        get_string("error_voice_too_long", "ru", limit_minutes=1)
+    )
+
+
+@pytest.mark.asyncio
 async def test_voice_confirm_flow_generates_variants_for_both_platforms(db_path, monkeypatch):
-    message = _make_message(voice=SimpleNamespace(file_id="abc"))
+    message = _make_message(voice=_make_voice())
     bot = _make_bot()
     state = _make_state()
 
@@ -271,7 +332,7 @@ async def test_voice_confirm_flow_generates_variants_for_both_platforms(db_path,
 
 @pytest.mark.asyncio
 async def test_voice_edit_flow_shows_edited_text_for_reconfirmation(db_path, monkeypatch):
-    message = _make_message(voice=SimpleNamespace(file_id="abc"))
+    message = _make_message(voice=_make_voice())
     bot = _make_bot()
     state = _make_state()
 
@@ -306,7 +367,7 @@ async def test_voice_edit_flow_shows_edited_text_for_reconfirmation(db_path, mon
 
 @pytest.mark.asyncio
 async def test_voice_edit_then_confirm_generates_variants_with_edited_text(db_path, monkeypatch):
-    message = _make_message(voice=SimpleNamespace(file_id="abc"))
+    message = _make_message(voice=_make_voice())
     bot = _make_bot()
     state = _make_state()
 
@@ -335,7 +396,7 @@ async def test_voice_edit_then_confirm_generates_variants_with_edited_text(db_pa
 
 @pytest.mark.asyncio
 async def test_voice_edit_can_loop_multiple_times_before_confirming(db_path, monkeypatch):
-    message = _make_message(voice=SimpleNamespace(file_id="abc"))
+    message = _make_message(voice=_make_voice())
     bot = _make_bot()
     state = _make_state()
 
@@ -362,7 +423,7 @@ async def test_voice_edit_can_loop_multiple_times_before_confirming(db_path, mon
 
 @pytest.mark.asyncio
 async def test_non_text_input_during_edit_reprompts_without_finishing(db_path, monkeypatch):
-    message = _make_message(voice=SimpleNamespace(file_id="abc"))
+    message = _make_message(voice=_make_voice())
     bot = _make_bot()
     state = _make_state()
 
@@ -388,7 +449,7 @@ async def test_non_text_input_during_edit_reprompts_without_finishing(db_path, m
 async def test_route_content_voice_transcription_error_replies_friendly_message(
     db_path, monkeypatch
 ):
-    message = _make_message(voice=SimpleNamespace(file_id="abc"))
+    message = _make_message(voice=_make_voice())
     bot = _make_bot()
     state = _make_state()
 
@@ -406,7 +467,7 @@ async def test_route_content_voice_transcription_error_replies_friendly_message(
 
 @pytest.mark.asyncio
 async def test_route_content_voice_ai_gateway_error_replies_friendly_message(db_path, monkeypatch):
-    message = _make_message(voice=SimpleNamespace(file_id="abc"))
+    message = _make_message(voice=_make_voice())
     bot = _make_bot()
     state = _make_state()
 

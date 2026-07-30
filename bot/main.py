@@ -11,6 +11,7 @@ from bot.config import load_settings
 from bot.handlers.authorpost import router as authorpost_router
 from bot.handlers.channel import router as channel_router
 from bot.handlers.content import router as content_router
+from bot.handlers.costs import router as costs_router
 from bot.handlers.errors import router as errors_router
 from bot.handlers.language import router as language_router
 from bot.handlers.refine import router as refine_router
@@ -21,6 +22,7 @@ from bot.locales.loader import SUPPORTED_LANGUAGES, get_string
 from bot.logging_config import setup_logging
 from bot.middlewares.rate_limit_middleware import RateLimitMiddleware
 from bot.middlewares.whitelist_middleware import WhitelistMiddleware
+from bot.services.balance_watcher import build_balance_scheduler
 from bot.services.digest_scheduler import build_digest_scheduler
 from bot.services.owner_notifier import notify_owner
 from bot.services.site_api import build_site_api_app
@@ -45,6 +47,9 @@ def build_dispatcher(daily_limit: int, monthly_limit: int) -> Dispatcher:
     dispatcher.include_router(channel_router)
     dispatcher.include_router(site_router)
     dispatcher.include_router(settov_router)
+    # Before content_router, whose StateFilter(None) message handler would
+    # otherwise swallow /costs as content input.
+    dispatcher.include_router(costs_router)
     # Before content_router: its message handler is state-filtered to
     # AuthorPostStates.collecting_examples, and keeping the state-specific
     # router ahead of content_router's catch-all StateFilter(None) matches
@@ -84,6 +89,16 @@ async def run() -> None:
     digest_scheduler = build_digest_scheduler(bot, settings.db_path, settings.digest_send_hour)
     digest_scheduler.start()
 
+    balance_scheduler = build_balance_scheduler(
+        bot,
+        settings.owner_chat_id,
+        settings.balance_alert_threshold_rub,
+        settings.balance_check_interval_seconds,
+        settings.ai_gateway_image_model,
+        settings.ai_gateway_transcription_model,
+    )
+    balance_scheduler.start()
+
     site_api_app = build_site_api_app(settings.db_path, settings.site_media_dir)
     runner = web.AppRunner(site_api_app)
     await runner.setup()
@@ -106,6 +121,7 @@ async def run() -> None:
         raise
     finally:
         digest_scheduler.shutdown()
+        balance_scheduler.shutdown()
         await runner.cleanup()
         await bot.session.close()
 

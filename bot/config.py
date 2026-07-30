@@ -13,7 +13,23 @@ DEFAULT_LOG_LEVEL = "INFO"
 DEFAULT_AI_PROXY_BASE_URL = "https://api.vsegpt.ru/v1"
 DEFAULT_AI_GATEWAY_PROVIDER = "vsegpt"
 DEFAULT_AI_GATEWAY_TEXT_MODEL = "openai/gpt-4o-mini"
-DEFAULT_AI_GATEWAY_TRANSCRIPTION_MODEL = "stt-openai/whisper-1"
+# vsegpt.ru тарифицирует распознавание речи как "1 токен = 1 секунда аудио",
+# цена в каталоге указана за 1000 токенов. По живому каталогу на 2026-07-30:
+# stt-openai/whisper-1 — 20.00 (1.20 ₽/мин), gpt-4o-mini-transcribe — 16.00
+# (0.96 ₽/мин), gpt-4o-transcribe — 32.00 (1.92 ₽/мин). Дефолт — самый дешёвый
+# из пригодных для русского (см. dengi.md, запись от 2026-07-30).
+DEFAULT_AI_GATEWAY_TRANSCRIPTION_MODEL = "stt-openai/gpt-4o-mini-transcribe"
+# Ограничение длины голосового: до него бот вообще не скачивает файл и не
+# платит за расшифровку. Без лимита одно 10-минутное голосовое стоит ~10 ₽.
+DEFAULT_MAX_VOICE_DURATION_SECONDS = 180
+# Картинки — 70–90% себестоимости цикла (3.90 ₽ за flux-2-klein-4b, ~10–15 ₽
+# за img-flux/pro1.1 против ~0.25 ₽ за текст). Дневной лимит на пользователя —
+# единственная мера, которая реально удерживает баланс.
+DEFAULT_DAILY_IMAGE_LIMIT = 3
+# Порог в рублях, ниже которого бот предупреждает владельца о балансе
+# AI-прокси, и период проверки.
+DEFAULT_BALANCE_ALERT_THRESHOLD_RUB = 50.0
+DEFAULT_BALANCE_CHECK_INTERVAL_SECONDS = 3600
 # dall-e-3 (vsegpt.ru's own docs example) is currently rejected by their
 # proxy with "Temporarily disabled due to OpenAI blocking" (confirmed via a
 # live request, 2026-07-20) — not a vsegpt.ru catalog-naming mismatch this
@@ -60,6 +76,10 @@ class Settings:
     owner_chat_id: int
     daily_limit: int
     monthly_limit: int
+    max_voice_duration_seconds: int
+    daily_image_limit: int
+    balance_alert_threshold_rub: float
+    balance_check_interval_seconds: int
     digest_send_hour: int
     db_path: str
     log_level: str
@@ -101,6 +121,29 @@ def load_settings(env_file: str | None = None) -> Settings:
         raise ConfigError(
             "DAILY_LIMIT, MONTHLY_LIMIT и DIGEST_SEND_HOUR должны быть целыми числами."
         ) from exc
+
+    try:
+        max_voice_duration_seconds = int(
+            os.environ.get("MAX_VOICE_DURATION_SECONDS", DEFAULT_MAX_VOICE_DURATION_SECONDS)
+        )
+        daily_image_limit = int(os.environ.get("DAILY_IMAGE_LIMIT", DEFAULT_DAILY_IMAGE_LIMIT))
+        balance_check_interval_seconds = int(
+            os.environ.get(
+                "BALANCE_CHECK_INTERVAL_SECONDS", DEFAULT_BALANCE_CHECK_INTERVAL_SECONDS
+            )
+        )
+    except ValueError as exc:
+        raise ConfigError(
+            "MAX_VOICE_DURATION_SECONDS, DAILY_IMAGE_LIMIT и "
+            "BALANCE_CHECK_INTERVAL_SECONDS должны быть целыми числами."
+        ) from exc
+
+    try:
+        balance_alert_threshold_rub = float(
+            os.environ.get("BALANCE_ALERT_THRESHOLD_RUB", DEFAULT_BALANCE_ALERT_THRESHOLD_RUB)
+        )
+    except ValueError as exc:
+        raise ConfigError("BALANCE_ALERT_THRESHOLD_RUB должен быть числом (рубли).") from exc
 
     db_path = os.environ.get("DB_PATH", DEFAULT_DB_PATH)
     log_level = os.environ.get("LOG_LEVEL", DEFAULT_LOG_LEVEL)
@@ -162,6 +205,10 @@ def load_settings(env_file: str | None = None) -> Settings:
         owner_chat_id=owner_chat_id,
         daily_limit=daily_limit,
         monthly_limit=monthly_limit,
+        max_voice_duration_seconds=max_voice_duration_seconds,
+        daily_image_limit=daily_image_limit,
+        balance_alert_threshold_rub=balance_alert_threshold_rub,
+        balance_check_interval_seconds=balance_check_interval_seconds,
         digest_send_hour=digest_send_hour,
         db_path=db_path,
         log_level=log_level,

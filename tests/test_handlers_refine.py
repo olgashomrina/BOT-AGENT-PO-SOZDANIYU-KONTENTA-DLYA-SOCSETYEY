@@ -31,7 +31,7 @@ from bot.locales.loader import get_string
 from bot.services import ai_gateway, content_generator, output_formatter
 from bot.services.ai_gateway import AIGatewayTimeoutError
 from bot.storage.image_prompts import claim_image_prompt, save_image_prompt
-from bot.storage.limits import get_daily_count
+from bot.storage.limits import get_daily_count, get_daily_image_count, increment_image_usage
 from bot.storage.refine_context import get_refine_context, save_refine_context
 from bot.storage.users import get_pending_media, set_channel_id, set_pending_media
 from bot.storage.whitelist import add_user
@@ -485,6 +485,97 @@ async def test_refine_image_success_stores_telegram_file_id(db_path, monkeypatch
     callback.message.answer.assert_awaited_once_with(get_string("image_attached_confirmation", "ru"))
     callback.answer.assert_awaited_once()
     assert get_daily_count(db_path, TELEGRAM_ID) == 1
+
+
+@pytest.mark.asyncio
+async def test_refine_image_counts_towards_the_daily_image_budget(db_path, monkeypatch):
+    state = _make_state()
+    await _seed_finished_session(state, db_path)
+
+    monkeypatch.setattr(
+        content_generator, "generate_image_prompt", AsyncMock(return_value="a prompt")
+    )
+    monkeypatch.setattr(ai_gateway, "generate_image", AsyncMock(return_value=b"fake-png-bytes"))
+
+    callback = _make_callback(data="refine:image:telegram:1")
+    callback.message.text = "Готовый вариант поста"
+    callback.message.chat = SimpleNamespace(id=TELEGRAM_ID)
+    bot = AsyncMock()
+    bot.send_photo = AsyncMock(return_value=_fake_sent_photo_message("telegram-cdn-file-id"))
+
+    await on_refine_image(callback, state, db_path, bot)
+
+    assert get_daily_image_count(db_path, TELEGRAM_ID) == 1
+
+
+@pytest.mark.asyncio
+async def test_refine_image_refuses_once_daily_image_limit_is_reached(db_path, monkeypatch):
+    monkeypatch.setenv("DAILY_IMAGE_LIMIT", "2")
+    state = _make_state()
+    await _seed_finished_session(state, db_path)
+
+    for _ in range(2):
+        increment_image_usage(db_path, TELEGRAM_ID)
+
+    mock_prompt = AsyncMock(return_value="a prompt")
+    mock_generate_image = AsyncMock(return_value=b"fake-png-bytes")
+    monkeypatch.setattr(content_generator, "generate_image_prompt", mock_prompt)
+    monkeypatch.setattr(ai_gateway, "generate_image", mock_generate_image)
+
+    callback = _make_callback(data="refine:image:telegram:1")
+    callback.message.text = "Готовый вариант поста"
+    bot = AsyncMock()
+
+    await on_refine_image(callback, state, db_path, bot)
+
+    mock_prompt.assert_not_awaited()
+    mock_generate_image.assert_not_awaited()
+    bot.send_photo.assert_not_awaited()
+    callback.message.answer.assert_awaited_once_with(
+        get_string("error_daily_image_limit", "ru", limit=2)
+    )
+
+
+@pytest.mark.asyncio
+async def test_image_upgrade_refuses_once_daily_image_limit_is_reached(db_path, monkeypatch):
+    monkeypatch.setenv("DAILY_IMAGE_LIMIT", "1")
+    state = _make_state()
+    await _seed_finished_session(state, db_path)
+    increment_image_usage(db_path, TELEGRAM_ID)
+
+    save_image_prompt(db_path, TELEGRAM_ID, _SEEDED_MESSAGE_ID, "a prompt")
+    mock_generate_image = AsyncMock(return_value=b"fake-png-bytes")
+    monkeypatch.setattr(ai_gateway, "generate_image", mock_generate_image)
+
+    callback = _make_callback(data=CALLBACK_IMAGE_UPGRADE)
+    bot = AsyncMock()
+
+    await on_image_upgrade(callback, state, db_path, bot)
+
+    mock_generate_image.assert_not_awaited()
+    callback.message.answer.assert_awaited_once_with(
+        get_string("error_daily_image_limit", "ru", limit=1)
+    )
+    # The stored prompt must survive a refusal — the user can upgrade this
+    # very photo tomorrow, once the budget resets.
+    assert claim_image_prompt(db_path, TELEGRAM_ID, _SEEDED_MESSAGE_ID) == "a prompt"
+
+
+@pytest.mark.asyncio
+async def test_image_upgrade_counts_towards_the_daily_image_budget(db_path, monkeypatch):
+    state = _make_state()
+    await _seed_finished_session(state, db_path)
+    save_image_prompt(db_path, TELEGRAM_ID, _SEEDED_MESSAGE_ID, "a prompt")
+
+    monkeypatch.setattr(ai_gateway, "generate_image", AsyncMock(return_value=b"fake-png-bytes"))
+
+    callback = _make_callback(data=CALLBACK_IMAGE_UPGRADE)
+    bot = AsyncMock()
+    bot.send_photo = AsyncMock(return_value=_fake_sent_photo_message("upgraded-file-id"))
+
+    await on_image_upgrade(callback, state, db_path, bot)
+
+    assert get_daily_image_count(db_path, TELEGRAM_ID) == 1
 
 
 @pytest.mark.asyncio

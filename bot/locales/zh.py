@@ -19,6 +19,12 @@ STRINGS = {
     "error_transcription": (
         "无法识别语音消息。请重新发送，或直接输入文字——同样有效。"
     ),
+    "error_voice_too_long": (
+        "这条语音超过 {limit_minutes} 分钟——我无法转写。请录制更短的语音，或直接发送文字。"
+    ),
+    "error_daily_image_limit": (
+        "今天的配图已用完——每天上限 {limit} 张。文案功能仍可使用，配图明天恢复。"
+    ),
     "error_link_extraction": (
         "无法从该链接提取文本——页面可能受到保护无法自动读取，或暂时不可用。"
         "请尝试其他链接，或直接发送材料的文本内容。"

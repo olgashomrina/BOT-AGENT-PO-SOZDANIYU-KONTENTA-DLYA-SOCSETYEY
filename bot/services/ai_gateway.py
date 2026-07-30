@@ -476,3 +476,101 @@ async def generate_image(prompt: str, model: str | None = None, size: str | None
     return _parse_image_response(
         result.response, operation, settings.ai_gateway_provider, resolved_model, result.retry_count, duration_ms
     )
+
+
+def _extract_balance(payload: Any) -> float | None:
+    """Find the account balance anywhere in a `GET /balance` payload.
+
+    vsegpt.ru documents that the endpoint exists but not what it returns, and
+    the response could not be inspected against a live key while this was
+    written (the only key at hand was rejected). So instead of guessing one
+    exact shape, walk the JSON for the first numeric value under a
+    balance-ish key — that survives `{"balance": 12.3}`,
+    `{"data": {"credits": 12.3}}` and similar variants alike. Returns None
+    when nothing plausible is found, and the caller logs the raw body so the
+    real shape can be pinned down from production.
+    """
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                if any(token in key.lower() for token in ("balance", "credit", "amount")):
+                    return float(value)
+            if isinstance(value, str) and any(
+                token in key.lower() for token in ("balance", "credit", "amount")
+            ):
+                try:
+                    return float(value)
+                except ValueError:
+                    continue
+        for value in payload.values():
+            found = _extract_balance(value)
+            if found is not None:
+                return found
+    elif isinstance(payload, list):
+        for item in payload:
+            found = _extract_balance(item)
+            if found is not None:
+                return found
+    return None
+
+
+async def get_balance() -> float:
+    """Remaining account balance at the AI proxy, in rubles.
+
+    Raises AIGatewayError (the same hierarchy as every other call here) when
+    the proxy is unreachable or answers in an unrecognisable shape.
+    """
+    settings = load_settings()
+    operation = "get_balance"
+    # Not a model call; the log fields still want the field filled in.
+    model = "-"
+    overall_started = time.monotonic()
+
+    async with httpx.AsyncClient(
+        base_url=settings.ai_proxy_base_url,
+        timeout=settings.ai_gateway_timeout_seconds,
+        headers={"Authorization": f"Bearer {settings.ai_proxy_api_key}"},
+    ) as client:
+        result = await _call_with_retries(
+            request=lambda: client.get("/balance"),
+            operation=operation,
+            provider=settings.ai_gateway_provider,
+            model=model,
+            max_retries=settings.ai_gateway_max_retries,
+            sleep=_sleep,
+        )
+
+    duration_ms = (time.monotonic() - overall_started) * 1000
+
+    try:
+        payload = result.response.json()
+    except ValueError as exc:
+        mapped: AIGatewayError = AIGatewayInvalidResponseError(
+            "Не удалось разобрать ответ о балансе AI-прокси"
+        )
+        mapped.__cause__ = exc
+        _fail(
+            mapped,
+            operation=operation,
+            provider=settings.ai_gateway_provider,
+            model=model,
+            duration_ms=duration_ms,
+            retry_count=result.retry_count,
+        )
+
+    balance = _extract_balance(payload)
+    if balance is None:
+        _fail(
+            AIGatewayInvalidResponseError(
+                "В ответе о балансе AI-прокси не найдено числовое значение: "
+                f"{_response_snippet(result.response)}"
+            ),
+            operation=operation,
+            provider=settings.ai_gateway_provider,
+            model=model,
+            duration_ms=duration_ms,
+            retry_count=result.retry_count,
+        )
+
+    _info(operation, settings.ai_gateway_provider, model, duration_ms, result.retry_count)
+    return balance

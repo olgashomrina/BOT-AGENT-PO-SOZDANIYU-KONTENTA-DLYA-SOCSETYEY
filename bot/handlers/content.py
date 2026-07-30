@@ -19,7 +19,7 @@ from bot.keyboards.transcript_confirm import (
 from bot.keyboards.refine import build_refine_keyboard
 from bot.locales.loader import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, get_string
 from bot.logging_config import LOGGER_NAME
-from bot.services import content_generator, input_processor, output_formatter
+from bot.services import content_generator, cost_tracker, input_processor, output_formatter
 from bot.services.ai_gateway import (
     AIGatewayError,
     AIGatewayInvalidResponseError,
@@ -29,6 +29,7 @@ from bot.services.ai_gateway import (
     TranscriptionError,
 )
 from bot.services.input_processor import LinkExtractionError
+from bot.storage.costs import record_cost
 from bot.storage.refine_context import save_refine_context
 from bot.storage.style_examples import get_style_examples
 from bot.storage.users import (
@@ -159,9 +160,46 @@ async def _handle_link(
     await _finish(message, language, extracted_text, state, telegram_id, db_path)
 
 
+async def _reject_overlong_voice(message: Message, language: str) -> bool:
+    """Refuse recordings above the configured length and report it.
+
+    Transcription is billed per second of audio (see dengi.md), so the check
+    happens before the file is even downloaded — a rejected voice message
+    costs nothing. Returns True when the message was rejected.
+    """
+    limit_seconds = load_settings().max_voice_duration_seconds
+    duration = (message.voice or message.audio).duration
+
+    if duration <= limit_seconds:
+        return False
+
+    logger.info(
+        "Voice message rejected as too long",
+        extra={
+            "user_id": message.from_user.id,
+            "operation": "handler:content",
+            "duration_seconds": duration,
+            "limit_seconds": limit_seconds,
+        },
+    )
+    await message.answer(
+        get_string(
+            "error_voice_too_long",
+            language,
+            # Whole minutes read better than seconds in the user-facing text;
+            # limits below a minute still round up to "1 min" rather than "0".
+            limit_minutes=max(1, round(limit_seconds / 60)),
+        )
+    )
+    return True
+
+
 async def _handle_voice(
     message: Message, db_path: str, bot: Bot, state: FSMContext, language: str
 ) -> None:
+    if await _reject_overlong_voice(message, language):
+        return
+
     language_hint = get_content_language(db_path, message.from_user.id) or language
 
     try:
@@ -178,6 +216,18 @@ async def _handle_voice(
         )
         await message.answer(get_string(error_key, language))
         return
+
+    settings = load_settings()
+    record_cost(
+        db_path,
+        message.from_user.id,
+        "transcribe",
+        settings.ai_gateway_transcription_model,
+        cost_tracker.transcription_cost(
+            settings.ai_gateway_transcription_model,
+            (message.voice or message.audio).duration,
+        ),
+    )
 
     await _show_transcript_confirmation(message, language, transcript, state)
 

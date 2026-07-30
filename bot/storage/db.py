@@ -25,6 +25,29 @@ CREATE TABLE IF NOT EXISTS usage_log (
     PRIMARY KEY (telegram_id, usage_date)
 );
 
+-- Separate from usage_log on purpose: an AI image costs 3.90–15 ₽ against
+-- ~0.25 ₽ for a post's text (see dengi.md), so it needs its own, much
+-- tighter daily budget rather than sharing the general request quota.
+CREATE TABLE IF NOT EXISTS image_usage_log (
+    telegram_id INTEGER NOT NULL,
+    usage_date TEXT NOT NULL,
+    image_count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (telegram_id, usage_date)
+);
+
+-- What each billed AI call actually cost, so the owner can see the real
+-- per-user cost of running the bot before pricing a subscription (dengi.md).
+-- Only images and transcription are recorded — see bot/services/cost_tracker.py
+-- for why post text is left out.
+CREATE TABLE IF NOT EXISTS cost_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    telegram_id INTEGER NOT NULL,
+    occurred_at TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    model TEXT NOT NULL,
+    cost_rub REAL NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS style_examples (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     telegram_id INTEGER NOT NULL,

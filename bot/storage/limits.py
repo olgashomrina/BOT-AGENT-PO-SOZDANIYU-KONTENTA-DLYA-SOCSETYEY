@@ -61,6 +61,51 @@ def get_monthly_count(db_path: str, telegram_id: int, now: datetime | None = Non
         connection.close()
 
 
+def increment_image_usage(db_path: str, telegram_id: int, now: datetime | None = None) -> None:
+    usage_date = _resolve_now(now).strftime("%Y-%m-%d")
+    connection = get_connection(db_path)
+    try:
+        connection.execute(
+            """
+            INSERT INTO image_usage_log (telegram_id, usage_date, image_count)
+            VALUES (?, ?, 1)
+            ON CONFLICT(telegram_id, usage_date)
+            DO UPDATE SET image_count = image_count + 1
+            """,
+            (telegram_id, usage_date),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def get_daily_image_count(db_path: str, telegram_id: int, now: datetime | None = None) -> int:
+    usage_date = _resolve_now(now).strftime("%Y-%m-%d")
+    connection = get_connection(db_path)
+    try:
+        row = connection.execute(
+            "SELECT image_count FROM image_usage_log WHERE telegram_id = ? AND usage_date = ?",
+            (telegram_id, usage_date),
+        ).fetchone()
+        return row[0] if row else 0
+    finally:
+        connection.close()
+
+
+def is_image_limit_reached(
+    db_path: str,
+    telegram_id: int,
+    daily_image_limit: int,
+    now: datetime | None = None,
+) -> bool:
+    """Whether this user has used up today's image budget.
+
+    Deliberately a bool rather than a LimitStatus member: images have only a
+    daily cap, so there is no second failure mode to distinguish.
+    """
+    return get_daily_image_count(db_path, telegram_id, now) >= daily_image_limit
+
+
 def check_limit_status(
     db_path: str,
     telegram_id: int,

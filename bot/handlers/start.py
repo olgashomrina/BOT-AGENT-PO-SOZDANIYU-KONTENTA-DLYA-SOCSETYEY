@@ -11,6 +11,7 @@ from aiogram.types import BufferedInputFile, CallbackQuery, ForceReply, Message
 
 from bot.config import load_settings
 from bot.handlers.content import _AI_ERROR_KEYS, _resolve_language
+from bot.handlers.image_budget import ensure_image_budget
 from bot.handlers.refine import _check_limit_or_reply, _check_whitelist_or_reply, _safe_answer
 from bot.keyboards.refine import build_image_upgrade_keyboard
 from bot.keyboards.start import (
@@ -27,10 +28,11 @@ from bot.keyboards.start import (
 )
 from bot.locales.loader import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, get_string
 from bot.logging_config import LOGGER_NAME
-from bot.services import ai_gateway, content_generator, digest
+from bot.services import ai_gateway, content_generator, cost_tracker, digest
 from bot.services.ai_gateway import AIGatewayError
+from bot.storage.costs import record_cost
 from bot.storage.image_prompts import save_image_prompt
-from bot.storage.limits import increment_usage
+from bot.storage.limits import increment_image_usage, increment_usage
 from bot.storage.users import (
     get_digest_topic,
     get_interface_language,
@@ -272,6 +274,9 @@ async def on_photo_gen_description(
         await message.answer(get_string("photo_gen_prompt", language))
         return
 
+    if not await ensure_image_budget(message.answer, db_path, telegram_id, language):
+        return
+
     try:
         image_prompt = await content_generator.generate_image_prompt(description)
         image_bytes = await ai_gateway.generate_image(image_prompt)
@@ -298,6 +303,12 @@ async def on_photo_gen_description(
         )
         await message.answer(get_string("image_delivery_failed", language))
         return
+
+    increment_image_usage(db_path, telegram_id)
+    image_model = load_settings().ai_gateway_image_model
+    record_cost(
+        db_path, telegram_id, "generate_image", image_model, cost_tracker.image_cost(image_model)
+    )
 
     file_id = sent_message.photo[-1].file_id
     set_pending_media(db_path, telegram_id, file_id, "photo")

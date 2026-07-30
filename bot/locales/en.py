@@ -32,6 +32,14 @@ STRINGS = {
         "We couldn't recognize the voice message. Please try sending it "
         "again, or type the text instead — that works too."
     ),
+    "error_voice_too_long": (
+        "That voice message is longer than {limit_minutes} min — I don't "
+        "transcribe those. Please record a shorter one or send text instead."
+    ),
+    "error_daily_image_limit": (
+        "No images left for today — the limit is {limit} per day. Post text "
+        "still works, and images open up again tomorrow."
+    ),
     "error_link_extraction": (
         "We couldn't extract the text from this link — the page might be "
         "protected from automatic reading or temporarily unavailable. Try "

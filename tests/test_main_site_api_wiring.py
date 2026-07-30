@@ -94,6 +94,48 @@ async def test_run_configures_native_menu_button_before_polling(monkeypatch, tmp
         mock_start_polling.assert_awaited_once()
 
 
+@pytest.mark.asyncio
+async def test_run_starts_the_balance_watcher_with_configured_thresholds(monkeypatch, tmp_path):
+    monkeypatch.setenv("BOT_TOKEN", "123456:test-token")
+    monkeypatch.setenv("AI_PROXY_API_KEY", "test-ai-key")
+    monkeypatch.setenv("OWNER_CHAT_ID", "42")
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "test.db"))
+    monkeypatch.setenv("SITE_API_PORT", "18082")
+    monkeypatch.setenv("BALANCE_ALERT_THRESHOLD_RUB", "75")
+    monkeypatch.setenv("BALANCE_CHECK_INTERVAL_SECONDS", "900")
+    monkeypatch.setenv("AI_GATEWAY_IMAGE_MODEL", "img-test/model")
+    monkeypatch.setenv("AI_GATEWAY_TRANSCRIPTION_MODEL", "stt-test/model")
+
+    with patch("bot.main.Bot") as mock_bot_cls, patch(
+        "bot.main.web.TCPSite"
+    ) as mock_tcp_site_cls, patch("bot.main.web.AppRunner") as mock_runner_cls, patch(
+        "aiogram.Dispatcher.start_polling", new_callable=AsyncMock
+    ), patch("bot.main.build_digest_scheduler"), patch(
+        "bot.main.build_balance_scheduler"
+    ) as mock_balance_factory:
+        mock_bot = AsyncMock()
+        mock_bot_cls.return_value = mock_bot
+        mock_runner_cls.return_value = AsyncMock()
+        mock_tcp_site_cls.return_value = AsyncMock()
+
+        await run()
+
+        mock_balance_factory.assert_called_once_with(
+            mock_bot, 42, 75.0, 900, "img-test/model", "stt-test/model"
+        )
+        mock_balance_factory.return_value.start.assert_called_once()
+        mock_balance_factory.return_value.shutdown.assert_called_once()
+
+
+def test_dispatcher_includes_costs_router():
+    from bot.handlers.costs import router as costs_router
+    from bot.main import build_dispatcher
+
+    dispatcher = build_dispatcher(daily_limit=10, monthly_limit=100)
+
+    assert costs_router in dispatcher.sub_routers
+
+
 def test_dispatcher_includes_authorpost_router():
     from bot.handlers.authorpost import router as authorpost_router
     from bot.main import build_dispatcher
