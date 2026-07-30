@@ -269,19 +269,23 @@ async def _finish(
     # Keep FSM state itself at None (route_content's StateFilter(None) needs
     # this to match again for the next message) while still holding data —
     # MemoryStorage (and every other aiogram storage backend) keeps state and
-    # data as independent fields, so this is safe. The refine callbacks
-    # (bot/handlers/refine.py) read source_text/content_language/language
-    # back out of this same FSM data to regenerate without asking the user
-    # to resend anything.
-    # with_hashtags is written explicitly, not merely left alone: FSM data
-    # persists per chat, so a True left over from an earlier authored-post
-    # run would make bot/handlers/refine.py bolt hashtags onto ordinary
-    # posts the user never asked to tag.
+    # data as independent fields, so this is safe.
+    #
+    # What still reads these keys, so nobody deletes them as dead: `language`
+    # is read by the refine callbacks (bot/handlers/refine.py) to pick the
+    # interface language for their replies, and `content_language` is read by
+    # bot/handlers/authorpost.py as its first choice when deciding what
+    # language to write an authored post in.
+    #
+    # What does NOT read them: the refine callbacks no longer take the post's
+    # source or its hashtag setting from here. Those are per-message now
+    # (bot/storage/refine_context.py) — FSM data is per chat, so the next
+    # generation overwrote it and a tap on an older post regenerated the
+    # wrong thing entirely. Do not reintroduce a `with_hashtags` key here.
     await state.update_data(
         source_text=text,
         content_language=content_language,
         language=language,
-        with_hashtags=False,
     )
     await state.set_state(None)
     logger.info(

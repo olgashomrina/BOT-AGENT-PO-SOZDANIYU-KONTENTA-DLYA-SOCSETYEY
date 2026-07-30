@@ -555,17 +555,32 @@ async def test_clear_media_command_with_nothing_pending(db_path):
 
 
 @pytest.mark.asyncio
-async def test_normal_generation_resets_hashtag_flag(db_path, monkeypatch):
+async def test_normal_generation_records_context_without_hashtags(db_path, monkeypatch):
+    # The anti-leak guarantee: an ordinary post must never inherit hashtags
+    # from an authored-post run earlier in the same chat. This used to be
+    # enforced by resetting a shared FSM flag; it is now structural, because
+    # each sent variant carries its own row. Simulate the leftovers anyway —
+    # a stale FSM flag must not be able to influence the recorded context.
     state = _make_state()
-    # Simulate leftovers from an earlier authored-post run in the same chat.
     await state.update_data(with_hashtags=True)
     _mock_generate_variants(monkeypatch)
     message = _make_message(text="Исходный текст")
+    message.chat = SimpleNamespace(id=CHAT_ID)
+    sent_ids = iter(range(201, 220))
+    message.answer = AsyncMock(
+        side_effect=lambda *args, **kwargs: SimpleNamespace(message_id=next(sent_ids))
+    )
 
     await route_content(message, db_path, _make_bot(), state)
 
-    data = await state.get_data()
-    assert data["with_hashtags"] is False
+    recorded = [
+        get_refine_context(db_path, CHAT_ID, message_id) for message_id in range(201, 207)
+    ]
+    assert [context for context in recorded if context is not None], "no context rows were recorded"
+    for context in recorded:
+        if context is not None:
+            assert context["with_hashtags"] is False
+            assert context["source_text"] == "Исходный текст"
 
 
 @pytest.mark.asyncio

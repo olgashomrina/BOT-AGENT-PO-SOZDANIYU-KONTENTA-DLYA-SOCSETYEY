@@ -313,11 +313,15 @@ async def on_authorpost_platform(
     settings = load_settings()
     style_examples = get_style_examples(db_path, telegram_id)
 
-    # Recorded so bot/handlers/refine.py keeps the hashtags when the user
-    # taps "Ещё"/"Короче" under one of these variants.
-    await state.update_data(
-        source_text=source_text, content_language=content_language, with_hashtags=True
-    )
+    # Only content_language is worth keeping in FSM: it is read back at the
+    # top of this handler if the user runs the flow again.
+    #
+    # The hashtag setting deliberately does NOT go here. What keeps the
+    # hashtags when the user taps "Ещё"/"Короче" is the per-message row that
+    # send_variants writes (bot/storage/refine_context.py) — FSM data is per
+    # chat, so an ordinary post generated afterwards would overwrite it and
+    # strip the hashtags off a regeneration of one of these variants.
+    await state.update_data(content_language=content_language)
 
     await callback.message.answer(get_string("authorpost_generating", language))
 

@@ -460,7 +460,12 @@ async def test_platform_both_generates_for_two_platforms(db_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_platform_choice_sets_hashtag_flag_in_fsm(db_path, monkeypatch):
+async def test_platform_choice_keeps_the_hashtag_flag_out_of_fsm(db_path, monkeypatch):
+    # The hashtag setting must NOT be written to FSM data. FSM data is per
+    # chat, so an ordinary post generated afterwards would overwrite it and
+    # strip the hashtags off a regeneration of these variants. It travels per
+    # message instead — that side is pinned by
+    # test_authored_variants_record_a_refine_context_with_hashtags_kept above.
     state = _make_state()
     await _seed_ready_session(state, db_path)
     monkeypatch.setattr(
@@ -470,8 +475,7 @@ async def test_platform_choice_sets_hashtag_flag_in_fsm(db_path, monkeypatch):
 
     await on_authorpost_platform(callback, state, db_path)
 
-    data = await state.get_data()
-    assert data["with_hashtags"] is True
+    assert "with_hashtags" not in await state.get_data()
 
 
 @pytest.mark.asyncio
