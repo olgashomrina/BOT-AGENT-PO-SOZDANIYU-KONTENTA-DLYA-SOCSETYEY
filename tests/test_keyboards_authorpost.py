@@ -17,7 +17,7 @@ from bot.locales.loader import get_string
 
 
 def test_item_choice_keyboard_has_one_button_per_item():
-    keyboard = build_item_choice_keyboard(6)
+    keyboard = build_item_choice_keyboard(6, 1)
 
     buttons = [button for row in keyboard.inline_keyboard for button in row]
     assert len(buttons) == 6
@@ -25,18 +25,30 @@ def test_item_choice_keyboard_has_one_button_per_item():
 
 
 def test_item_choice_keyboard_uses_zero_based_index_in_callback_data():
-    keyboard = build_item_choice_keyboard(3)
+    keyboard = build_item_choice_keyboard(3, 1)
 
     buttons = [button for row in keyboard.inline_keyboard for button in row]
     assert [button.callback_data for button in buttons] == [
-        f"{CALLBACK_ITEM_PREFIX}:0",
-        f"{CALLBACK_ITEM_PREFIX}:1",
-        f"{CALLBACK_ITEM_PREFIX}:2",
+        f"{CALLBACK_ITEM_PREFIX}:1:0",
+        f"{CALLBACK_ITEM_PREFIX}:1:1",
+        f"{CALLBACK_ITEM_PREFIX}:1:2",
+    ]
+
+
+def test_item_choice_keyboard_emits_generation_in_every_button():
+    # The generation has to survive on every button, not just the first: a
+    # forged or mistyped tap on any of them must be checkable against the
+    # digest that produced this exact keyboard.
+    keyboard = build_item_choice_keyboard(5, 7)
+
+    buttons = [button for row in keyboard.inline_keyboard for button in row]
+    assert [button.callback_data for button in buttons] == [
+        f"{CALLBACK_ITEM_PREFIX}:7:{index}" for index in range(5)
     ]
 
 
 def test_item_choice_keyboard_wraps_at_four_per_row():
-    keyboard = build_item_choice_keyboard(8)
+    keyboard = build_item_choice_keyboard(8, 1)
 
     assert len(keyboard.inline_keyboard) == 2
     assert len(keyboard.inline_keyboard[0]) == 4
@@ -44,14 +56,14 @@ def test_item_choice_keyboard_wraps_at_four_per_row():
 
 
 def test_item_choice_keyboard_partial_last_row():
-    keyboard = build_item_choice_keyboard(5)
+    keyboard = build_item_choice_keyboard(5, 1)
 
     assert len(keyboard.inline_keyboard) == 2
     assert len(keyboard.inline_keyboard[1]) == 1
 
 
 def test_item_choice_keyboard_is_empty_for_zero_items():
-    keyboard = build_item_choice_keyboard(0)
+    keyboard = build_item_choice_keyboard(0, 1)
 
     assert keyboard.inline_keyboard == []
 

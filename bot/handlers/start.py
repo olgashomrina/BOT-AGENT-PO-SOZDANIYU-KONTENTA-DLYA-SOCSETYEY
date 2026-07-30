@@ -153,8 +153,16 @@ async def on_menu_news_digest(callback: CallbackQuery, state: FSMContext, db_pat
 
     # Stash the digest's items for the authored-post flow
     # (bot/handlers/authorpost.py): its number buttons carry only an index,
-    # because a headline never fits Telegram's 64-byte callback_data.
-    await state.update_data(digest_items=digest.flatten_digest_items(result))
+    # because a headline never fits Telegram's 64-byte callback_data. The
+    # generation is bumped alongside so a button from a digest this call is
+    # about to overwrite can be told apart from one on the digest just
+    # stashed — without it, a stale button silently resolves its index
+    # against whichever digest happens to be current when tapped.
+    previous_data = await state.get_data()
+    generation = previous_data.get("digest_generation", 0) + 1
+    await state.update_data(
+        digest_items=digest.flatten_digest_items(result), digest_generation=generation
+    )
 
     await callback.message.answer(digest.format_digest_message(result, language))
     await callback.message.answer(
@@ -206,7 +214,15 @@ async def on_digest_topic_input(message: Message, state: FSMContext, db_path: st
     await message.answer(get_string("digest_topic_saved", language, topic=topic))
 
     result = await digest.build_digest(topic)
-    await state.update_data(digest_items=digest.flatten_digest_items(result))
+    # Same generation bump as on_menu_news_digest above: this is the other
+    # path that can deliver a digest, and skipping it here would leave the
+    # most common route through the feature (change topic -> get a fresh
+    # digest) unprotected against the stale-button bug this generation
+    # number exists to fix.
+    generation = data.get("digest_generation", 0) + 1
+    await state.update_data(
+        digest_items=digest.flatten_digest_items(result), digest_generation=generation
+    )
 
     await message.answer(digest.format_digest_message(result, language))
     await message.answer(

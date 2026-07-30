@@ -84,9 +84,12 @@ async def on_authorpost_start(callback: CallbackQuery, state: FSMContext, db_pat
         await _report_expired_digest(callback, language)
         return
 
+    # Defaults to 1 rather than 0 to match the generation bot/handlers/start.py
+    # stamps on the very first digest a fresh FSM has never seen before.
+    generation = data.get("digest_generation", 1)
     await callback.message.answer(
         get_string("authorpost_choose_item", language),
-        reply_markup=build_item_choice_keyboard(len(items)),
+        reply_markup=build_item_choice_keyboard(len(items), generation),
     )
     await _safe_answer(callback)
 
@@ -101,20 +104,30 @@ async def on_authorpost_item(callback: CallbackQuery, state: FSMContext, db_path
 
     data = await state.get_data()
     items = data.get("digest_items") or []
+    current_generation = data.get("digest_generation", 1)
     # callback.data is client-supplied: a modified client can send any string
-    # matching the startswith filter above, not just the indices this bot's
-    # own keyboard emitted via range(len(items)). So the index is both parsed
-    # defensively and bounds-checked on both ends here, rather than trusted
-    # to match the keyboard the bot sent — a non-integer would otherwise raise
-    # past _safe_answer and leave the button's spinner hanging, and a negative
-    # value would otherwise silently select the last item via Python's
-    # negative indexing instead of the one the user actually asked for.
+    # matching the startswith filter above, not just the generation:index
+    # pairs this bot's own keyboard emitted. So both numbers are parsed
+    # defensively and checked here, rather than trusted to match the keyboard
+    # the bot sent — a non-integer would otherwise raise past _safe_answer and
+    # leave the button's spinner hanging, and a negative index would otherwise
+    # silently select the last item via Python's negative indexing instead of
+    # the one the user actually asked for.
     try:
-        index = int(callback.data.rsplit(":", 1)[1])
+        _, generation_str, index_str = callback.data.rsplit(":", 2)
+        generation = int(generation_str)
+        index = int(index_str)
     except ValueError:
         await _report_expired_digest(callback, language)
         return
-    if not 0 <= index < len(items):
+    # A generation mismatch means this button belongs to a digest that has
+    # since been replaced by a newer one in FSM data: the item list at
+    # `index` now refers to a different topic's items, not the one the user
+    # tapped on. Treating it as "expired" (same message as an empty list)
+    # rather than silently indexing into the current list is the whole point
+    # of the fix — see bot/handlers/start.py for where the generation is
+    # stamped and incremented.
+    if generation != current_generation or not 0 <= index < len(items):
         await _report_expired_digest(callback, language)
         return
 

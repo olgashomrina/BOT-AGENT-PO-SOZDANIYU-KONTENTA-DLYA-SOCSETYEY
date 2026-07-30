@@ -128,8 +128,8 @@ async def test_start_refuses_user_outside_whitelist(db_path):
 @pytest.mark.asyncio
 async def test_item_choice_stores_source_text_and_offers_next_step(db_path):
     state = _make_state()
-    await state.update_data(digest_items=DIGEST_ITEMS)
-    callback = _make_callback(f"{CALLBACK_ITEM_PREFIX}:2")
+    await state.update_data(digest_items=DIGEST_ITEMS, digest_generation=1)
+    callback = _make_callback(f"{CALLBACK_ITEM_PREFIX}:1:2")
 
     await on_authorpost_item(callback, state, db_path)
 
@@ -143,8 +143,8 @@ async def test_item_choice_stores_source_text_and_offers_next_step(db_path):
 @pytest.mark.asyncio
 async def test_item_choice_out_of_range_reports_expired_digest(db_path):
     state = _make_state()
-    await state.update_data(digest_items=DIGEST_ITEMS)
-    callback = _make_callback(f"{CALLBACK_ITEM_PREFIX}:99")
+    await state.update_data(digest_items=DIGEST_ITEMS, digest_generation=1)
+    callback = _make_callback(f"{CALLBACK_ITEM_PREFIX}:1:99")
 
     await on_authorpost_item(callback, state, db_path)
 
@@ -157,8 +157,8 @@ async def test_item_choice_out_of_range_reports_expired_digest(db_path):
 @pytest.mark.asyncio
 async def test_item_choice_negative_index_reports_expired_digest(db_path):
     state = _make_state()
-    await state.update_data(digest_items=DIGEST_ITEMS)
-    callback = _make_callback(f"{CALLBACK_ITEM_PREFIX}:-1")
+    await state.update_data(digest_items=DIGEST_ITEMS, digest_generation=1)
+    callback = _make_callback(f"{CALLBACK_ITEM_PREFIX}:1:-1")
 
     await on_authorpost_item(callback, state, db_path)
 
@@ -171,8 +171,8 @@ async def test_item_choice_negative_index_reports_expired_digest(db_path):
 @pytest.mark.asyncio
 async def test_item_choice_malformed_index_reports_expired_digest(db_path):
     state = _make_state()
-    await state.update_data(digest_items=DIGEST_ITEMS)
-    callback = _make_callback(f"{CALLBACK_ITEM_PREFIX}:abc")
+    await state.update_data(digest_items=DIGEST_ITEMS, digest_generation=1)
+    callback = _make_callback(f"{CALLBACK_ITEM_PREFIX}:1:abc")
 
     await on_authorpost_item(callback, state, db_path)
 
@@ -185,12 +185,64 @@ async def test_item_choice_malformed_index_reports_expired_digest(db_path):
 @pytest.mark.asyncio
 async def test_item_choice_without_digest_items_reports_expired(db_path):
     state = _make_state()
-    callback = _make_callback(f"{CALLBACK_ITEM_PREFIX}:0")
+    callback = _make_callback(f"{CALLBACK_ITEM_PREFIX}:1:0")
 
     await on_authorpost_item(callback, state, db_path)
 
     args, _ = callback.message.answer.call_args
     assert args[0] == get_string("authorpost_digest_expired", "ru")
+
+
+@pytest.mark.asyncio
+async def test_item_choice_stale_generation_reports_expired_and_keeps_source_text_unset(
+    db_path,
+):
+    # The core regression this task fixes: collect digest A (generation 1),
+    # collect digest B (generation 2, same or shorter/longer item list), then
+    # tap a button from A's old message. The index alone can't tell the two
+    # digests apart, so the generation must — and the failure must not
+    # silently write source_text from whichever digest happens to be current.
+    state = _make_state()
+    await state.update_data(digest_items=["Психология 1", "Психология 2"], digest_generation=1)
+    await state.update_data(digest_items=["Кулинария 1", "Кулинария 2"], digest_generation=2)
+    callback = _make_callback(f"{CALLBACK_ITEM_PREFIX}:1:1")
+
+    await on_authorpost_item(callback, state, db_path)
+
+    args, _ = callback.message.answer.call_args
+    assert args[0] == get_string("authorpost_digest_expired", "ru")
+    data = await state.get_data()
+    assert "source_text" not in data
+
+
+@pytest.mark.asyncio
+async def test_item_choice_current_generation_still_works(db_path):
+    state = _make_state()
+    await state.update_data(digest_items=["Психология 1", "Психология 2"], digest_generation=1)
+    await state.update_data(digest_items=["Кулинария 1", "Кулинария 2"], digest_generation=2)
+    callback = _make_callback(f"{CALLBACK_ITEM_PREFIX}:2:1")
+
+    await on_authorpost_item(callback, state, db_path)
+
+    data = await state.get_data()
+    assert data["source_text"] == "Кулинария 2"
+    args, _ = callback.message.answer.call_args
+    assert args[0] == get_string("authorpost_item_chosen", "ru", item="Кулинария 2")
+
+
+@pytest.mark.asyncio
+async def test_item_choice_malformed_generation_reports_expired_digest(db_path):
+    state = _make_state()
+    await state.update_data(digest_items=DIGEST_ITEMS, digest_generation=1)
+    callback = _make_callback(f"{CALLBACK_ITEM_PREFIX}:abc:2")
+
+    await on_authorpost_item(callback, state, db_path)
+
+    args, _ = callback.message.answer.call_args
+    assert args[0] == get_string("authorpost_digest_expired", "ru")
+    data = await state.get_data()
+    assert "source_text" not in data
+    callback.answer.assert_awaited_once()
 
 
 from bot.handlers.authorpost import (

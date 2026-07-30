@@ -18,14 +18,19 @@ CALLBACK_PLATFORM_PREFIX = "authorpost:platform"
 _ITEMS_PER_ROW = 4
 
 
-def build_item_choice_keyboard(item_count: int) -> InlineKeyboardMarkup:
+def build_item_choice_keyboard(item_count: int, generation: int) -> InlineKeyboardMarkup:
     # Buttons carry the item's zero-based index, never its title: Telegram
     # caps callback_data at 64 bytes and a news headline blows straight past
     # that. The titles themselves live in FSM data (see
-    # bot/handlers/authorpost.py), keyed by this index.
+    # bot/handlers/authorpost.py), keyed by this index. The generation is
+    # carried alongside the index so a tap on a button from an older, since-
+    # overwritten digest can be told apart from one on the current digest —
+    # without it, two digests of equal length are indistinguishable and a
+    # stale button silently resolves against the wrong topic's items.
     buttons = [
         InlineKeyboardButton(
-            text=str(index + 1), callback_data=f"{CALLBACK_ITEM_PREFIX}:{index}"
+            text=str(index + 1),
+            callback_data=f"{CALLBACK_ITEM_PREFIX}:{generation}:{index}",
         )
         for index in range(item_count)
     ]
