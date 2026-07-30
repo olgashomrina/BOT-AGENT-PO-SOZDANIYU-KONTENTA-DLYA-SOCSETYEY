@@ -406,10 +406,13 @@ async def transcribe(audio_bytes: bytes, language_hint: str | None = None) -> st
     overall_started = time.monotonic()
 
     async def _do_request(client: httpx.AsyncClient) -> httpx.Response:
-        data: dict[str, str] = {"model": resolved_model}
+        data: dict[str, str] = {"model": resolved_model, "response_format": "json"}
         if language_hint:
             data["language"] = language_hint
-        files = {"file": ("audio.ogg", audio_bytes, "application/octet-stream")}
+        # Telegram voice messages are OGG containers with an Opus stream.
+        # VseGPT's current Whisper host selects its decoder from multipart
+        # metadata; a generic octet-stream part can stall until our timeout.
+        files = {"file": ("telegram-voice.ogg", audio_bytes, "audio/ogg")}
         return await client.post("/audio/transcriptions", data=data, files=files)
 
     async with httpx.AsyncClient(

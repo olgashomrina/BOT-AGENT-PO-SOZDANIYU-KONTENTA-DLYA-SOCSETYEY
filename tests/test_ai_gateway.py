@@ -182,6 +182,26 @@ async def test_transcribe_success():
 
 @respx.mock
 @pytest.mark.asyncio
+async def test_transcribe_sends_telegram_voice_as_ogg_opus_with_json_response():
+    """VseGPT's STT host selects the decoder from the multipart file metadata."""
+    captured: dict[str, bytes] = {}
+
+    def _responder(request: httpx.Request) -> httpx.Response:
+        captured["content"] = request.content
+        return httpx.Response(200, json={"text": "hello"})
+
+    respx.post(TRANSCRIBE_URL).mock(side_effect=_responder)
+
+    await transcribe(b"fake-audio-bytes", language_hint="ru")
+
+    assert b'filename="telegram-voice.ogg"' in captured["content"]
+    assert b"Content-Type: audio/ogg" in captured["content"]
+    assert b'name="response_format"' in captured["content"]
+    assert b"json" in captured["content"]
+
+
+@respx.mock
+@pytest.mark.asyncio
 async def test_transcribe_empty_result_raises_transcription_error():
     route = respx.post(TRANSCRIBE_URL).mock(return_value=httpx.Response(200, json={"text": ""}))
 
