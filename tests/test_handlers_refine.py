@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -12,15 +13,49 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.methods import SendMessage
 from aiogram.types import BufferedInputFile
 
-from bot.handlers.refine import on_refine_image, on_refine_more, on_refine_publish, on_refine_shorten
+from bot.handlers.refine import (
+    on_image_upgrade,
+    on_image_upgrade_done,
+    on_refine_image,
+    on_refine_more,
+    on_refine_publish,
+    on_refine_shorten,
+)
+from bot.keyboards.refine import (
+    CALLBACK_IMAGE_UPGRADE,
+    CALLBACK_IMAGE_UPGRADE_DONE,
+    build_image_upgrade_keyboard,
+    build_image_upgraded_keyboard,
+)
 from bot.locales.loader import get_string
 from bot.services import ai_gateway, content_generator, output_formatter
 from bot.services.ai_gateway import AIGatewayTimeoutError
+from bot.storage.image_prompts import get_image_prompt, save_image_prompt
 from bot.storage.limits import get_daily_count
+from bot.storage.refine_context import get_refine_context, save_refine_context
 from bot.storage.users import get_pending_media, set_channel_id, set_pending_media
 from bot.storage.whitelist import add_user
 
 TELEGRAM_ID = 111
+CHAT_ID = 333
+
+# _generate_and_send now looks up its source text via a context row keyed on
+# the message the button sits under, rather than trusting FSM data — every
+# test below that seeds a "finished session" through _make_callback's default
+# message id needs a matching row, or it would hit the "missing context"
+# branch instead of ever calling generate_variants.
+_SEEDED_MESSAGE_ID = 1
+
+# The freshly sent variant carries its own buttons, so _generate_and_send
+# records a context row for it too — every AsyncMock standing in for
+# Message.answer here must therefore return something with a genuine int
+# message_id (sqlite rejects binding a MagicMock). Same pattern as
+# tests/test_handlers_content_flow.py and tests/test_handlers_site.py.
+_sent_message_ids = itertools.count(1000)
+
+
+def _make_sent_message():
+    return SimpleNamespace(message_id=next(_sent_message_ids))
 
 
 @pytest.fixture(autouse=True)
@@ -43,12 +78,22 @@ def _make_state(telegram_id: int = TELEGRAM_ID) -> FSMContext:
 
 async def _seed_finished_session(
     state: FSMContext,
+    db_path: str,
     source_text: str = "Исходный текст статьи.",
     content_language: str = "ru",
     language: str = "ru",
+    with_hashtags: bool = False,
+    platform: str = "telegram",
+    telegram_id: int = TELEGRAM_ID,
 ) -> None:
     await state.update_data(source_text=source_text, content_language=content_language, language=language)
     await state.set_state(None)
+    # _generate_and_send reads the refine context, not FSM data, for
+    # source_text/content_language/with_hashtags (see bot/handlers/refine.py)
+    # — this row is what makes _make_callback's default message id resolve.
+    save_refine_context(
+        db_path, telegram_id, _SEEDED_MESSAGE_ID, source_text, content_language, with_hashtags, platform
+    )
 
 
 def _make_callback(telegram_id: int = TELEGRAM_ID, data: str = "", language_code: str = "ru"):
@@ -56,13 +101,16 @@ def _make_callback(telegram_id: int = TELEGRAM_ID, data: str = "", language_code
     callback.from_user = SimpleNamespace(id=telegram_id, language_code=language_code)
     callback.data = data
     callback.message = AsyncMock()
+    callback.message.chat = SimpleNamespace(id=telegram_id)
+    callback.message.message_id = _SEEDED_MESSAGE_ID
+    callback.message.answer = AsyncMock(side_effect=lambda *args, **kwargs: _make_sent_message())
     return callback
 
 
 @pytest.mark.asyncio
 async def test_refine_more_generates_and_sends_new_variant(db_path, monkeypatch):
     state = _make_state()
-    await _seed_finished_session(state)
+    await _seed_finished_session(state, db_path)
 
     mock_generate = AsyncMock(return_value=["Новый вариант поста"])
     monkeypatch.setattr(content_generator, "generate_variants", mock_generate)
@@ -91,7 +139,7 @@ async def test_refine_more_generates_and_sends_new_variant(db_path, monkeypatch)
 @pytest.mark.asyncio
 async def test_refine_shorten_passes_shorten_instruction(db_path, monkeypatch):
     state = _make_state()
-    await _seed_finished_session(state)
+    await _seed_finished_session(state, db_path)
 
     mock_generate = AsyncMock(return_value=["Короткий вариант"])
     monkeypatch.setattr(content_generator, "generate_variants", mock_generate)
@@ -118,7 +166,7 @@ async def test_refine_shorten_passes_shorten_instruction(db_path, monkeypatch):
 async def test_refine_blocked_when_daily_limit_exceeded_does_not_call_generate(db_path, monkeypatch):
     monkeypatch.setenv("DAILY_LIMIT", "0")
     state = _make_state()
-    await _seed_finished_session(state, language="en")
+    await _seed_finished_session(state, db_path, language="en")
 
     mock_generate = AsyncMock(return_value=["Не должно быть отправлено"])
     monkeypatch.setattr(content_generator, "generate_variants", mock_generate)
@@ -136,7 +184,7 @@ async def test_refine_blocked_when_daily_limit_exceeded_does_not_call_generate(d
 async def test_refine_blocked_when_at_limit_uses_stored_interface_language(db_path, monkeypatch):
     monkeypatch.setenv("DAILY_LIMIT", "0")
     state = _make_state()
-    await _seed_finished_session(state, language="vi")
+    await _seed_finished_session(state, db_path, language="vi")
 
     mock_generate = AsyncMock(return_value=["x"])
     monkeypatch.setattr(content_generator, "generate_variants", mock_generate)
@@ -170,7 +218,7 @@ async def test_refine_ai_gateway_error_replies_friendly_message_and_does_not_inc
     db_path, monkeypatch
 ):
     state = _make_state()
-    await _seed_finished_session(state)
+    await _seed_finished_session(state, db_path)
 
     mock_generate = AsyncMock(side_effect=AIGatewayTimeoutError("timed out"))
     monkeypatch.setattr(content_generator, "generate_variants", mock_generate)
@@ -196,7 +244,7 @@ async def test_refine_blocked_when_not_whitelisted_does_not_call_generate(
 ):
     NOT_WHITELISTED_ID = 999
     state = _make_state(NOT_WHITELISTED_ID)
-    await _seed_finished_session(state)
+    await _seed_finished_session(state, db_path)
 
     mock_generate = AsyncMock(return_value=["Не должно быть отправлено"])
     monkeypatch.setattr(content_generator, "generate_variants", mock_generate)
@@ -217,7 +265,7 @@ CHANNEL_ID = -1001234567890
 async def test_publish_success_sends_formatted_variant_to_channel(db_path):
     set_channel_id(db_path, TELEGRAM_ID, CHANNEL_ID)
     state = _make_state()
-    await _seed_finished_session(state)
+    await _seed_finished_session(state, db_path)
 
     callback = _make_callback(data="refine:publish:telegram:1")
     callback.message.text = "Готовый вариант поста"
@@ -237,7 +285,7 @@ async def test_publish_success_sends_formatted_variant_to_channel(db_path):
 @pytest.mark.asyncio
 async def test_publish_without_configured_channel_prompts_setup_and_does_not_send(db_path):
     state = _make_state()
-    await _seed_finished_session(state)
+    await _seed_finished_session(state, db_path)
 
     callback = _make_callback(data="refine:publish:telegram:1")
     callback.message.text = "Готовый вариант поста"
@@ -256,7 +304,7 @@ async def test_publish_without_configured_channel_prompts_setup_and_does_not_sen
 async def test_publish_telegram_failure_replies_friendly_error(db_path):
     set_channel_id(db_path, TELEGRAM_ID, CHANNEL_ID)
     state = _make_state()
-    await _seed_finished_session(state)
+    await _seed_finished_session(state, db_path)
 
     callback = _make_callback(data="refine:publish:telegram:1")
     callback.message.text = "Готовый вариант поста"
@@ -277,7 +325,7 @@ async def test_publish_telegram_failure_replies_friendly_error(db_path):
 async def test_publish_blocked_when_not_whitelisted_does_not_send(db_path):
     NOT_WHITELISTED_ID = 999
     state = _make_state(NOT_WHITELISTED_ID)
-    await _seed_finished_session(state)
+    await _seed_finished_session(state, db_path)
 
     callback = _make_callback(telegram_id=NOT_WHITELISTED_ID, data="refine:publish:telegram:1")
     callback.message.text = "Готовый вариант поста"
@@ -295,7 +343,7 @@ async def test_publish_with_pending_photo_sends_photo_not_message(db_path):
     set_channel_id(db_path, TELEGRAM_ID, CHANNEL_ID)
     set_pending_media(db_path, TELEGRAM_ID, "photo-file-id", "photo")
     state = _make_state()
-    await _seed_finished_session(state)
+    await _seed_finished_session(state, db_path)
 
     callback = _make_callback(data="refine:publish:telegram:1")
     callback.message.text = "Готовый вариант поста"
@@ -320,7 +368,7 @@ async def test_publish_with_pending_video_sends_video_not_message(db_path):
     set_channel_id(db_path, TELEGRAM_ID, CHANNEL_ID)
     set_pending_media(db_path, TELEGRAM_ID, "video-file-id", "video")
     state = _make_state()
-    await _seed_finished_session(state)
+    await _seed_finished_session(state, db_path)
 
     callback = _make_callback(data="refine:publish:telegram:1")
     callback.message.text = "Готовый вариант поста"
@@ -343,7 +391,7 @@ async def test_publish_with_pending_video_sends_video_not_message(db_path):
 async def test_publish_without_pending_media_still_sends_message(db_path):
     set_channel_id(db_path, TELEGRAM_ID, CHANNEL_ID)
     state = _make_state()
-    await _seed_finished_session(state)
+    await _seed_finished_session(state, db_path)
 
     callback = _make_callback(data="refine:publish:telegram:1")
     callback.message.text = "Готовый вариант поста"
@@ -365,7 +413,7 @@ async def test_publish_with_pending_photo_truncates_oversized_caption(db_path):
     set_channel_id(db_path, TELEGRAM_ID, CHANNEL_ID)
     set_pending_media(db_path, TELEGRAM_ID, "photo-file-id", "photo")
     state = _make_state()
-    await _seed_finished_session(state)
+    await _seed_finished_session(state, db_path)
 
     oversized_text = "А" * 1500
     callback = _make_callback(data="refine:publish:telegram:1")
@@ -386,7 +434,7 @@ async def test_publish_failure_with_pending_media_keeps_it_for_retry(db_path):
     set_channel_id(db_path, TELEGRAM_ID, CHANNEL_ID)
     set_pending_media(db_path, TELEGRAM_ID, "photo-file-id", "photo")
     state = _make_state()
-    await _seed_finished_session(state)
+    await _seed_finished_session(state, db_path)
 
     callback = _make_callback(data="refine:publish:telegram:1")
     callback.message.text = "Готовый вариант поста"
@@ -403,14 +451,14 @@ async def test_publish_failure_with_pending_media_keeps_it_for_retry(db_path):
     assert get_pending_media(db_path, TELEGRAM_ID) == ("photo-file-id", "photo")
 
 
-def _fake_sent_photo_message(file_id: str = "telegram-cdn-file-id"):
-    return SimpleNamespace(photo=[SimpleNamespace(file_id=file_id)])
+def _fake_sent_photo_message(file_id: str = "telegram-cdn-file-id", message_id: int = 5000):
+    return SimpleNamespace(photo=[SimpleNamespace(file_id=file_id)], message_id=message_id)
 
 
 @pytest.mark.asyncio
 async def test_refine_image_success_stores_telegram_file_id(db_path, monkeypatch):
     state = _make_state()
-    await _seed_finished_session(state)
+    await _seed_finished_session(state, db_path)
 
     mock_prompt = AsyncMock(return_value="a vivid english prompt")
     mock_generate_image = AsyncMock(return_value=b"fake-png-bytes")
@@ -444,7 +492,7 @@ async def test_refine_image_success_attaches_upgrade_button_and_stores_prompt(db
     from bot.keyboards.refine import build_image_upgrade_keyboard
 
     state = _make_state()
-    await _seed_finished_session(state)
+    await _seed_finished_session(state, db_path)
 
     mock_prompt = AsyncMock(return_value="a vivid english prompt")
     mock_generate_image = AsyncMock(return_value=b"fake-png-bytes")
@@ -464,7 +512,7 @@ async def test_refine_image_success_attaches_upgrade_button_and_stores_prompt(db
     assert kwargs["reply_markup"].inline_keyboard[0][0].callback_data == (
         expected_keyboard.inline_keyboard[0][0].callback_data
     )
-    assert (await state.get_data())["last_image_prompt"] == "a vivid english prompt"
+    assert get_image_prompt(db_path, TELEGRAM_ID, 5000) == "a vivid english prompt"
 
 
 @pytest.mark.asyncio
@@ -475,7 +523,7 @@ async def test_refine_image_stale_callback_answer_does_not_raise(db_path, monkey
     # escape as an unhandled exception (which would trigger the generic
     # error_unexpected message even though the image was already delivered).
     state = _make_state()
-    await _seed_finished_session(state)
+    await _seed_finished_session(state, db_path)
 
     mock_prompt = AsyncMock(return_value="a vivid english prompt")
     mock_generate_image = AsyncMock(return_value=b"fake-png-bytes")
@@ -506,7 +554,7 @@ async def test_refine_image_prompt_failure_replies_friendly_error_and_does_not_c
     db_path, monkeypatch
 ):
     state = _make_state()
-    await _seed_finished_session(state)
+    await _seed_finished_session(state, db_path)
 
     mock_prompt = AsyncMock(side_effect=AIGatewayTimeoutError("timed out"))
     mock_generate_image = AsyncMock()
@@ -530,7 +578,7 @@ async def test_refine_image_prompt_failure_replies_friendly_error_and_does_not_c
 @pytest.mark.asyncio
 async def test_refine_image_generation_failure_replies_friendly_error(db_path, monkeypatch):
     state = _make_state()
-    await _seed_finished_session(state)
+    await _seed_finished_session(state, db_path)
 
     mock_prompt = AsyncMock(return_value="a vivid english prompt")
     mock_generate_image = AsyncMock(side_effect=AIGatewayTimeoutError("timed out"))
@@ -555,7 +603,7 @@ async def test_refine_image_delivery_failure_replies_friendly_error_and_does_not
     db_path, monkeypatch
 ):
     state = _make_state()
-    await _seed_finished_session(state)
+    await _seed_finished_session(state, db_path)
 
     mock_prompt = AsyncMock(return_value="a vivid english prompt")
     mock_generate_image = AsyncMock(return_value=b"fake-png-bytes")
@@ -584,7 +632,7 @@ async def test_refine_image_delivery_failure_replies_friendly_error_and_does_not
 async def test_refine_image_blocked_when_not_whitelisted_does_not_call_ai(db_path, monkeypatch):
     NOT_WHITELISTED_ID = 999
     state = _make_state(NOT_WHITELISTED_ID)
-    await _seed_finished_session(state)
+    await _seed_finished_session(state, db_path)
 
     mock_prompt = AsyncMock(return_value="a vivid english prompt")
     mock_generate_image = AsyncMock(return_value=b"fake-png-bytes")
@@ -612,7 +660,7 @@ from bot.storage.style_examples import add_style_example
 async def test_refine_more_forwards_stored_style_examples(db_path, monkeypatch):
     add_style_example(db_path, TELEGRAM_ID, "Мой старый пост.")
     state = _make_state()
-    await _seed_finished_session(state)
+    await _seed_finished_session(state, db_path)
     mock_generate = AsyncMock(return_value=["Новый вариант"])
     monkeypatch.setattr(content_generator, "generate_variants", mock_generate)
 
@@ -622,10 +670,12 @@ async def test_refine_more_forwards_stored_style_examples(db_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_refine_more_forwards_hashtag_flag_from_fsm(db_path, monkeypatch):
+async def test_refine_more_forwards_hashtag_flag_from_context(db_path, monkeypatch):
+    # with_hashtags now comes from the refine-context row, not FSM data (see
+    # bot/handlers/refine.py::_generate_and_send), so it is seeded here the
+    # same way _generate_and_send will read it back.
     state = _make_state()
-    await _seed_finished_session(state)
-    await state.update_data(with_hashtags=True)
+    await _seed_finished_session(state, db_path, with_hashtags=True)
     mock_generate = AsyncMock(return_value=["Новый вариант"])
     monkeypatch.setattr(content_generator, "generate_variants", mock_generate)
 
@@ -637,7 +687,7 @@ async def test_refine_more_forwards_hashtag_flag_from_fsm(db_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_refine_more_defaults_hashtag_flag_to_false(db_path, monkeypatch):
     state = _make_state()
-    await _seed_finished_session(state)
+    await _seed_finished_session(state, db_path)
     mock_generate = AsyncMock(return_value=["Новый вариант"])
     monkeypatch.setattr(content_generator, "generate_variants", mock_generate)
 
@@ -646,22 +696,26 @@ async def test_refine_more_defaults_hashtag_flag_to_false(db_path, monkeypatch):
     assert mock_generate.await_args.kwargs["with_hashtags"] is False
 
 
-from bot.handlers.refine import on_image_upgrade, on_image_upgrade_done
-from bot.keyboards.refine import CALLBACK_IMAGE_UPGRADE, build_image_upgraded_keyboard
-
-
-async def _seed_upgrade_session(state: FSMContext, prompt: str = "a vivid english prompt") -> None:
-    await state.update_data(language="ru", last_image_prompt=prompt)
+async def _seed_upgrade_session(
+    state: FSMContext,
+    db_path: str,
+    prompt: str = "a vivid english prompt",
+    chat_id: int = TELEGRAM_ID,
+    message_id: int = _SEEDED_MESSAGE_ID,
+) -> None:
+    await state.update_data(language="ru")
     await state.set_state(None)
+    save_image_prompt(db_path, chat_id, message_id, prompt)
 
 
 @pytest.mark.asyncio
 async def test_image_upgrade_success_uses_premium_model_and_sends_new_photo(db_path, monkeypatch):
     state = _make_state()
-    await _seed_upgrade_session(state)
+    await _seed_upgrade_session(state, db_path)
 
     mock_generate_image = AsyncMock(return_value=b"fake-premium-png-bytes")
     monkeypatch.setattr(ai_gateway, "generate_image", mock_generate_image)
+    monkeypatch.setenv("AI_GATEWAY_PREMIUM_IMAGE_MODEL", "test-premium-model")
 
     callback = _make_callback(data=CALLBACK_IMAGE_UPGRADE)
     callback.message.chat = SimpleNamespace(id=TELEGRAM_ID)
@@ -671,7 +725,7 @@ async def test_image_upgrade_success_uses_premium_model_and_sends_new_photo(db_p
 
     await on_image_upgrade(callback, state, db_path, bot)
 
-    mock_generate_image.assert_awaited_once_with("a vivid english prompt", model="img-flux/pro1.1")
+    mock_generate_image.assert_awaited_once_with("a vivid english prompt", model="test-premium-model")
     bot.send_photo.assert_awaited_once()
     args, kwargs = bot.send_photo.call_args
     assert args[0] == TELEGRAM_ID
@@ -693,7 +747,7 @@ async def test_image_upgrade_success_uses_premium_model_and_sends_new_photo(db_p
 @pytest.mark.asyncio
 async def test_image_upgrade_ai_error_replies_friendly_message_and_keeps_button(db_path, monkeypatch):
     state = _make_state()
-    await _seed_upgrade_session(state)
+    await _seed_upgrade_session(state, db_path)
 
     mock_generate_image = AsyncMock(side_effect=AIGatewayTimeoutError("timed out"))
     monkeypatch.setattr(ai_gateway, "generate_image", mock_generate_image)
@@ -707,7 +761,12 @@ async def test_image_upgrade_ai_error_replies_friendly_message_and_keeps_button(
 
     bot.send_photo.assert_not_awaited()
     callback.message.answer.assert_awaited_once_with(get_string("error_ai_timeout", "ru"))
-    callback.message.edit_reply_markup.assert_not_awaited()
+    assert callback.message.edit_reply_markup.await_count == 2
+    restore_call_kwargs = callback.message.edit_reply_markup.call_args_list[-1].kwargs
+    upgrade_keyboard = build_image_upgrade_keyboard("ru")
+    assert restore_call_kwargs["reply_markup"].inline_keyboard[0][0].callback_data == (
+        upgrade_keyboard.inline_keyboard[0][0].callback_data
+    )
     assert get_pending_media(db_path, TELEGRAM_ID) is None
     assert get_daily_count(db_path, TELEGRAM_ID) == 0
 
@@ -735,7 +794,7 @@ async def test_image_upgrade_missing_prompt_replies_friendly_error_and_does_not_
 async def test_image_upgrade_blocked_when_not_whitelisted_does_not_call_ai(db_path, monkeypatch):
     NOT_WHITELISTED_ID = 998
     state = _make_state(NOT_WHITELISTED_ID)
-    await _seed_upgrade_session(state)
+    await _seed_upgrade_session(state, db_path)
 
     mock_generate_image = AsyncMock()
     monkeypatch.setattr(ai_gateway, "generate_image", mock_generate_image)
@@ -755,7 +814,7 @@ async def test_image_upgrade_delivery_failure_replies_friendly_error_and_does_no
     db_path, monkeypatch
 ):
     state = _make_state()
-    await _seed_upgrade_session(state)
+    await _seed_upgrade_session(state, db_path)
 
     mock_generate_image = AsyncMock(return_value=b"fake-premium-png-bytes")
     monkeypatch.setattr(ai_gateway, "generate_image", mock_generate_image)
@@ -773,15 +832,104 @@ async def test_image_upgrade_delivery_failure_replies_friendly_error_and_does_no
     await on_image_upgrade(callback, state, db_path, bot)
 
     callback.message.answer.assert_awaited_once_with(get_string("image_delivery_failed", "ru"))
-    callback.message.edit_reply_markup.assert_not_awaited()
+    assert callback.message.edit_reply_markup.await_count == 2
+    restore_call_kwargs = callback.message.edit_reply_markup.call_args_list[-1].kwargs
+    upgrade_keyboard = build_image_upgrade_keyboard("ru")
+    assert restore_call_kwargs["reply_markup"].inline_keyboard[0][0].callback_data == (
+        upgrade_keyboard.inline_keyboard[0][0].callback_data
+    )
     assert get_pending_media(db_path, TELEGRAM_ID) is None
     assert get_daily_count(db_path, TELEGRAM_ID) == 0
 
 
 @pytest.mark.asyncio
-async def test_image_upgrade_done_button_just_acknowledges(db_path):
-    callback = _make_callback(data="img:upgrade:done")
+async def test_image_upgrade_uses_the_prompt_for_the_specific_photo_tapped(db_path, monkeypatch):
+    state = _make_state()
+    await state.update_data(language="ru")
+    await state.set_state(None)
+    save_image_prompt(db_path, TELEGRAM_ID, 4001, "prompt for the OLDER photo")
+    save_image_prompt(db_path, TELEGRAM_ID, 4002, "prompt for the NEWER photo")
+
+    mock_generate_image = AsyncMock(return_value=b"fake-premium-png-bytes")
+    monkeypatch.setattr(ai_gateway, "generate_image", mock_generate_image)
+
+    callback = _make_callback(data=CALLBACK_IMAGE_UPGRADE)
+    callback.message.chat = SimpleNamespace(id=TELEGRAM_ID)
+    callback.message.message_id = 4001
+    callback.message.edit_reply_markup = AsyncMock()
+    bot = AsyncMock()
+    bot.send_photo = AsyncMock(return_value=_fake_sent_photo_message("premium-file-id"))
+
+    await on_image_upgrade(callback, state, db_path, bot)
+
+    mock_generate_image.assert_awaited_once()
+    args, _ = mock_generate_image.call_args
+    assert args[0] == "prompt for the OLDER photo"
+
+
+@pytest.mark.asyncio
+async def test_image_upgrade_done_button_just_acknowledges():
+    callback = _make_callback(data=CALLBACK_IMAGE_UPGRADE_DONE)
 
     await on_image_upgrade_done(callback)
 
     callback.answer.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_refine_more_uses_the_context_of_its_own_message(db_path, monkeypatch):
+    state = _make_state()
+    # Two posts generated in sequence: the second overwrites any shared value.
+    save_refine_context(db_path, CHAT_ID, 10, "Первый исходник", "ru", True, "telegram")
+    save_refine_context(db_path, CHAT_ID, 20, "Второй исходник", "en", False, "vk")
+
+    mock_generate = AsyncMock(return_value=["Новый вариант"])
+    monkeypatch.setattr(content_generator, "generate_variants", mock_generate)
+
+    # The button under the FIRST post is tapped.
+    callback = _make_callback(data="refine:more:telegram:1")
+    callback.message.message_id = 10
+    callback.message.chat = SimpleNamespace(id=CHAT_ID)
+
+    await on_refine_more(callback, state, db_path)
+
+    assert mock_generate.await_args.args[0] == "Первый исходник"
+    assert mock_generate.await_args.kwargs["with_hashtags"] is True
+
+
+@pytest.mark.asyncio
+async def test_refine_without_stored_context_reports_missing_context(db_path, monkeypatch):
+    state = _make_state()
+    mock_generate = AsyncMock(return_value=["Новый вариант"])
+    monkeypatch.setattr(content_generator, "generate_variants", mock_generate)
+
+    callback = _make_callback(data="refine:more:telegram:1")
+    callback.message.message_id = 999
+    callback.message.chat = SimpleNamespace(id=CHAT_ID)
+
+    await on_refine_more(callback, state, db_path)
+
+    mock_generate.assert_not_awaited()
+    callback.message.answer.assert_awaited_once_with(
+        get_string("error_refine_missing_context", "ru")
+    )
+
+
+@pytest.mark.asyncio
+async def test_refine_records_context_for_the_message_it_sends(db_path, monkeypatch):
+    state = _make_state()
+    save_refine_context(db_path, CHAT_ID, 10, "Первый исходник", "ru", True, "telegram")
+    monkeypatch.setattr(
+        content_generator, "generate_variants", AsyncMock(return_value=["Новый вариант"])
+    )
+
+    callback = _make_callback(data="refine:more:telegram:1")
+    callback.message.message_id = 10
+    callback.message.chat = SimpleNamespace(id=CHAT_ID)
+    callback.message.answer = AsyncMock(return_value=SimpleNamespace(message_id=30))
+
+    await on_refine_more(callback, state, db_path)
+
+    # The freshly sent variant carries its own buttons, so it needs its own
+    # context row — otherwise refining a refinement would report "missing".
+    assert get_refine_context(db_path, CHAT_ID, 30)["source_text"] == "Первый исходник"

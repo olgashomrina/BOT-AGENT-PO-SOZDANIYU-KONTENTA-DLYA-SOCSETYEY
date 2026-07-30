@@ -53,6 +53,15 @@ CREATE TABLE IF NOT EXISTS refine_contexts (
     created_at TEXT NOT NULL,
     UNIQUE (chat_id, message_id)
 );
+
+CREATE TABLE IF NOT EXISTS image_prompts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id INTEGER NOT NULL,
+    message_id INTEGER NOT NULL,
+    prompt TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (chat_id, message_id)
+);
 """
 
 

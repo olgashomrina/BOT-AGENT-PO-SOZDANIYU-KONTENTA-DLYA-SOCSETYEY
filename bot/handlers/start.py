@@ -29,6 +29,7 @@ from bot.locales.loader import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, get_string
 from bot.logging_config import LOGGER_NAME
 from bot.services import ai_gateway, content_generator, digest
 from bot.services.ai_gateway import AIGatewayError
+from bot.storage.image_prompts import save_image_prompt
 from bot.storage.limits import increment_usage
 from bot.storage.users import (
     get_digest_topic,
@@ -257,7 +258,6 @@ async def on_photo_gen_description(
 
     try:
         image_prompt = await content_generator.generate_image_prompt(description)
-        await state.update_data(last_image_prompt=image_prompt)
         image_bytes = await ai_gateway.generate_image(image_prompt)
     except AIGatewayError as exc:
         error_key = _AI_ERROR_KEYS.get(type(exc), "error_unexpected")
@@ -285,5 +285,6 @@ async def on_photo_gen_description(
 
     file_id = sent_message.photo[-1].file_id
     set_pending_media(db_path, telegram_id, file_id, "photo")
+    save_image_prompt(db_path, message.chat.id, sent_message.message_id, image_prompt)
     await state.set_state(None)
     await message.answer(get_string("photo_gen_ready", language))

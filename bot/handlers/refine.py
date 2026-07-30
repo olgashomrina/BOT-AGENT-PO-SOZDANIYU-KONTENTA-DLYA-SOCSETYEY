@@ -21,7 +21,9 @@ from bot.logging_config import LOGGER_NAME
 from bot.services import ai_gateway, content_generator, output_formatter, platform_package
 from bot.services.ai_gateway import AIGatewayError
 from bot.services.content_generator import SHORTEN_INSTRUCTION
+from bot.storage.image_prompts import get_image_prompt, save_image_prompt
 from bot.storage.limits import LimitStatus, check_limit_status, increment_usage
+from bot.storage.refine_context import get_refine_context, save_refine_context
 from bot.storage.style_examples import get_style_examples
 from bot.storage.users import clear_pending_media, get_channel_id, get_pending_media, set_pending_media
 from bot.storage.whitelist import is_whitelisted
@@ -112,20 +114,21 @@ async def _generate_and_send(
     if not await _check_limit_or_reply(callback, db_path, language):
         return
 
-    source_text = data.get("source_text")
-    content_language = data.get("content_language")
-    if not source_text or not content_language:
+    # WHY the context is keyed on this message rather than read from FSM: FSM
+    # data is per chat, so the next generation overwrites it. Telegram keeps
+    # old buttons alive indefinitely, so a tap on an older post would otherwise
+    # regenerate from whatever was generated most recently — a different topic,
+    # and with hashtags added or dropped to match that other post.
+    context = get_refine_context(db_path, callback.message.chat.id, callback.message.message_id)
+    if context is None:
         await callback.message.answer(get_string("error_refine_missing_context", language))
         await _safe_answer(callback)
         return
 
-    # WHY read these here rather than trusting the caller: "Ещё вариант" and
-    # "Короче" must produce a post indistinguishable in voice from the batch
-    # they sit under. Before this, refine called generate_variants() with
-    # neither the user's style examples nor the hashtag flag, so one tap on
-    # "Короче" silently stripped the personal voice off an authored post.
+    source_text = context["source_text"]
+    content_language = context["content_language"]
+    with_hashtags = context["with_hashtags"]
     style_examples = get_style_examples(db_path, telegram_id)
-    with_hashtags = bool(data.get("with_hashtags"))
 
     try:
         variants = await content_generator.generate_variants(
@@ -150,10 +153,19 @@ async def _generate_and_send(
     increment_usage(db_path, telegram_id)
 
     variant = variants[0]
-    await callback.message.answer(
+    sent = await callback.message.answer(
         output_formatter.format_variant(variant),
         parse_mode=output_formatter.PARSE_MODE,
         reply_markup=build_refine_keyboard(platform, 1, language),
+    )
+    save_refine_context(
+        db_path,
+        callback.message.chat.id,
+        sent.message_id,
+        source_text,
+        content_language,
+        with_hashtags,
+        platform,
     )
     await _safe_answer(callback)
 
@@ -319,7 +331,6 @@ async def on_refine_image(callback: CallbackQuery, state: FSMContext, db_path: s
 
     try:
         image_prompt = await content_generator.generate_image_prompt(post_text)
-        await state.update_data(last_image_prompt=image_prompt)
         image_bytes = await ai_gateway.generate_image(image_prompt)
     except AIGatewayError as exc:
         error_key = _AI_ERROR_KEYS.get(type(exc), "error_unexpected")
@@ -357,6 +368,15 @@ async def on_refine_image(callback: CallbackQuery, state: FSMContext, db_path: s
     file_id = sent_message.photo[-1].file_id
     set_pending_media(db_path, telegram_id, file_id, "photo")
 
+    # WHY key by (chat, message) in the database instead of one shared FSM
+    # slot: a user can generate several images in a row before tapping
+    # "upgrade" on an older one — a single shared slot would silently
+    # upgrade the wrong photo's prompt (and charge for it). Storing only
+    # after send_photo succeeds also means a failed cheap generation never
+    # overwrites a still-valid prompt from an earlier photo. Same rationale
+    # and pattern as bot/storage/refine_context.py.
+    save_image_prompt(db_path, callback.message.chat.id, sent_message.message_id, image_prompt)
+
     await callback.message.answer(get_string("image_attached_confirmation", language))
     await _safe_answer(callback)
 
@@ -375,11 +395,26 @@ async def on_image_upgrade(callback: CallbackQuery, state: FSMContext, db_path: 
     if not await _check_limit_or_reply(callback, db_path, language):
         return
 
-    image_prompt = data.get("last_image_prompt")
+    image_prompt = get_image_prompt(db_path, callback.message.chat.id, callback.message.message_id)
     if not image_prompt:
         await callback.message.answer(get_string("error_refine_missing_context", language))
         await _safe_answer(callback)
         return
+
+    # WHY disable the button before calling the (slow, billed) AI Gateway
+    # rather than only after: aiogram runs callback handlers as concurrent
+    # tasks, so a second tap during a 10-60s premium generation would
+    # otherwise fire a second, independent charge before the first call
+    # ever gets to disable anything. This shrinks the double-charge window
+    # down to one Telegram API round-trip. Best-effort — a failure here
+    # must not block the upgrade itself.
+    try:
+        await callback.message.edit_reply_markup(reply_markup=build_image_upgraded_keyboard(language))
+    except TelegramAPIError as exc:
+        logger.warning(
+            "Failed to optimistically disable image-upgrade button (likely stale)",
+            extra={"error_message": str(exc)},
+        )
 
     settings = load_settings()
 
@@ -398,6 +433,7 @@ async def on_image_upgrade(callback: CallbackQuery, state: FSMContext, db_path: 
             },
         )
         await callback.message.answer(get_string(error_key, language))
+        await _restore_upgrade_button(callback, language)
         await _safe_answer(callback)
         return
 
@@ -413,6 +449,7 @@ async def on_image_upgrade(callback: CallbackQuery, state: FSMContext, db_path: 
             extra={"user_id": telegram_id, "operation": "generate_image_upgrade"},
         )
         await callback.message.answer(get_string("image_delivery_failed", language))
+        await _restore_upgrade_button(callback, language)
         await _safe_answer(callback)
         return
 
@@ -421,19 +458,22 @@ async def on_image_upgrade(callback: CallbackQuery, state: FSMContext, db_path: 
     file_id = sent_message.photo[-1].file_id
     set_pending_media(db_path, telegram_id, file_id, "photo")
 
-    # WHY swallow TelegramBadRequest here specifically: same "stale
-    # callback" class of failure as _safe_answer below — the upgraded photo
-    # has already been delivered and billed by this point, so a cosmetic
-    # failure to disable the now-redundant button must not surface as an
-    # error to the user.
-    try:
-        await callback.message.edit_reply_markup(reply_markup=build_image_upgraded_keyboard(language))
-    except TelegramBadRequest as exc:
-        logger.warning(
-            "Failed to replace image-upgrade button (likely stale)", extra={"error_message": str(exc)}
-        )
-
     await _safe_answer(callback)
+
+
+async def _restore_upgrade_button(callback: CallbackQuery, language: str) -> None:
+    # WHY restore rather than leave it disabled: the button was disabled
+    # optimistically before the AI Gateway call — an error here means
+    # either no charge went through (AIGatewayError) or a charge happened
+    # but nothing was delivered (delivery failure); either way the user
+    # must be able to tap again to retry, e.g. after topping up balance.
+    try:
+        await callback.message.edit_reply_markup(reply_markup=build_image_upgrade_keyboard(language))
+    except TelegramAPIError as exc:
+        logger.warning(
+            "Failed to restore image-upgrade button after error (likely stale)",
+            extra={"error_message": str(exc)},
+        )
 
 
 @router.callback_query(F.data == CALLBACK_IMAGE_UPGRADE_DONE)

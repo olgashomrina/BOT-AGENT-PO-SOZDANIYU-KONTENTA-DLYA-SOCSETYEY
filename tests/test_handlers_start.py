@@ -405,6 +405,7 @@ from bot.handlers.start import PhotoGenStates, on_menu_photo_gen, on_photo_gen_d
 from bot.keyboards.start import CALLBACK_PHOTO_GEN
 from bot.services import ai_gateway, content_generator
 from bot.services.ai_gateway import AIGatewayTimeoutError
+from bot.storage.image_prompts import get_image_prompt
 from bot.storage.users import get_pending_media
 
 
@@ -416,8 +417,8 @@ def _make_description_message(telegram_id: int, text: str, language_code: str = 
     return message
 
 
-def _fake_sent_photo_message(file_id: str = "telegram-cdn-file-id"):
-    return SimpleNamespace(photo=[SimpleNamespace(file_id=file_id)])
+def _fake_sent_photo_message(file_id: str = "telegram-cdn-file-id", message_id: int = 5000):
+    return SimpleNamespace(photo=[SimpleNamespace(file_id=file_id)], message_id=message_id)
 
 
 @pytest.mark.asyncio
@@ -499,7 +500,7 @@ async def test_photo_gen_description_attaches_upgrade_button_and_stores_prompt(d
     assert kwargs["reply_markup"].inline_keyboard[0][0].callback_data == (
         expected_keyboard.inline_keyboard[0][0].callback_data
     )
-    assert (await state.get_data())["last_image_prompt"] == "a vivid english prompt"
+    assert get_image_prompt(db_path, 3005, 5000) == "a vivid english prompt"
 
 
 @pytest.mark.asyncio
