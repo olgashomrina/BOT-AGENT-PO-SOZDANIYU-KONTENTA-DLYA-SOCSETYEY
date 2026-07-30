@@ -212,5 +212,5 @@ STRINGS = {
     "package_note_caption_truncated": "✂️ 文字已按平台上限截断——{limit} 个字符",
     "package_note_hashtags_trimmed": "#️⃣ 话题标签已精简至 {max} 个——这是该平台的合适数量",
     "package_note_preview": "👀 «展开»前只显示前 {preview} 个字符——请把钩子放在这里面",
-    "package_note_ai_disclosure": "🤖 上传时请标注视频由 AI 生成——在 YouTube 上这是强制要求",
+    "package_note_ai_disclosure": "🤖 上传时请标注视频由 AI 生成（在 YouTube 上这是强制要求）",
 }

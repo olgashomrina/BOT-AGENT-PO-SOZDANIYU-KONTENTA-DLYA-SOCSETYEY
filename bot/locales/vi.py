@@ -281,7 +281,7 @@ STRINGS = {
         "vào trong đó"
     ),
     "package_note_ai_disclosure": (
-        "🤖 Khi tải lên, hãy đánh dấu video được tạo bằng AI — trên YouTube đây "
-        "là yêu cầu bắt buộc"
+        "🤖 Khi tải lên, hãy đánh dấu video được tạo bằng AI (trên YouTube đây "
+        "là yêu cầu bắt buộc)"
     ),
 }

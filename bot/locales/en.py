@@ -278,7 +278,7 @@ STRINGS = {
         "hook inside them"
     ),
     "package_note_ai_disclosure": (
-        "🤖 When uploading, mark the video as AI-generated — on YouTube this is "
-        "mandatory"
+        "🤖 When uploading, mark the video as AI-generated (on YouTube this is "
+        "mandatory)"
     ),
 }
