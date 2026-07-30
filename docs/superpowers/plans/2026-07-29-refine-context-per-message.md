@@ -2,14 +2,14 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task.
 
-> **STATUS 2026-07-29 — PAUSED AFTER TASK 2, BY OWNER DECISION.**
+> **STATUS 2026-07-29 — ALL FOUR TASKS COMPLETE. 463 tests green.**
 >
-> - Task 1 ✅ done (`d96cbc9`) — the `refine_contexts` table and its storage module.
-> - Task 2 ✅ done (`6443a60`, call sites fixed in `fe4f6ba`) — every sent variant now records a row.
-> - Task 3 ❌ NOT done — **so the bug this plan exists to fix is still live.** The rows Task 2 writes are not read by anything yet. `bot/handlers/refine.py` still reads the shared per-chat FSM value.
-> - Task 4 — Change A ✅ done (`fe4f6ba`, the authored-post flow passes its context through). Change B ❌ NOT done, so a stale digest button can still pick an item from a newer digest.
+> - Task 1 ✅ `d96cbc9` — the `refine_contexts` table and its storage module.
+> - Task 2 ✅ `6443a60`, call sites fixed in `fe4f6ba` — every sent variant records a row.
+> - Task 3 ✅ — `bot/handlers/refine.py` now reads the context of the message its button sits under. Mutation-verified. The edit landed inside a concurrent session's commit `d1068e3` rather than its own, because that session committed the shared working tree first; the code is correct and in place, and history was not rewritten to relocate it.
+> - Task 4 ✅ — Change A in `fe4f6ba`, Change B in `63b8491` (digest generation number in the callback data). Mutation-verified. Its `tests/test_handlers_start.py` additions were likewise swept into a concurrent commit.
 >
-> Paused because `bot/handlers/refine.py` had uncommitted work from a concurrent effort (the realistic-photo upgrade button) and editing it would have collided. Resume at Task 3 once that file is free; nothing here needs redoing.
+> The plan was paused mid-way while `bot/handlers/refine.py` was held by a concurrent effort, then resumed once that landed.
 
 **Goal:** Make the refine buttons ("Ещё", "Короче") regenerate from the source of the post they are attached to, instead of from a single shared FSM value that the next generation overwrites.
 
