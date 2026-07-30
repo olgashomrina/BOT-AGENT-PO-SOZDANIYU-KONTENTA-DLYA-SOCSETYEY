@@ -31,13 +31,20 @@ def save_image_prompt(db_path: str, chat_id: int, message_id: int, prompt: str) 
         connection.close()
 
 
-def get_image_prompt(db_path: str, chat_id: int, message_id: int) -> str | None:
+def claim_image_prompt(db_path: str, chat_id: int, message_id: int) -> str | None:
+    # Atomic read-and-delete via SQLite's DELETE...RETURNING: only one
+    # caller can successfully claim a given (chat_id, message_id). A
+    # concurrent second claim — e.g. a rapid double-tap on the same paid
+    # button — finds the row already gone and must fall back to the
+    # "missing context" path, instead of both callers billing the AI
+    # Gateway for the same prompt.
     connection = get_connection(db_path)
     try:
         row = connection.execute(
-            "SELECT prompt FROM image_prompts WHERE chat_id = ? AND message_id = ?",
+            "DELETE FROM image_prompts WHERE chat_id = ? AND message_id = ? RETURNING prompt",
             (chat_id, message_id),
         ).fetchone()
+        connection.commit()
         return row[0] if row else None
     finally:
         connection.close()

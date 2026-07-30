@@ -21,7 +21,7 @@ from bot.logging_config import LOGGER_NAME
 from bot.services import ai_gateway, content_generator, output_formatter, platform_package
 from bot.services.ai_gateway import AIGatewayError
 from bot.services.content_generator import SHORTEN_INSTRUCTION
-from bot.storage.image_prompts import get_image_prompt, save_image_prompt
+from bot.storage.image_prompts import claim_image_prompt, save_image_prompt
 from bot.storage.limits import LimitStatus, check_limit_status, increment_usage
 from bot.storage.refine_context import get_refine_context, save_refine_context
 from bot.storage.style_examples import get_style_examples
@@ -395,7 +395,7 @@ async def on_image_upgrade(callback: CallbackQuery, state: FSMContext, db_path: 
     if not await _check_limit_or_reply(callback, db_path, language):
         return
 
-    image_prompt = get_image_prompt(db_path, callback.message.chat.id, callback.message.message_id)
+    image_prompt = claim_image_prompt(db_path, callback.message.chat.id, callback.message.message_id)
     if not image_prompt:
         await callback.message.answer(get_string("error_refine_missing_context", language))
         await _safe_answer(callback)
@@ -433,6 +433,7 @@ async def on_image_upgrade(callback: CallbackQuery, state: FSMContext, db_path: 
             },
         )
         await callback.message.answer(get_string(error_key, language))
+        save_image_prompt(db_path, callback.message.chat.id, callback.message.message_id, image_prompt)
         await _restore_upgrade_button(callback, language)
         await _safe_answer(callback)
         return
@@ -449,6 +450,7 @@ async def on_image_upgrade(callback: CallbackQuery, state: FSMContext, db_path: 
             extra={"user_id": telegram_id, "operation": "generate_image_upgrade"},
         )
         await callback.message.answer(get_string("image_delivery_failed", language))
+        save_image_prompt(db_path, callback.message.chat.id, callback.message.message_id, image_prompt)
         await _restore_upgrade_button(callback, language)
         await _safe_answer(callback)
         return

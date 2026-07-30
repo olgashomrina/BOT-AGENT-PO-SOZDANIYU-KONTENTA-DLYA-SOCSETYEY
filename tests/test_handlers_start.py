@@ -405,7 +405,7 @@ from bot.handlers.start import PhotoGenStates, on_menu_photo_gen, on_photo_gen_d
 from bot.keyboards.start import CALLBACK_PHOTO_GEN
 from bot.services import ai_gateway, content_generator
 from bot.services.ai_gateway import AIGatewayTimeoutError
-from bot.storage.image_prompts import get_image_prompt
+from bot.storage.image_prompts import claim_image_prompt
 from bot.storage.users import get_pending_media
 
 
@@ -500,7 +500,7 @@ async def test_photo_gen_description_attaches_upgrade_button_and_stores_prompt(d
     assert kwargs["reply_markup"].inline_keyboard[0][0].callback_data == (
         expected_keyboard.inline_keyboard[0][0].callback_data
     )
-    assert get_image_prompt(db_path, 3005, 5000) == "a vivid english prompt"
+    assert claim_image_prompt(db_path, 3005, 5000) == "a vivid english prompt"
 
 
 @pytest.mark.asyncio
@@ -613,3 +613,80 @@ async def test_digest_topic_input_stores_items_in_fsm(db_path, monkeypatch):
 
     data = await state.get_data()
     assert data["digest_items"] == ["Новость 1", "Статья 1", "Новая методика X."]
+
+
+@pytest.mark.asyncio
+async def test_menu_news_digest_starts_generation_at_one(db_path, monkeypatch, _settings_env):
+    telegram_id = 557
+    add_user(db_path, telegram_id)
+    set_digest_topic(db_path, telegram_id, "ИИ")
+    monkeypatch.setattr(
+        digest_service, "build_digest", AsyncMock(return_value=_sample_digest_result())
+    )
+    state = _make_state(telegram_id)
+
+    await on_menu_news_digest(_make_digest_callback(telegram_id), state, db_path)
+
+    data = await state.get_data()
+    assert data["digest_generation"] == 1
+
+
+@pytest.mark.asyncio
+async def test_menu_news_digest_increments_generation_on_second_delivery(
+    db_path, monkeypatch, _settings_env
+):
+    # This is the path the reported bug walks: collect a digest (generation
+    # 1), collect another (generation 2) — the numbered buttons under the
+    # first message must stop resolving against whichever digest is current.
+    telegram_id = 558
+    add_user(db_path, telegram_id)
+    set_digest_topic(db_path, telegram_id, "ИИ")
+    monkeypatch.setattr(
+        digest_service, "build_digest", AsyncMock(return_value=_sample_digest_result())
+    )
+    state = _make_state(telegram_id)
+
+    await on_menu_news_digest(_make_digest_callback(telegram_id), state, db_path)
+    await on_menu_news_digest(_make_digest_callback(telegram_id), state, db_path)
+
+    data = await state.get_data()
+    assert data["digest_generation"] == 2
+
+
+@pytest.mark.asyncio
+async def test_digest_topic_input_starts_generation_at_one(db_path, monkeypatch):
+    telegram_id = 559
+    add_user(db_path, telegram_id)
+    monkeypatch.setattr(
+        digest_service, "build_digest", AsyncMock(return_value=_sample_digest_result())
+    )
+    state = _make_state(telegram_id)
+    message = _make_message(telegram_id, "ru", text="ИИ")
+
+    await on_digest_topic_input(message, state, db_path)
+
+    data = await state.get_data()
+    assert data["digest_generation"] == 1
+
+
+@pytest.mark.asyncio
+async def test_digest_topic_input_increments_generation_on_second_delivery(db_path, monkeypatch):
+    # Both delivery paths must bump the generation: this is the topic-change
+    # path (ForceReply -> on_digest_topic_input), the other place a digest
+    # can be delivered besides the menu button covered above.
+    telegram_id = 560
+    add_user(db_path, telegram_id)
+    monkeypatch.setattr(
+        digest_service, "build_digest", AsyncMock(return_value=_sample_digest_result())
+    )
+    state = _make_state(telegram_id)
+    first_message = _make_message(telegram_id, "ru", text="ИИ")
+    second_message = _make_message(telegram_id, "ru", text="Кулинария")
+    await state.set_state(DigestStates.waiting_for_topic)
+
+    await on_digest_topic_input(first_message, state, db_path)
+    await state.set_state(DigestStates.waiting_for_topic)
+    await on_digest_topic_input(second_message, state, db_path)
+
+    data = await state.get_data()
+    assert data["digest_generation"] == 2

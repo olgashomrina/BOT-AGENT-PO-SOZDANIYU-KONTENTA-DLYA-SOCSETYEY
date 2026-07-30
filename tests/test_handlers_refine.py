@@ -30,7 +30,7 @@ from bot.keyboards.refine import (
 from bot.locales.loader import get_string
 from bot.services import ai_gateway, content_generator, output_formatter
 from bot.services.ai_gateway import AIGatewayTimeoutError
-from bot.storage.image_prompts import get_image_prompt, save_image_prompt
+from bot.storage.image_prompts import claim_image_prompt, save_image_prompt
 from bot.storage.limits import get_daily_count
 from bot.storage.refine_context import get_refine_context, save_refine_context
 from bot.storage.users import get_pending_media, set_channel_id, set_pending_media
@@ -512,7 +512,7 @@ async def test_refine_image_success_attaches_upgrade_button_and_stores_prompt(db
     assert kwargs["reply_markup"].inline_keyboard[0][0].callback_data == (
         expected_keyboard.inline_keyboard[0][0].callback_data
     )
-    assert get_image_prompt(db_path, TELEGRAM_ID, 5000) == "a vivid english prompt"
+    assert claim_image_prompt(db_path, TELEGRAM_ID, 5000) == "a vivid english prompt"
 
 
 @pytest.mark.asyncio
@@ -783,6 +783,37 @@ async def test_image_upgrade_missing_prompt_replies_friendly_error_and_does_not_
     callback = _make_callback(data=CALLBACK_IMAGE_UPGRADE)
     callback.message.chat = SimpleNamespace(id=TELEGRAM_ID)
     bot = AsyncMock()
+
+    await on_image_upgrade(callback, state, db_path, bot)
+
+    mock_generate_image.assert_not_awaited()
+    callback.message.answer.assert_awaited_once_with(get_string("error_refine_missing_context", "ru"))
+    callback.message.edit_reply_markup.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_image_upgrade_second_concurrent_tap_gets_missing_context_not_a_second_charge(
+    db_path, monkeypatch
+):
+    state = _make_state()
+    await state.update_data(language="ru")
+    await state.set_state(None)
+    save_image_prompt(db_path, TELEGRAM_ID, _SEEDED_MESSAGE_ID, "a vivid english prompt")
+
+    mock_generate_image = AsyncMock(return_value=b"fake-premium-png-bytes")
+    monkeypatch.setattr(ai_gateway, "generate_image", mock_generate_image)
+
+    callback = _make_callback(data=CALLBACK_IMAGE_UPGRADE)
+    callback.message.chat = SimpleNamespace(id=TELEGRAM_ID)
+    callback.message.edit_reply_markup = AsyncMock()
+    bot = AsyncMock()
+    bot.send_photo = AsyncMock(return_value=_fake_sent_photo_message("premium-file-id"))
+
+    # Simulate the row already being claimed by a "first" concurrent tap
+    # that ran to completion before this one even started reading it.
+    from bot.storage.image_prompts import claim_image_prompt as _claim_directly
+
+    _claim_directly(db_path, TELEGRAM_ID, _SEEDED_MESSAGE_ID)
 
     await on_image_upgrade(callback, state, db_path, bot)
 
