@@ -769,6 +769,10 @@ async def test_image_upgrade_ai_error_replies_friendly_message_and_keeps_button(
     )
     assert get_pending_media(db_path, TELEGRAM_ID) is None
     assert get_daily_count(db_path, TELEGRAM_ID) == 0
+    # The claim consumed the prompt before the AI call failed — the restore
+    # path must put it back, or a retry after this error would always hit
+    # "missing context" instead of actually retrying.
+    assert claim_image_prompt(db_path, TELEGRAM_ID, _SEEDED_MESSAGE_ID) == "a vivid english prompt"
 
 
 @pytest.mark.asyncio
@@ -871,6 +875,9 @@ async def test_image_upgrade_delivery_failure_replies_friendly_error_and_does_no
     )
     assert get_pending_media(db_path, TELEGRAM_ID) is None
     assert get_daily_count(db_path, TELEGRAM_ID) == 0
+    # Same reasoning as the AI-error test above: the claimed prompt must be
+    # restored after a delivery failure too, or a retry can never succeed.
+    assert claim_image_prompt(db_path, TELEGRAM_ID, _SEEDED_MESSAGE_ID) == "a vivid english prompt"
 
 
 @pytest.mark.asyncio
