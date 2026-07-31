@@ -73,19 +73,6 @@ def build_saved_examples_keyboard(lang: str) -> InlineKeyboardMarkup:
     )
 
 
-def build_samples_done_keyboard(lang: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=get_string("authorpost_samples_done_button", lang),
-                    callback_data=CALLBACK_SAMPLES_DONE,
-                )
-            ]
-        ]
-    )
-
-
 def build_platform_keyboard(lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[

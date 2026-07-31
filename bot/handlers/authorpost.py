@@ -15,6 +15,7 @@ from bot.handlers.guards import (
     safe_answer,
 )
 from bot.handlers.settov import MAX_EXAMPLE_LENGTH
+from bot.handlers.style_reading import REQUIRED_EXAMPLES, read_style_if_ready
 from bot.keyboards.authorpost import (
     CALLBACK_ITEM_PREFIX,
     CALLBACK_NEW_SAMPLES,
@@ -26,7 +27,6 @@ from bot.keyboards.authorpost import (
     build_item_choice_keyboard,
     build_next_step_keyboard,
     build_platform_keyboard,
-    build_samples_done_keyboard,
     build_saved_examples_keyboard,
 )
 from bot.locales.loader import get_string
@@ -40,16 +40,12 @@ from bot.storage.style_examples import (
     clear_style_examples,
     get_style_examples,
 )
+from bot.storage.style_profile import clear_style_profile, get_style_profile
 from bot.storage.users import get_content_language
 
 logger = logging.getLogger(LOGGER_NAME)
 
 router = Router(name="authorpost")
-
-# Below this many stored style examples the bot refuses to write: fewer
-# samples do not carry a recognisable voice, they just bias the model toward
-# whichever single post it saw.
-REQUIRED_EXAMPLES = 5
 
 
 class AuthorPostStates(StatesGroup):
@@ -219,6 +215,9 @@ async def on_authorpost_new_samples(
     # the user's video-circle donors, silently destroying their double's
     # spoken-style library as a side effect of refreshing written samples.
     clear_style_examples(db_path, telegram_id, kind=KIND_WRITTEN)
+    # The profile went with them: it describes posts the bot no longer has,
+    # and leaving it would stop the new samples from ever being analysed.
+    clear_style_profile(db_path, telegram_id)
     await callback.message.answer(get_string("authorpost_samples_cleared", language))
     await _ask_for_samples(callback, state, language)
 
@@ -237,22 +236,23 @@ async def on_authorpost_sample(message: Message, state: FSMContext, db_path: str
         return
 
     add_style_example(db_path, telegram_id, message.text)
+
+    data = await state.get_data()
+    if await read_style_if_ready(
+        message, db_path, telegram_id, language, bool(data.get("source_text"))
+    ):
+        return
+
     # The counter reports everything in storage, not just this session's
     # messages: "не менее 5" means "the bot holds 5 samples of your voice",
     # so a user who already had 2 saved is done after 3 more.
-    count = _stored_example_count(db_path, telegram_id)
-
-    if count >= REQUIRED_EXAMPLES:
-        await message.answer(
-            get_string(
-                "authorpost_samples_enough", language, count=count, required=REQUIRED_EXAMPLES
-            ),
-            reply_markup=build_samples_done_keyboard(language),
-        )
-        return
-
     await message.answer(
-        get_string("authorpost_samples_progress", language, count=count, required=REQUIRED_EXAMPLES)
+        get_string(
+            "authorpost_samples_progress",
+            language,
+            count=_stored_example_count(db_path, telegram_id),
+            required=REQUIRED_EXAMPLES,
+        )
     )
 
 
@@ -318,6 +318,7 @@ async def on_authorpost_platform(
     ) or language
     settings = load_settings()
     style_examples = get_style_examples(db_path, telegram_id)
+    style_profile = get_style_profile(db_path, telegram_id)
 
     # Only content_language is worth keeping in FSM: it is read back at the
     # top of this handler if the user runs the flow again.
@@ -341,6 +342,7 @@ async def on_authorpost_platform(
                 count=settings.content_variants_count,
                 style_examples=style_examples,
                 with_hashtags=True,
+                style_profile=style_profile,
             )
         except AIGatewayError as exc:
             error_key = _AI_ERROR_KEYS.get(type(exc), "error_unexpected")

@@ -12,6 +12,7 @@ from bot.handlers.content import _resolve_language
 from bot.keyboards.settov import CALLBACK_DONE, build_settov_done_keyboard
 from bot.locales.loader import get_string
 from bot.logging_config import LOGGER_NAME
+from bot.handlers.style_reading import read_style_if_ready
 from bot.storage.style_examples import add_style_example, get_style_examples
 
 logger = logging.getLogger(LOGGER_NAME)
@@ -60,13 +61,19 @@ async def on_settov_example(message: Message, db_path: str) -> None:
         return
 
     add_style_example(db_path, telegram_id, message.text)
-    await message.answer(
-        get_string("settov_example_saved", language),
-        reply_markup=build_settov_done_keyboard(language),
-    )
     logger.info(
         "Style example saved",
         extra={"user_id": telegram_id, "operation": "handler:settov"},
+    )
+
+    # has_source_text=False: /settov never has a digest item picked, so the
+    # "write the post on the chosen topic" button would be a dead end here.
+    if await read_style_if_ready(message, db_path, telegram_id, language, False):
+        return
+
+    await message.answer(
+        get_string("settov_example_saved", language),
+        reply_markup=build_settov_done_keyboard(language),
     )
 
 

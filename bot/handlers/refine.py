@@ -38,6 +38,7 @@ from bot.storage.image_prompts import claim_image_prompt, save_image_prompt
 from bot.storage.limits import increment_image_usage, increment_usage
 from bot.storage.refine_context import get_refine_context, save_refine_context
 from bot.storage.style_examples import get_style_examples
+from bot.storage.style_profile import get_style_profile
 from bot.storage.users import clear_pending_media, get_channel_id, get_pending_media, set_pending_media
 
 logger = logging.getLogger(LOGGER_NAME)
@@ -91,6 +92,7 @@ async def _generate_and_send(
     content_language = context["content_language"]
     with_hashtags = context["with_hashtags"]
     style_examples = get_style_examples(db_path, telegram_id)
+    style_profile = get_style_profile(db_path, telegram_id)
 
     try:
         variants = await content_generator.generate_variants(
@@ -101,6 +103,7 @@ async def _generate_and_send(
             extra_instruction=extra_instruction,
             style_examples=style_examples,
             with_hashtags=with_hashtags,
+            style_profile=style_profile,
         )
     except AIGatewayError as exc:
         error_key = _AI_ERROR_KEYS.get(type(exc), "error_unexpected")

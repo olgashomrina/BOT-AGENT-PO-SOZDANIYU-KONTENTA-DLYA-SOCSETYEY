@@ -10,7 +10,6 @@ from bot.keyboards.authorpost import (
     build_item_choice_keyboard,
     build_next_step_keyboard,
     build_platform_keyboard,
-    build_samples_done_keyboard,
     build_saved_examples_keyboard,
 )
 from bot.locales.loader import get_string
@@ -84,15 +83,6 @@ def test_saved_examples_keyboard_offers_both_branches():
         "authorpost_new_samples_button", "ru"
     )
     assert keyboard.inline_keyboard[1][0].callback_data == CALLBACK_NEW_SAMPLES
-
-
-def test_samples_done_keyboard():
-    keyboard = build_samples_done_keyboard("vi")
-
-    assert keyboard.inline_keyboard[0][0].text == get_string(
-        "authorpost_samples_done_button", "vi"
-    )
-    assert keyboard.inline_keyboard[0][0].callback_data == CALLBACK_SAMPLES_DONE
 
 
 def test_platform_keyboard_has_three_choices():

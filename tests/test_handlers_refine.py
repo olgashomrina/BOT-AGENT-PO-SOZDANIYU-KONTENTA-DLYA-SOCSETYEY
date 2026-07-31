@@ -126,6 +126,7 @@ async def test_refine_more_generates_and_sends_new_variant(db_path, monkeypatch)
         extra_instruction=None,
         style_examples=[],
         with_hashtags=False,
+        style_profile=None,
     )
     callback.message.answer.assert_awaited_once()
     args, kwargs = callback.message.answer.call_args
@@ -155,6 +156,7 @@ async def test_refine_shorten_passes_shorten_instruction(db_path, monkeypatch):
         extra_instruction=content_generator.SHORTEN_INSTRUCTION,
         style_examples=[],
         with_hashtags=False,
+        style_profile=None,
     )
     callback.message.answer.assert_awaited_once()
     args, _ = callback.message.answer.call_args

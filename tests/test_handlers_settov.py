@@ -15,11 +15,25 @@ from bot.handlers.settov import (
     on_settov_done,
     on_settov_example,
 )
+from bot.handlers.style_reading import REQUIRED_EXAMPLES
 from bot.keyboards.settov import CALLBACK_DONE
 from bot.locales.loader import get_string
+from bot.services import content_generator
 from bot.storage.style_examples import MAX_EXAMPLES_PER_USER, get_style_examples
+from bot.storage.style_profile import get_style_profile
 
 TELEGRAM_ID = 111
+STYLE_SUMMARY = "• короткие абзацы"
+
+
+@pytest.fixture(autouse=True)
+def _no_real_style_analysis(monkeypatch):
+    # From the fifth example on, the handler reads the style
+    # (bot/handlers/style_reading.py). Without this the tests below would
+    # reach the real AI Gateway.
+    monkeypatch.setattr(
+        content_generator, "analyze_style", AsyncMock(return_value=STYLE_SUMMARY)
+    )
 
 
 def _make_state(telegram_id: int = TELEGRAM_ID) -> FSMContext:
@@ -155,3 +169,19 @@ async def test_done_button_with_zero_examples_confirms_with_zero_count(db_path):
     callback.message.answer.assert_awaited_once_with(
         get_string("settov_finished_confirmation", "ru", count=0)
     )
+
+
+@pytest.mark.asyncio
+async def test_fifth_example_reads_the_style_and_offers_the_next_step(db_path):
+    state = _make_state()
+    await state.set_state(SettovStates.collecting_examples)
+
+    for index in range(REQUIRED_EXAMPLES):
+        message = _make_message(text=f"Пост {index}")
+        await on_settov_example(message, db_path)
+
+    args, kwargs = message.answer.call_args
+    assert args[0] == get_string("style_read_summary", "ru", summary=STYLE_SUMMARY)
+    assert get_style_profile(db_path, TELEGRAM_ID) == STYLE_SUMMARY
+    # Two buttons, not three: /settov has no digest item picked.
+    assert len(kwargs["reply_markup"].inline_keyboard) == 2

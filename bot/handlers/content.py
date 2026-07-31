@@ -35,6 +35,7 @@ from bot.handlers.guards import check_message_limit_or_reply
 from bot.storage.limits import increment_usage
 from bot.storage.refine_context import save_refine_context
 from bot.storage.style_examples import get_style_examples
+from bot.storage.style_profile import get_style_profile
 from bot.storage.users import (
     clear_pending_media,
     get_content_language,
@@ -373,6 +374,7 @@ async def _finish(
 
     settings = load_settings()
     style_examples = get_style_examples(db_path, telegram_id)
+    style_profile = get_style_profile(db_path, telegram_id)
 
     try:
         telegram_variants = await content_generator.generate_variants(
@@ -381,6 +383,7 @@ async def _finish(
             content_language,
             count=settings.content_variants_count,
             style_examples=style_examples,
+            style_profile=style_profile,
         )
         vk_variants = await content_generator.generate_variants(
             text,
@@ -388,6 +391,7 @@ async def _finish(
             content_language,
             count=settings.content_variants_count,
             style_examples=style_examples,
+            style_profile=style_profile,
         )
     except AIGatewayError as exc:
         error_key = _AI_ERROR_KEYS.get(type(exc), "error_unexpected")

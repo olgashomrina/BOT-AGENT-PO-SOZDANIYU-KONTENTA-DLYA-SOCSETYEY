@@ -255,7 +255,10 @@ from bot.handlers.authorpost import (
     on_authorpost_use_saved,
 )
 from bot.handlers.settov import MAX_EXAMPLE_LENGTH
+from bot.services import content_generator
+from bot.services.ai_gateway import AIGatewayTimeoutError
 from bot.storage.style_examples import add_style_example, get_style_examples
+from bot.storage.style_profile import get_style_profile
 
 
 @pytest.mark.asyncio
@@ -338,7 +341,38 @@ async def test_sample_below_threshold_shows_progress_without_done_button(db_path
 
 
 @pytest.mark.asyncio
-async def test_sample_at_threshold_offers_done_button(db_path):
+async def test_sample_at_threshold_reads_the_style_and_offers_the_next_step(db_path, monkeypatch):
+    # analyze_style is mocked, not left to fail: without the mock this test
+    # would reach the real AI Gateway and only pass because the call errored
+    # into the fallback branch.
+    monkeypatch.setattr(
+        content_generator, "analyze_style", AsyncMock(return_value="• короткие абзацы")
+    )
+    for index in range(REQUIRED_EXAMPLES - 1):
+        add_style_example(db_path, TELEGRAM_ID, f"Пост {index}")
+    state = _make_state()
+    await state.set_state(AuthorPostStates.collecting_examples)
+    message = _make_message(text="Пятый пост")
+
+    await on_authorpost_sample(message, state, db_path)
+
+    args, kwargs = message.answer.call_args
+    assert args[0] == get_string(
+        "style_read_summary", "ru", summary="• короткие абзацы"
+    )
+    assert kwargs["reply_markup"] is not None
+    assert get_style_profile(db_path, TELEGRAM_ID) == "• короткие абзацы"
+
+
+@pytest.mark.asyncio
+async def test_sample_at_threshold_still_offers_the_next_step_when_the_read_fails(
+    db_path, monkeypatch
+):
+    monkeypatch.setattr(
+        content_generator,
+        "analyze_style",
+        AsyncMock(side_effect=AIGatewayTimeoutError("boom")),
+    )
     for index in range(REQUIRED_EXAMPLES - 1):
         add_style_example(db_path, TELEGRAM_ID, f"Пост {index}")
     state = _make_state()
@@ -352,6 +386,7 @@ async def test_sample_at_threshold_offers_done_button(db_path):
         "authorpost_samples_enough", "ru", count=REQUIRED_EXAMPLES, required=REQUIRED_EXAMPLES
     )
     assert kwargs["reply_markup"] is not None
+    assert get_style_profile(db_path, TELEGRAM_ID) is None
 
 
 @pytest.mark.asyncio
