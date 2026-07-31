@@ -143,6 +143,12 @@ async def on_menu_news_digest(callback: CallbackQuery, state: FSMContext, db_pat
     if not await check_whitelist_or_reply(callback, db_path, language):
         return
 
+    # Also reached from the style-ready keyboard (bot/keyboards/style.py),
+    # where a sample-collection state is still set: leaving it would file the
+    # user's next plain message as one more style sample instead of routing it
+    # to content generation. A no-op on the main-menu path, where it is None.
+    await state.set_state(None)
+
     topic = get_digest_topic(db_path, telegram_id)
     if topic is None:
         await callback.message.answer(

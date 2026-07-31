@@ -19,6 +19,18 @@ from bot.storage.users import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _required_env(monkeypatch):
+    # Several handlers here reach load_settings() — the digest and photo-gen
+    # message handlers do it through the quota guard (bot/handlers/guards.py).
+    # Without these the suite only passes on a machine that happens to have a
+    # real .env next to it, and fails in CI, which has none.
+    monkeypatch.setenv("BOT_TOKEN", "123456:test-token")
+    monkeypatch.setenv("AI_PROXY_API_KEY", "test-ai-key")
+    monkeypatch.setenv("OWNER_CHAT_ID", "42")
+
+
+
 def _make_message(telegram_id: int, language_code: str | None, text: str | None = "/start"):
     message = AsyncMock()
     message.from_user = SimpleNamespace(id=telegram_id, language_code=language_code)
@@ -739,3 +751,34 @@ async def test_digest_topic_input_increments_generation_on_second_delivery(db_pa
 
     data = await state.get_data()
     assert data["digest_generation"] == 2
+
+
+@pytest.mark.asyncio
+async def test_news_digest_clears_a_leftover_collecting_state(db_path, monkeypatch):
+    # Reached from the style-ready keyboard (bot/keyboards/style.py), where a
+    # sample-collection state is still set: leaving it would turn the user's
+    # next plain message into another style sample.
+    from bot.handlers.authorpost import AuthorPostStates
+
+    monkeypatch.setenv("BOT_TOKEN", "123456:test-token")
+    monkeypatch.setenv("AI_PROXY_API_KEY", "test-ai-key")
+    monkeypatch.setenv("OWNER_CHAT_ID", "42")
+    telegram_id = 2014
+    add_user(db_path, telegram_id)
+    set_digest_topic(db_path, telegram_id, "ИИ")
+    monkeypatch.setattr(
+        digest_service,
+        "build_digest",
+        AsyncMock(
+            return_value=digest_service.DigestResult(
+                topic="ИИ", news=[], papers=[], methods_summary=None
+            )
+        ),
+    )
+    state = _make_state(telegram_id)
+    await state.set_state(AuthorPostStates.collecting_examples)
+    callback = _make_callback(telegram_id, CALLBACK_NEWS_DIGEST)
+
+    await on_menu_news_digest(callback, state, db_path)
+
+    assert await state.get_state() is None

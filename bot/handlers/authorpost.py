@@ -29,6 +29,7 @@ from bot.keyboards.authorpost import (
     build_platform_keyboard,
     build_saved_examples_keyboard,
 )
+from bot.keyboards.style import CALLBACK_OWN_TOPIC
 from bot.locales.loader import get_string
 from bot.logging_config import LOGGER_NAME
 from bot.services import content_generator
@@ -256,7 +257,10 @@ async def on_authorpost_sample(message: Message, state: FSMContext, db_path: str
     )
 
 
-@router.callback_query(F.data == CALLBACK_SAMPLES_DONE, AuthorPostStates.collecting_examples)
+# No state filter on the decorator: the style-ready keyboard
+# (bot/keyboards/style.py) is sent from /settov as well, whose state belongs
+# to a different StatesGroup — a filtered handler would silently not fire there.
+@router.callback_query(F.data == CALLBACK_SAMPLES_DONE)
 async def on_authorpost_samples_done(
     callback: CallbackQuery, state: FSMContext, db_path: str
 ) -> None:
@@ -270,6 +274,24 @@ async def on_authorpost_samples_done(
     # (StateFilter(None)) never fires and the bot ignores ordinary messages.
     await state.set_state(None)
     await _ask_for_platform(callback, language)
+
+
+@router.callback_query(F.data == CALLBACK_OWN_TOPIC)
+async def on_authorpost_own_topic(
+    callback: CallbackQuery, state: FSMContext, db_path: str
+) -> None:
+    telegram_id = callback.from_user.id
+    language = _resolve_language(db_path, telegram_id, callback.from_user.language_code)
+
+    if not await check_whitelist_or_reply(callback, db_path, language):
+        return
+
+    # Same reason as above, and it matters more here: the very next thing the
+    # user does is type their topic, and with a sample-collection state still
+    # set that message would be filed as one more style sample.
+    await state.set_state(None)
+    await callback.message.answer(get_string("style_own_topic_prompt", language))
+    await safe_answer(callback)
 
 
 # callback_data suffix -> the platforms to generate for, in output order.

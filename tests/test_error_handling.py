@@ -27,6 +27,16 @@ from bot.services.ai_gateway import (
 TELEGRAM_ID = 111
 
 
+@pytest.fixture(autouse=True)
+def _required_env(monkeypatch):
+    # route_content checks the quota before anything paid, and the guard
+    # (bot/handlers/guards.py) reads settings to do it — so these tests need
+    # env vars of their own rather than a real .env, which CI does not have.
+    monkeypatch.setenv("BOT_TOKEN", "123456:test-token")
+    monkeypatch.setenv("AI_PROXY_API_KEY", "test-ai-key")
+    monkeypatch.setenv("OWNER_CHAT_ID", "42")
+
+
 def _make_message(text: str | None = None, voice=None):
     message = AsyncMock()
     message.from_user = SimpleNamespace(id=TELEGRAM_ID, language_code="ru")

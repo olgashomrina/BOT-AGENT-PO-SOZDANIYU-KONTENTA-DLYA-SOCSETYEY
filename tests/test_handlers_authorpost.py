@@ -674,3 +674,52 @@ async def test_new_samples_keeps_the_spoken_style_library(db_path):
     assert get_style_examples(db_path, TELEGRAM_ID, kind=KIND_SPOKEN) == [
         "Расшифровка кружка"
     ]
+
+
+# --- Continuing from a read style ---------------------------------------------
+
+from bot.handlers.authorpost import on_authorpost_own_topic
+from bot.keyboards.authorpost import CALLBACK_SAMPLES_DONE
+from bot.keyboards.style import CALLBACK_OWN_TOPIC
+
+
+@pytest.mark.asyncio
+async def test_own_topic_clears_state_and_asks_for_a_topic(db_path):
+    state = _make_state()
+    await state.set_state(AuthorPostStates.collecting_examples)
+    callback = _make_callback(CALLBACK_OWN_TOPIC)
+
+    await on_authorpost_own_topic(callback, state, db_path)
+
+    assert await state.get_state() is None
+    args, _ = callback.message.answer.call_args
+    assert args[0] == get_string("style_own_topic_prompt", "ru")
+
+
+@pytest.mark.asyncio
+async def test_own_topic_refuses_user_outside_whitelist(db_path):
+    state = _make_state()
+    callback = _make_callback(CALLBACK_OWN_TOPIC, telegram_id=999)
+
+    await on_authorpost_own_topic(callback, state, db_path)
+
+    args, _ = callback.message.answer.call_args
+    assert args[0] == get_string("error_not_whitelisted", "ru")
+
+
+@pytest.mark.asyncio
+async def test_samples_done_works_from_the_settov_state(db_path):
+    # The style-ready keyboard is sent from /settov too, where the state
+    # belongs to a different StatesGroup — a state-filtered handler would
+    # never fire there.
+    from bot.handlers.settov import SettovStates
+
+    state = _make_state()
+    await state.set_state(SettovStates.collecting_examples)
+    callback = _make_callback(CALLBACK_SAMPLES_DONE)
+
+    await on_authorpost_samples_done(callback, state, db_path)
+
+    assert await state.get_state() is None
+    args, _ = callback.message.answer.call_args
+    assert args[0] == get_string("authorpost_choose_platform", "ru")
