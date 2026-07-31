@@ -15,6 +15,7 @@ from bot.handlers.content import _resolve_language
 from bot.keyboards.circle import (
     CALLBACK_ADD_DONORS,
     CALLBACK_CONSENT_ACCEPT,
+    CALLBACK_DONORS_DONE,
     CALLBACK_MY_DOUBLE,
     build_consent_keyboard,
     build_donors_keyboard,
@@ -23,15 +24,22 @@ from bot.keyboards.circle import (
 from bot.locales.loader import get_string
 from bot.logging_config import LOGGER_NAME
 from bot.services.ai_gateway import TranscriptionError, transcribe
-from bot.services.ffmpeg_tools import FfmpegError, extract_audio, probe_duration
+from bot.services.ffmpeg_tools import (
+    FfmpegError,
+    concat_audio,
+    extract_audio,
+    probe_duration,
+)
+from bot.services.voice_gateway import PROVIDER_NAME, VoiceGatewayError, clone_voice
 from bot.storage.avatar_donors import (
     MIN_DONOR_COUNT,
     MIN_DONOR_SECONDS,
     add_donor,
     count_donors,
+    get_donors,
 )
 from bot.storage.style_examples import KIND_SPOKEN, add_style_example
-from bot.storage.voice_profiles import get_voice_profile
+from bot.storage.voice_profiles import get_voice_profile, save_voice_profile
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -167,6 +175,66 @@ async def on_donor_video_note(
             language, can_finish=collected >= MIN_DONOR_COUNT
         ),
     )
+
+
+@router.callback_query(F.data == CALLBACK_DONORS_DONE)
+async def on_donors_done(
+    callback: CallbackQuery, db_path: str, state: FSMContext
+) -> None:
+    telegram_id = callback.from_user.id
+    language = _resolve_language(db_path, telegram_id, callback.from_user.language_code)
+
+    donors = get_donors(db_path, telegram_id)
+    if len(donors) < MIN_DONOR_COUNT:
+        await callback.message.answer(
+            get_string("double_need_more_donors", language, minimum=MIN_DONOR_COUNT)
+        )
+        await callback.answer()
+        return
+
+    await callback.message.answer(get_string("double_voice_building", language))
+
+    audio_paths: list[str] = []
+    combined_path = _tmp_path(".wav")
+    try:
+        for donor in donors:
+            video_path = _tmp_path(".mp4")
+            audio_path = _tmp_path(".wav")
+            await callback.message.bot.download(donor.file_id, destination=video_path)
+            await extract_audio(video_path, audio_path)
+            pathlib.Path(video_path).unlink(missing_ok=True)
+            audio_paths.append(audio_path)
+
+        # Один кружок — 30-60 секунд, а клонированию нужны 1-2 минуты речи,
+        # поэтому дорожки всех доноров склеиваются в одну.
+        await concat_audio(audio_paths, combined_path)
+        voice_id = await clone_voice(_read_bytes(combined_path), f"double-{telegram_id}")
+    except (FfmpegError, VoiceGatewayError):
+        logger.error(
+            "Voice cloning failed",
+            extra={"user_id": telegram_id, "operation": "handler:circle"},
+            exc_info=True,
+        )
+        await callback.message.answer(get_string("double_voice_failed", language))
+        await callback.answer()
+        return
+    finally:
+        for path in [*audio_paths, combined_path]:
+            pathlib.Path(path).unlink(missing_ok=True)
+
+    data = await state.get_data()
+    consent_at = data.get("consent_at") or datetime.now(timezone.utc).isoformat()
+    save_voice_profile(db_path, telegram_id, PROVIDER_NAME, voice_id, consent_at)
+
+    # Состояние сбрасываем немедленно: пока оно выставлено, обычные текстовые
+    # сообщения перехватывает этот роутер, и бот перестаёт отвечать на всё
+    # остальное (та же причина, что в сценарии авторского поста).
+    await state.set_state(None)
+    await callback.message.answer(
+        get_string("double_ready", language, donors=len(donors)),
+        reply_markup=build_my_double_keyboard(language),
+    )
+    await callback.answer()
 
 
 @router.message(CircleStates.collecting_donors)
