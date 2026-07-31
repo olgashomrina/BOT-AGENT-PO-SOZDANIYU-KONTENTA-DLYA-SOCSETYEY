@@ -35,6 +35,7 @@ from bot.services import content_generator
 from bot.services.ai_gateway import AIGatewayError
 from bot.storage.limits import increment_usage
 from bot.storage.style_examples import (
+    KIND_WRITTEN,
     add_style_example,
     clear_style_examples,
     get_style_examples,
@@ -212,7 +213,12 @@ async def on_authorpost_new_samples(
     # Wipe rather than append: leaving the old examples in would blend two
     # eras of the user's writing under one cap, and "загрузить новые" would
     # quietly mean "загрузить ещё".
-    clear_style_examples(db_path, telegram_id)
+    #
+    # Scoped to KIND_WRITTEN: this screen only ever collects written posts.
+    # An unscoped wipe would also delete the spoken transcripts harvested from
+    # the user's video-circle donors, silently destroying their double's
+    # spoken-style library as a side effect of refreshing written samples.
+    clear_style_examples(db_path, telegram_id, kind=KIND_WRITTEN)
     await callback.message.answer(get_string("authorpost_samples_cleared", language))
     await _ask_for_samples(callback, state, language)
 

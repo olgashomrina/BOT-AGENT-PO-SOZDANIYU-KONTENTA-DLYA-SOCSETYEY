@@ -604,3 +604,38 @@ async def test_authored_variants_record_a_refine_context_with_hashtags_kept(db_p
     assert context["platform"] == "vk"
     assert context["source_text"] == "Научная статья"
     assert context["content_language"] == "ru"
+
+
+# --- Quota: collecting samples must stay free ---------------------------------
+
+@pytest.mark.asyncio
+async def test_collecting_samples_costs_no_quota(db_path):
+    state = _make_state()
+    await state.set_state(AuthorPostStates.collecting_examples)
+
+    for index in range(5):
+        await on_authorpost_sample(_make_message(f"Образец {index}"), state, db_path)
+
+    assert get_daily_count(db_path, TELEGRAM_ID) == 0
+
+
+@pytest.mark.asyncio
+async def test_new_samples_keeps_the_spoken_style_library(db_path):
+    # Regression: "загрузить новые образцы" collects WRITTEN posts only. An
+    # unscoped wipe would also delete the spoken transcripts harvested from the
+    # user's video-circle donors, destroying their double's spoken style as a
+    # side effect of refreshing written samples.
+    from bot.handlers.authorpost import on_authorpost_new_samples
+    from bot.storage.style_examples import KIND_SPOKEN, KIND_WRITTEN
+
+    add_style_example(db_path, TELEGRAM_ID, "Старый письменный пост")
+    add_style_example(db_path, TELEGRAM_ID, "Расшифровка кружка", kind=KIND_SPOKEN)
+    state = _make_state()
+    callback = _make_callback("authorpost:new_samples")
+
+    await on_authorpost_new_samples(callback, state, db_path)
+
+    assert get_style_examples(db_path, TELEGRAM_ID, kind=KIND_WRITTEN) == []
+    assert get_style_examples(db_path, TELEGRAM_ID, kind=KIND_SPOKEN) == [
+        "Расшифровка кружка"
+    ]

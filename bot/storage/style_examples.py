@@ -14,23 +14,33 @@ from bot.storage.db import get_connection
 MAX_EXAMPLES_PER_USER = 10
 
 
-def add_style_example(db_path: str, telegram_id: int, text: str) -> None:
+# Письменные посты и расшифровки кружков нельзя смешивать в одном промпте:
+# по письменным образцам устный сценарий звучит как зачитанная статья.
+# Вытеснение тоже раздельное — иначе расшифровки съедят письменные образцы
+# и сломают сценарий авторского поста, требующий не менее 5 письменных.
+KIND_WRITTEN = "written"
+KIND_SPOKEN = "spoken"
+
+
+def add_style_example(
+    db_path: str, telegram_id: int, text: str, kind: str = KIND_WRITTEN
+) -> None:
     connection = get_connection(db_path)
     try:
         created_at = datetime.now(timezone.utc).isoformat()
         connection.execute(
-            "INSERT INTO style_examples (telegram_id, example_text, created_at) "
-            "VALUES (?, ?, ?)",
-            (telegram_id, text, created_at),
+            "INSERT INTO style_examples (telegram_id, example_text, created_at, kind) "
+            "VALUES (?, ?, ?, ?)",
+            (telegram_id, text, created_at, kind),
         )
         # Eviction keyed on id (insertion order), not created_at: sqlite's
         # TEXT timestamp column can't disambiguate two inserts within the
         # same wall-clock resolution, but AUTOINCREMENT id always does.
         connection.execute(
-            "DELETE FROM style_examples WHERE telegram_id = ? AND id NOT IN ("
-            "SELECT id FROM style_examples WHERE telegram_id = ? "
+            "DELETE FROM style_examples WHERE telegram_id = ? AND kind = ? AND id NOT IN ("
+            "SELECT id FROM style_examples WHERE telegram_id = ? AND kind = ? "
             "ORDER BY id DESC LIMIT ?)",
-            (telegram_id, telegram_id, MAX_EXAMPLES_PER_USER),
+            (telegram_id, kind, telegram_id, kind, MAX_EXAMPLES_PER_USER),
         )
         connection.commit()
     finally:
@@ -38,7 +48,10 @@ def add_style_example(db_path: str, telegram_id: int, text: str) -> None:
 
 
 def get_style_examples(
-    db_path: str, telegram_id: int, limit: int = MAX_EXAMPLES_PER_USER
+    db_path: str,
+    telegram_id: int,
+    limit: int = MAX_EXAMPLES_PER_USER,
+    kind: str = KIND_WRITTEN,
 ) -> list[str]:
     # Most-recent-first (id DESC): the newest examples are the most likely
     # to still reflect the user's current voice, and this is also the order
@@ -46,25 +59,32 @@ def get_style_examples(
     connection = get_connection(db_path)
     try:
         rows = connection.execute(
-            "SELECT example_text FROM style_examples WHERE telegram_id = ? "
+            "SELECT example_text FROM style_examples WHERE telegram_id = ? AND kind = ? "
             "ORDER BY id DESC LIMIT ?",
-            (telegram_id, limit),
+            (telegram_id, kind, limit),
         ).fetchall()
         return [row[0] for row in rows]
     finally:
         connection.close()
 
 
-def clear_style_examples(db_path: str, telegram_id: int) -> None:
-    # Used by the authored-post flow's "загрузить новые образцы" branch:
-    # without a wipe, new examples would merge with the old ones under the
-    # same cap, and the user would get a voice blended from two eras of
-    # their writing instead of the one they just supplied.
+def clear_style_examples(
+    db_path: str, telegram_id: int, kind: str | None = None
+) -> None:
+    # kind=None стирает все виды — это поведение кнопки «удалить двойника».
+    # Ветка «загрузить новые образцы» в авторском посте зовёт с kind=KIND_WRITTEN,
+    # иначе пользователь получил бы голос, смешанный из двух эпох его текстов.
     connection = get_connection(db_path)
     try:
-        connection.execute(
-            "DELETE FROM style_examples WHERE telegram_id = ?", (telegram_id,)
-        )
+        if kind is None:
+            connection.execute(
+                "DELETE FROM style_examples WHERE telegram_id = ?", (telegram_id,)
+            )
+        else:
+            connection.execute(
+                "DELETE FROM style_examples WHERE telegram_id = ? AND kind = ?",
+                (telegram_id, kind),
+            )
         connection.commit()
     finally:
         connection.close()

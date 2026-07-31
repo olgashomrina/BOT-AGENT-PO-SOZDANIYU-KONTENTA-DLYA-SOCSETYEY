@@ -84,3 +84,58 @@ def test_clear_style_examples_is_safe_for_unknown_user(db_path):
     clear_style_examples(db_path, TELEGRAM_ID)
 
     assert get_style_examples(db_path, TELEGRAM_ID) == []
+
+
+from bot.storage.style_examples import KIND_SPOKEN, KIND_WRITTEN
+
+
+def test_spoken_examples_do_not_appear_among_written(db_path):
+    add_style_example(db_path, TELEGRAM_ID, "Письменный пост")
+    add_style_example(db_path, TELEGRAM_ID, "Расшифровка кружка", kind=KIND_SPOKEN)
+
+    assert get_style_examples(db_path, TELEGRAM_ID) == ["Письменный пост"]
+    assert get_style_examples(db_path, TELEGRAM_ID, kind=KIND_SPOKEN) == [
+        "Расшифровка кружка"
+    ]
+
+
+def test_spoken_examples_never_evict_written_ones(db_path):
+    # Регрессия: общий на пользователя лимит вытеснил бы все письменные
+    # образцы и сломал сценарий авторского поста, который требует их не менее 5.
+    for index in range(MAX_EXAMPLES_PER_USER):
+        add_style_example(db_path, TELEGRAM_ID, f"Пост {index}")
+    for index in range(MAX_EXAMPLES_PER_USER + 5):
+        add_style_example(db_path, TELEGRAM_ID, f"Кружок {index}", kind=KIND_SPOKEN)
+
+    written = get_style_examples(db_path, TELEGRAM_ID, limit=100)
+
+    assert len(written) == MAX_EXAMPLES_PER_USER
+
+
+def test_spoken_examples_are_evicted_within_their_own_kind(db_path):
+    for index in range(MAX_EXAMPLES_PER_USER + 3):
+        add_style_example(db_path, TELEGRAM_ID, f"Кружок {index}", kind=KIND_SPOKEN)
+
+    spoken = get_style_examples(db_path, TELEGRAM_ID, limit=100, kind=KIND_SPOKEN)
+
+    assert len(spoken) == MAX_EXAMPLES_PER_USER
+
+
+def test_clear_style_examples_can_target_a_single_kind(db_path):
+    add_style_example(db_path, TELEGRAM_ID, "Письменный пост")
+    add_style_example(db_path, TELEGRAM_ID, "Расшифровка кружка", kind=KIND_SPOKEN)
+
+    clear_style_examples(db_path, TELEGRAM_ID, kind=KIND_SPOKEN)
+
+    assert get_style_examples(db_path, TELEGRAM_ID) == ["Письменный пост"]
+    assert get_style_examples(db_path, TELEGRAM_ID, kind=KIND_SPOKEN) == []
+
+
+def test_clear_style_examples_without_kind_still_clears_everything(db_path):
+    add_style_example(db_path, TELEGRAM_ID, "Письменный пост")
+    add_style_example(db_path, TELEGRAM_ID, "Расшифровка кружка", kind=KIND_SPOKEN)
+
+    clear_style_examples(db_path, TELEGRAM_ID)
+
+    assert get_style_examples(db_path, TELEGRAM_ID) == []
+    assert get_style_examples(db_path, TELEGRAM_ID, kind=KIND_SPOKEN) == []
