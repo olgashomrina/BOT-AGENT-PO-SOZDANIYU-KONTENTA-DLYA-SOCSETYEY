@@ -15,9 +15,12 @@ from bot.handlers.content import _resolve_language
 from bot.keyboards.circle import (
     CALLBACK_ADD_DONORS,
     CALLBACK_CONSENT_ACCEPT,
+    CALLBACK_DELETE,
+    CALLBACK_DELETE_CONFIRM,
     CALLBACK_DONORS_DONE,
     CALLBACK_MY_DOUBLE,
     build_consent_keyboard,
+    build_delete_confirm_keyboard,
     build_donors_keyboard,
     build_my_double_keyboard,
 )
@@ -30,16 +33,30 @@ from bot.services.ffmpeg_tools import (
     extract_audio,
     probe_duration,
 )
-from bot.services.voice_gateway import PROVIDER_NAME, VoiceGatewayError, clone_voice
+from bot.services.voice_gateway import (
+    PROVIDER_NAME,
+    VoiceGatewayError,
+    clone_voice,
+    delete_voice,
+)
 from bot.storage.avatar_donors import (
     MIN_DONOR_COUNT,
     MIN_DONOR_SECONDS,
     add_donor,
+    clear_donors,
     count_donors,
     get_donors,
 )
-from bot.storage.style_examples import KIND_SPOKEN, add_style_example
-from bot.storage.voice_profiles import get_voice_profile, save_voice_profile
+from bot.storage.style_examples import (
+    KIND_SPOKEN,
+    add_style_example,
+    clear_style_examples,
+)
+from bot.storage.voice_profiles import (
+    delete_voice_profile,
+    get_voice_profile,
+    save_voice_profile,
+)
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -234,6 +251,48 @@ async def on_donors_done(
         get_string("double_ready", language, donors=len(donors)),
         reply_markup=build_my_double_keyboard(language),
     )
+    await callback.answer()
+
+
+@router.callback_query(F.data == CALLBACK_DELETE)
+async def on_delete_request(callback: CallbackQuery, db_path: str) -> None:
+    telegram_id = callback.from_user.id
+    language = _resolve_language(db_path, telegram_id, callback.from_user.language_code)
+
+    await callback.message.answer(
+        get_string("double_delete_confirm_text", language),
+        reply_markup=build_delete_confirm_keyboard(language),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == CALLBACK_DELETE_CONFIRM)
+async def on_delete_confirm(
+    callback: CallbackQuery, db_path: str, state: FSMContext
+) -> None:
+    telegram_id = callback.from_user.id
+    language = _resolve_language(db_path, telegram_id, callback.from_user.language_code)
+
+    profile = get_voice_profile(db_path, telegram_id)
+    if profile is not None:
+        try:
+            await delete_voice(profile.external_voice_id)
+        except VoiceGatewayError:
+            # Локальные данные стираем в любом случае: обещание «удалю всё»
+            # не должно зависеть от доступности чужого сервиса. Осиротевший
+            # голос у провайдера удаляется руками, это видно в логах.
+            logger.error(
+                "Provider voice deletion failed, wiping local data anyway",
+                extra={"user_id": telegram_id, "operation": "handler:circle"},
+                exc_info=True,
+            )
+
+    delete_voice_profile(db_path, telegram_id)
+    clear_donors(db_path, telegram_id)
+    clear_style_examples(db_path, telegram_id, kind=KIND_SPOKEN)
+    await state.set_state(None)
+
+    await callback.message.answer(get_string("double_deleted", language))
     await callback.answer()
 
 
