@@ -256,7 +256,19 @@ STRINGS = {
         "Đã nhận {count} trên {required} ✅ Vậy là đủ. Gửi thêm cho chính "
         "xác hơn, hoặc nhấn nút."
     ),
-    "authorpost_samples_done_button": "Xong, viết bài đi",
+    "authorpost_samples_done_button": "✒ Viết bài theo chủ đề đã chọn",
+    "style_read_summary": (
+        "Đã nắm được văn phong của bạn ✅\n\n"
+        "Bạn viết như thế nào:\n"
+        "{summary}\n\n"
+        "Tôi sẽ viết đúng như vậy."
+    ),
+    "style_button_own_topic": "✍ Bài viết theo chủ đề của tôi",
+    "style_button_fresh_digest": "📰 Bài viết từ bản tin mới",
+    "style_own_topic_prompt": (
+        "Hãy gửi một chủ đề hoặc một đoạn văn bản — tôi sẽ viết thành bài "
+        "theo văn phong của bạn. Bạn cũng có thể gửi liên kết hoặc tin nhắn thoại."
+    ),
     "authorpost_sample_too_long": (
         "Ví dụ này quá dài. Vui lòng gửi một ví dụ ngắn hơn (tối đa 2000 "
         "ký tự)."

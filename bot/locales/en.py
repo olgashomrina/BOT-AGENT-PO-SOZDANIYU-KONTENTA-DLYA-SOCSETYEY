@@ -253,7 +253,19 @@ STRINGS = {
         "Accepted {count} of {required} ✅ That's enough. Send more for "
         "accuracy, or tap the button."
     ),
-    "authorpost_samples_done_button": "Done, write the post",
+    "authorpost_samples_done_button": "✒ Write the post on the chosen topic",
+    "style_read_summary": (
+        "I've read your style ✅\n\n"
+        "How you write:\n"
+        "{summary}\n\n"
+        "I'll write the same way."
+    ),
+    "style_button_own_topic": "✍ Authored post on my own topic",
+    "style_button_fresh_digest": "📰 Post from a fresh digest",
+    "style_own_topic_prompt": (
+        "Send me a topic or a text — I'll turn it into a post in your voice. "
+        "A link or a voice message works too."
+    ),
     "authorpost_sample_too_long": (
         "This example is too long. Please send a shorter one (up to 2000 "
         "characters)."

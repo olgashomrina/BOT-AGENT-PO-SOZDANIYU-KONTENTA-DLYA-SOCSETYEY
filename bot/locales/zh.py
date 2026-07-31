@@ -195,7 +195,18 @@ STRINGS = {
         "已收到 {count} / {required} ✅ 示例已经足够。可以再发几篇提高准确度，"
         "或直接点击按钮。"
     ),
-    "authorpost_samples_done_button": "完成，开始写帖子",
+    "authorpost_samples_done_button": "✒ 按已选主题写帖子",
+    "style_read_summary": (
+        "已读懂你的风格 ✅\n\n"
+        "你的写作特点：\n"
+        "{summary}\n\n"
+        "我会照这个风格来写。"
+    ),
+    "style_button_own_topic": "✍ 按我自己的主题写帖子",
+    "style_button_fresh_digest": "📰 用最新摘要写帖子",
+    "style_own_topic_prompt": (
+        "发给我一个主题或一段文字，我会按你的风格写成帖子。也可以发链接或语音消息。"
+    ),
     "authorpost_sample_too_long": (
         "这个示例太长了。请发送短一些的示例（不超过 2000 个字符）。"
     ),
