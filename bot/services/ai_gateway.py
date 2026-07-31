@@ -45,6 +45,18 @@ class AIGatewayInvalidResponseError(AIGatewayError):
     pass
 
 
+class AIGatewayOutOfBudgetError(AIGatewayError):
+    """The proxy refused the call because the account balance is too low.
+
+    vsegpt.ru answers this with HTTP 400 and a message like "Potentially out
+    of budget: 32->700, expected price 0.05664, but you have only 0.017680 on
+    account" — confirmed against production on 2026-07-31. Without its own
+    class it lands in AIGatewayInvalidResponseError and the user is told the
+    AI answered incorrectly, which sent us hunting for a bug in the bot for a
+    day while the real cause was an empty account (see dengi.md).
+    """
+
+
 class TranscriptionError(AIGatewayError):
     pass
 
@@ -158,6 +170,29 @@ def _response_snippet(response: httpx.Response, limit: int = 300) -> str:
     return text or "<пустое тело ответа>"
 
 
+# Substrings that mark a 4xx as "your account is out of money" rather than
+# "your request was malformed". Matched case-insensitively against the
+# provider's error body. The first two are what vsegpt.ru actually sends
+# (confirmed live, 2026-07-31); the rest are cheap insurance against wording
+# changes and against a different proxy being configured.
+_OUT_OF_BUDGET_MARKERS = (
+    "out of budget",
+    "add some money",
+    "insufficient",
+    "недостаточно средств",
+    "пополните баланс",
+)
+
+
+def _is_out_of_budget(response: httpx.Response) -> bool:
+    try:
+        text = response.text
+    except Exception:
+        return False
+    lowered = text.lower()
+    return any(marker in lowered for marker in _OUT_OF_BUDGET_MARKERS)
+
+
 def _retry_after_seconds(response: httpx.Response) -> float:
     header = response.headers.get("Retry-After")
     if header is None:
@@ -245,6 +280,22 @@ async def _call_with_retries(
                 )
 
             if response.status_code >= 400:
+                # Checked before the generic 4xx branch: an empty balance is a
+                # money problem the owner can fix, not a malformed request, and
+                # the two need different messages to the user and different
+                # reactions from us.
+                if _is_out_of_budget(response):
+                    _fail(
+                        AIGatewayOutOfBudgetError(
+                            "На балансе AI-прокси не хватает средств: "
+                            f"{_response_snippet(response)}"
+                        ),
+                        operation=operation,
+                        provider=provider,
+                        model=model,
+                        duration_ms=duration_ms,
+                        retry_count=retry_count,
+                    )
                 _fail(
                     AIGatewayInvalidResponseError(
                         f"AI-прокси вернул ошибку {response.status_code}: {_response_snippet(response)}"
@@ -481,14 +532,16 @@ async def generate_image(prompt: str, model: str | None = None, size: str | None
 def _extract_balance(payload: Any) -> float | None:
     """Find the account balance anywhere in a `GET /balance` payload.
 
-    vsegpt.ru documents that the endpoint exists but not what it returns, and
-    the response could not be inspected against a live key while this was
-    written (the only key at hand was rejected). So instead of guessing one
-    exact shape, walk the JSON for the first numeric value under a
-    balance-ish key — that survives `{"balance": 12.3}`,
-    `{"data": {"credits": 12.3}}` and similar variants alike. Returns None
-    when nothing plausible is found, and the caller logs the raw body so the
-    real shape can be pinned down from production.
+    Confirmed against production on 2026-07-31, vsegpt.ru answers:
+
+        {"status": "ok", "data": {"credits": "0.017680",
+         "subscription_status": "ok", "subscription_end": "...", ...}}
+
+    — note the balance is nested and arrives as a *string*. The walk stays
+    tolerant rather than reading `data.credits` directly: the shape is
+    undocumented, so it can change without notice, and this also survives
+    `{"balance": 12.3}` and similar variants. Returns None when nothing
+    plausible is found, and the caller logs the raw body.
     """
     if isinstance(payload, dict):
         for key, value in payload.items():

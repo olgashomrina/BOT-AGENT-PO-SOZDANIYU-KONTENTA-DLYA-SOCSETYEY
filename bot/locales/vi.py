@@ -33,6 +33,11 @@ STRINGS = {
         "Không thể nhận dạng tin nhắn thoại. Vui lòng gửi lại hoặc nhập "
         "văn bản thay thế — cách đó cũng có tác dụng."
     ),
+    "error_out_of_budget": (
+        "Dịch vụ tạo nội dung tạm thời không khả dụng vì lý do kỹ thuật. "
+        "Chủ sở hữu đã được thông báo — việc này thường được xử lý trong "
+        "vài giờ. Vui lòng thử lại sau."
+    ),
     "error_voice_too_long": (
         "Tin nhắn thoại dài hơn {limit_minutes} phút — tôi không nhận dạng "
         "được. Vui lòng ghi ngắn hơn hoặc gửi văn bản."

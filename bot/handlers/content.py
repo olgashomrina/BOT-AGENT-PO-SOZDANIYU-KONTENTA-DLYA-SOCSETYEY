@@ -23,6 +23,7 @@ from bot.services import content_generator, cost_tracker, input_processor, outpu
 from bot.services.ai_gateway import (
     AIGatewayError,
     AIGatewayInvalidResponseError,
+    AIGatewayOutOfBudgetError,
     AIGatewayRateLimitError,
     AIGatewayTimeoutError,
     AIGatewayUnavailableError,
@@ -56,6 +57,7 @@ _AI_ERROR_KEYS: dict[type[AIGatewayError], str] = {
     AIGatewayRateLimitError: "error_rate_limit",
     AIGatewayUnavailableError: "error_ai_unavailable",
     AIGatewayInvalidResponseError: "error_invalid_ai_response",
+    AIGatewayOutOfBudgetError: "error_out_of_budget",
 }
 
 

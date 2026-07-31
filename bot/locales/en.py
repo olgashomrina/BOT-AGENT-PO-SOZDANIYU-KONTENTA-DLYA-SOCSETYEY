@@ -32,6 +32,11 @@ STRINGS = {
         "We couldn't recognize the voice message. Please try sending it "
         "again, or type the text instead — that works too."
     ),
+    "error_out_of_budget": (
+        "The generation service is temporarily unavailable for technical "
+        "reasons. The owner has already been notified — this is usually "
+        "resolved within a few hours. Please try again later."
+    ),
     "error_voice_too_long": (
         "That voice message is longer than {limit_minutes} min — I don't "
         "transcribe those. Please record a shorter one or send text instead."

@@ -19,6 +19,9 @@ STRINGS = {
     "error_transcription": (
         "无法识别语音消息。请重新发送，或直接输入文字——同样有效。"
     ),
+    "error_out_of_budget": (
+        "生成服务因技术原因暂时不可用。所有者已收到通知——通常会在几小时内解决。请稍后再试。"
+    ),
     "error_voice_too_long": (
         "这条语音超过 {limit_minutes} 分钟——我无法转写。请录制更短的语音，或直接发送文字。"
     ),

@@ -11,6 +11,7 @@ import respx
 from bot.services import ai_gateway
 from bot.services.ai_gateway import (
     AIGatewayInvalidResponseError,
+    AIGatewayOutOfBudgetError,
     AIGatewayRateLimitError,
     AIGatewayTimeoutError,
     AIGatewayUnavailableError,
@@ -118,6 +119,69 @@ async def test_generate_text_4xx_error_message_includes_response_body():
     assert "400" in str(exc_info.value)
     assert "You have no subscription" in str(exc_info.value)
     assert route.call_count == 1
+
+
+# The exact body vsegpt.ru returns on an empty balance, captured from
+# production on 2026-07-31.
+_OUT_OF_BUDGET_BODY = {
+    "error": {
+        "message": (
+            "Potentially out of budget: 32->700, expected price 0.05664, but "
+            "you have only 0.017680 on account. Please, add some money to "
+            "balance to proceed: https://vsegpt.ru/User/Money"
+        ),
+        "code": 400,
+    }
+}
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_generate_text_out_of_budget_raises_its_own_error():
+    route = respx.post(CHAT_URL).mock(
+        return_value=httpx.Response(400, json=_OUT_OF_BUDGET_BODY)
+    )
+
+    # Not AIGatewayInvalidResponseError: an empty balance is the owner's to
+    # fix and must not read to the user as "the AI answered incorrectly".
+    with pytest.raises(AIGatewayOutOfBudgetError) as exc_info:
+        await generate_text("write something")
+
+    assert "0.017680" in str(exc_info.value)
+    # Retrying a call the account cannot pay for only burns time — the answer
+    # will not change until money is added.
+    assert route.call_count == 1
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_transcribe_out_of_budget_raises_its_own_error():
+    respx.post(TRANSCRIBE_URL).mock(return_value=httpx.Response(400, json=_OUT_OF_BUDGET_BODY))
+
+    with pytest.raises(AIGatewayOutOfBudgetError):
+        await transcribe(b"audio-bytes")
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_generate_image_out_of_budget_raises_its_own_error():
+    respx.post(IMAGE_URL).mock(return_value=httpx.Response(400, json=_OUT_OF_BUDGET_BODY))
+
+    with pytest.raises(AIGatewayOutOfBudgetError):
+        await generate_image("a cat")
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_ordinary_4xx_is_still_an_invalid_response_error():
+    # Guards the marker matching: a plain bad request must not be reported as
+    # a money problem.
+    respx.post(CHAT_URL).mock(
+        return_value=httpx.Response(400, json={"error": {"message": "Unknown model"}})
+    )
+
+    with pytest.raises(AIGatewayInvalidResponseError):
+        await generate_text("write something")
 
 
 @respx.mock
@@ -499,6 +563,30 @@ async def test_get_balance_reads_a_flat_balance_field():
     respx.get(BALANCE_URL).mock(return_value=httpx.Response(200, json={"balance": 123.45}))
 
     assert await get_balance() == pytest.approx(123.45)
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_get_balance_reads_the_real_vsegpt_response():
+    # Captured from production on 2026-07-31 — the shape this actually has to
+    # work against: nested under "data", key named "credits", value a string.
+    respx.get(BALANCE_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "status": "ok",
+                "data": {
+                    "credits": "0.017680",
+                    "subscription_status": "ok",
+                    "subscription_end": "2026-08-22 07:34:58",
+                    "user_status": 2,
+                    "user_status_text": "Less than 10 credits on account. ",
+                },
+            },
+        )
+    )
+
+    assert await get_balance() == pytest.approx(0.01768)
 
 
 @respx.mock
