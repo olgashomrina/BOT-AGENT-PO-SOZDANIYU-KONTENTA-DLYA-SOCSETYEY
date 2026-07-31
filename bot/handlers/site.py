@@ -11,7 +11,7 @@ from aiogram.types import CallbackQuery, Message
 
 from bot.config import load_settings
 from bot.handlers.content import _finish, _resolve_language
-from bot.handlers.refine import _check_limit_or_reply, _check_whitelist_or_reply
+from bot.handlers.guards import check_limit_or_reply, check_whitelist_or_reply
 from bot.keyboards.site import PILOT_BLOCK, PILOT_PAGE, build_site_menu_keyboard
 from bot.locales.loader import get_string
 from bot.logging_config import LOGGER_NAME
@@ -42,9 +42,9 @@ async def on_site_pull(callback: CallbackQuery, state: FSMContext, db_path: str)
     telegram_id = callback.from_user.id
     language = _resolve_language(db_path, telegram_id, callback.from_user.language_code)
 
-    if not await _check_whitelist_or_reply(callback, db_path, language):
+    if not await check_whitelist_or_reply(callback, db_path, language):
         return
-    if not await _check_limit_or_reply(callback, db_path, language):
+    if not await check_limit_or_reply(callback, db_path, language):
         return
 
     _, _, page, block_id = callback.data.split(":")
@@ -71,7 +71,7 @@ async def on_site_push(callback: CallbackQuery, state: FSMContext, db_path: str,
         db_path, telegram_id, callback.from_user.language_code
     )
 
-    if not await _check_whitelist_or_reply(callback, db_path, language):
+    if not await check_whitelist_or_reply(callback, db_path, language):
         return
 
     variant_text = callback.message.text or ""

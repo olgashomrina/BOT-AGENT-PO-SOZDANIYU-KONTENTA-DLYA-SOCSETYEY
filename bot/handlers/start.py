@@ -12,7 +12,11 @@ from aiogram.types import BufferedInputFile, CallbackQuery, ForceReply, Message
 from bot.config import load_settings
 from bot.handlers.content import _AI_ERROR_KEYS, _resolve_language
 from bot.handlers.image_budget import ensure_image_budget
-from bot.handlers.refine import _check_limit_or_reply, _check_whitelist_or_reply, _safe_answer
+from bot.handlers.guards import (
+    check_limit_or_reply,
+    check_whitelist_or_reply,
+    safe_answer,
+)
 from bot.keyboards.refine import build_image_upgrade_keyboard
 from bot.keyboards.start import (
     CALLBACK_CAPABILITIES,
@@ -107,7 +111,7 @@ async def on_menu_capabilities(callback: CallbackQuery, db_path: str) -> None:
     telegram_id = callback.from_user.id
     language = _resolve_language(db_path, telegram_id, callback.from_user.language_code)
 
-    if not await _check_whitelist_or_reply(callback, db_path, language):
+    if not await check_whitelist_or_reply(callback, db_path, language):
         return
 
     await callback.message.answer(get_string("onboarding_capabilities", language))
@@ -119,7 +123,7 @@ async def on_menu_create_post(callback: CallbackQuery, db_path: str) -> None:
     telegram_id = callback.from_user.id
     language = _resolve_language(db_path, telegram_id, callback.from_user.language_code)
 
-    if not await _check_whitelist_or_reply(callback, db_path, language):
+    if not await check_whitelist_or_reply(callback, db_path, language):
         return
 
     settings = load_settings()
@@ -135,7 +139,7 @@ async def on_menu_news_digest(callback: CallbackQuery, state: FSMContext, db_pat
     telegram_id = callback.from_user.id
     language = _resolve_language(db_path, telegram_id, callback.from_user.language_code)
 
-    if not await _check_whitelist_or_reply(callback, db_path, language):
+    if not await check_whitelist_or_reply(callback, db_path, language):
         return
 
     topic = get_digest_topic(db_path, telegram_id)
@@ -144,10 +148,10 @@ async def on_menu_news_digest(callback: CallbackQuery, state: FSMContext, db_pat
             get_string("digest_prompt_no_topic", language),
             reply_markup=build_digest_topic_keyboard(language, has_saved_topic=False),
         )
-        await _safe_answer(callback)
+        await safe_answer(callback)
         return
 
-    if not await _check_limit_or_reply(callback, db_path, language):
+    if not await check_limit_or_reply(callback, db_path, language):
         return
 
     result = await digest.build_digest(topic)
@@ -171,7 +175,7 @@ async def on_menu_news_digest(callback: CallbackQuery, state: FSMContext, db_pat
         get_string("digest_change_topic_prompt", language),
         reply_markup=build_digest_topic_keyboard(language, has_saved_topic=True),
     )
-    await _safe_answer(callback)
+    await safe_answer(callback)
 
 
 @router.callback_query(F.data == CALLBACK_DIGEST_SET_TOPIC)
@@ -179,7 +183,7 @@ async def on_menu_digest_set_topic(callback: CallbackQuery, state: FSMContext, d
     telegram_id = callback.from_user.id
     language = _resolve_language(db_path, telegram_id, callback.from_user.language_code)
 
-    if not await _check_whitelist_or_reply(callback, db_path, language):
+    if not await check_whitelist_or_reply(callback, db_path, language):
         return
 
     await state.update_data(language=language)
@@ -190,7 +194,7 @@ async def on_menu_digest_set_topic(callback: CallbackQuery, state: FSMContext, d
             input_field_placeholder=get_string("digest_topic_input_placeholder", language)
         ),
     )
-    await _safe_answer(callback)
+    await safe_answer(callback)
 
 
 @router.message(DigestStates.waiting_for_topic)
@@ -238,7 +242,7 @@ async def on_menu_text_hint(callback: CallbackQuery, db_path: str) -> None:
     telegram_id = callback.from_user.id
     language = _resolve_language(db_path, telegram_id, callback.from_user.language_code)
 
-    if not await _check_whitelist_or_reply(callback, db_path, language):
+    if not await check_whitelist_or_reply(callback, db_path, language):
         return
 
     await callback.message.answer(get_string("menu_text_generation_hint", language))
@@ -250,7 +254,7 @@ async def on_menu_photo_gen(callback: CallbackQuery, state: FSMContext, db_path:
     telegram_id = callback.from_user.id
     language = _resolve_language(db_path, telegram_id, callback.from_user.language_code)
 
-    if not await _check_whitelist_or_reply(callback, db_path, language):
+    if not await check_whitelist_or_reply(callback, db_path, language):
         return
 
     await state.update_data(language=language)

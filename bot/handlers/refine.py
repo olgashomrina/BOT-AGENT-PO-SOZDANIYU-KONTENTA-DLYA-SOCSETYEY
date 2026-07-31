@@ -3,12 +3,17 @@ from __future__ import annotations
 import logging
 
 from aiogram import Bot, F, Router
-from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
+from aiogram.exceptions import TelegramAPIError
 from aiogram.fsm.context import FSMContext
 from aiogram.types import BufferedInputFile, CallbackQuery
 
 from bot.config import load_settings
 from bot.handlers.content import _AI_ERROR_KEYS, _resolve_language
+from bot.handlers.guards import (
+    check_limit_or_reply,
+    check_whitelist_or_reply,
+    safe_answer,
+)
 from bot.handlers.image_budget import ensure_image_budget
 from bot.keyboards.refine import (
     CALLBACK_IMAGE_UPGRADE,
@@ -30,16 +35,10 @@ from bot.services.ai_gateway import AIGatewayError
 from bot.services.content_generator import SHORTEN_INSTRUCTION
 from bot.storage.costs import record_cost
 from bot.storage.image_prompts import claim_image_prompt, save_image_prompt
-from bot.storage.limits import (
-    LimitStatus,
-    check_limit_status,
-    increment_image_usage,
-    increment_usage,
-)
+from bot.storage.limits import increment_image_usage, increment_usage
 from bot.storage.refine_context import get_refine_context, save_refine_context
 from bot.storage.style_examples import get_style_examples
 from bot.storage.users import clear_pending_media, get_channel_id, get_pending_media, set_pending_media
-from bot.storage.whitelist import is_whitelisted
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -58,56 +57,6 @@ def _truncate_caption(text: str) -> str:
     return text[: _TELEGRAM_CAPTION_LIMIT - 1] + "…"
 
 
-async def _safe_answer(callback: CallbackQuery) -> None:
-    # Telegram invalidates a callback query once too much time passes before
-    # it's acknowledged — observed in production after a slow/retried AI
-    # Gateway call ("query is too old and response timeout expired"). By the
-    # time we get here the substantive reply has already been sent via
-    # callback.message.answer()/send_photo, so answering the callback itself
-    # only stops the button's loading spinner — safe to ignore if it fails.
-    try:
-        await callback.answer()
-    except TelegramBadRequest as exc:
-        logger.warning("Callback query answer failed (likely stale)", extra={"error_message": str(exc)})
-
-
-async def _check_whitelist_or_reply(callback: CallbackQuery, db_path: str, language: str) -> bool:
-    # WHY this check exists here at all: WhitelistMiddleware (bot/middlewares/
-    # whitelist_middleware.py) is registered only on dispatcher.message.outer_
-    # middleware (see bot/main.py) — it never runs for callback_query events.
-    telegram_id = callback.from_user.id
-    if is_whitelisted(db_path, telegram_id):
-        return True
-
-    await callback.message.answer(get_string("error_not_whitelisted", language))
-    await _safe_answer(callback)
-    return False
-
-
-async def _check_limit_or_reply(callback: CallbackQuery, db_path: str, language: str) -> bool:
-    # WHY this check exists here at all: RateLimitMiddleware (bot/middlewares/
-    # rate_limit_middleware.py) is registered only on dispatcher.message.outer_
-    # middleware (see bot/main.py) — it never runs for callback_query events.
-    # Without an explicit check in every refine handler, "Ещё вариант"/
-    # "Короче" clicks would call the AI Gateway for free, unlimited, bypassing
-    # the daily/monthly quota entirely. This mirrors the middleware's own
-    # check + reply + (on success) increment logic.
-    settings = load_settings()
-    telegram_id = callback.from_user.id
-    status = check_limit_status(db_path, telegram_id, settings.daily_limit, settings.monthly_limit)
-    if status is LimitStatus.OK:
-        return True
-
-    message_key = (
-        "error_daily_limit_exceeded"
-        if status is LimitStatus.DAILY_EXCEEDED
-        else "error_monthly_limit_exceeded"
-    )
-    await callback.message.answer(get_string(message_key, language))
-    await _safe_answer(callback)
-    return False
-
-
 async def _generate_and_send(
     callback: CallbackQuery,
     state: FSMContext,
@@ -121,10 +70,10 @@ async def _generate_and_send(
         db_path, telegram_id, callback.from_user.language_code
     )
 
-    if not await _check_whitelist_or_reply(callback, db_path, language):
+    if not await check_whitelist_or_reply(callback, db_path, language):
         return
 
-    if not await _check_limit_or_reply(callback, db_path, language):
+    if not await check_limit_or_reply(callback, db_path, language):
         return
 
     # WHY the context is keyed on this message rather than read from FSM: FSM
@@ -135,7 +84,7 @@ async def _generate_and_send(
     context = get_refine_context(db_path, callback.message.chat.id, callback.message.message_id)
     if context is None:
         await callback.message.answer(get_string("error_refine_missing_context", language))
-        await _safe_answer(callback)
+        await safe_answer(callback)
         return
 
     source_text = context["source_text"]
@@ -160,7 +109,7 @@ async def _generate_and_send(
             extra={"user_id": telegram_id, "operation": "refine_generate", "error_class": type(exc).__name__},
         )
         await callback.message.answer(get_string(error_key, language))
-        await _safe_answer(callback)
+        await safe_answer(callback)
         return
 
     increment_usage(db_path, telegram_id)
@@ -180,7 +129,7 @@ async def _generate_and_send(
         with_hashtags,
         platform,
     )
-    await _safe_answer(callback)
+    await safe_answer(callback)
 
 
 @router.callback_query(F.data.startswith("refine:more:"))
@@ -203,13 +152,13 @@ async def on_refine_publish(callback: CallbackQuery, state: FSMContext, db_path:
         db_path, telegram_id, callback.from_user.language_code
     )
 
-    if not await _check_whitelist_or_reply(callback, db_path, language):
+    if not await check_whitelist_or_reply(callback, db_path, language):
         return
 
     channel_id = get_channel_id(db_path, telegram_id)
     if channel_id is None:
         await callback.message.answer(get_string("publish_no_channel_configured", language))
-        await _safe_answer(callback)
+        await safe_answer(callback)
         return
 
     # WHY read the text off callback.message rather than re-deriving it from
@@ -246,7 +195,7 @@ async def on_refine_publish(callback: CallbackQuery, state: FSMContext, db_path:
             extra={"user_id": telegram_id, "operation": "publish_to_channel"},
         )
         await callback.message.answer(get_string("publish_failed", language))
-        await _safe_answer(callback)
+        await safe_answer(callback)
         return
 
     if pending_media is not None:
@@ -257,7 +206,7 @@ async def on_refine_publish(callback: CallbackQuery, state: FSMContext, db_path:
         clear_pending_media(db_path, telegram_id)
 
     await callback.message.answer(get_string("publish_success", language))
-    await _safe_answer(callback)
+    await safe_answer(callback)
 
 
 def _render_package(package: platform_package.PlatformPackage, language: str) -> str:
@@ -295,7 +244,7 @@ async def on_refine_package(callback: CallbackQuery, state: FSMContext, db_path:
 
     Никакой доставки: бот не публикует, не хранит токены площадок и не ходит
     к их API — обоснование в docstring bot/services/platform_package.py и в
-    socseti.md. Поэтому здесь нет ни _check_limit_or_reply (платного вызова
+    socseti.md. Поэтому здесь нет ни check_limit_or_reply (платного вызова
     не происходит), ни обращения к bot: всё уходит ответом в личку.
     """
     telegram_id = callback.from_user.id
@@ -304,7 +253,7 @@ async def on_refine_package(callback: CallbackQuery, state: FSMContext, db_path:
         db_path, telegram_id, callback.from_user.language_code
     )
 
-    if not await _check_whitelist_or_reply(callback, db_path, language):
+    if not await check_whitelist_or_reply(callback, db_path, language):
         return
 
     # Тот же приём, что и в on_refine_publish выше: кнопка висит под одним
@@ -319,7 +268,7 @@ async def on_refine_package(callback: CallbackQuery, state: FSMContext, db_path:
             parse_mode=output_formatter.PARSE_MODE,
         )
 
-    await _safe_answer(callback)
+    await safe_answer(callback)
 
 
 @router.callback_query(F.data.startswith("refine:image:"))
@@ -330,14 +279,14 @@ async def on_refine_image(callback: CallbackQuery, state: FSMContext, db_path: s
         db_path, telegram_id, callback.from_user.language_code
     )
 
-    if not await _check_whitelist_or_reply(callback, db_path, language):
+    if not await check_whitelist_or_reply(callback, db_path, language):
         return
 
-    if not await _check_limit_or_reply(callback, db_path, language):
+    if not await check_limit_or_reply(callback, db_path, language):
         return
 
     if not await ensure_image_budget(callback.message.answer, db_path, telegram_id, language):
-        await _safe_answer(callback)
+        await safe_answer(callback)
         return
 
     # WHY read the text off callback.message rather than FSM data: same
@@ -356,7 +305,7 @@ async def on_refine_image(callback: CallbackQuery, state: FSMContext, db_path: s
             extra={"user_id": telegram_id, "operation": "generate_image", "error_class": type(exc).__name__},
         )
         await callback.message.answer(get_string(error_key, language))
-        await _safe_answer(callback)
+        await safe_answer(callback)
         return
 
     try:
@@ -372,7 +321,7 @@ async def on_refine_image(callback: CallbackQuery, state: FSMContext, db_path: s
             extra={"user_id": telegram_id, "operation": "generate_image"},
         )
         await callback.message.answer(get_string("image_delivery_failed", language))
-        await _safe_answer(callback)
+        await safe_answer(callback)
         return
 
     increment_usage(db_path, telegram_id)
@@ -400,7 +349,7 @@ async def on_refine_image(callback: CallbackQuery, state: FSMContext, db_path: s
     save_image_prompt(db_path, callback.message.chat.id, sent_message.message_id, image_prompt)
 
     await callback.message.answer(get_string("image_attached_confirmation", language))
-    await _safe_answer(callback)
+    await safe_answer(callback)
 
 
 @router.callback_query(F.data == CALLBACK_IMAGE_UPGRADE)
@@ -411,23 +360,23 @@ async def on_image_upgrade(callback: CallbackQuery, state: FSMContext, db_path: 
         db_path, telegram_id, callback.from_user.language_code
     )
 
-    if not await _check_whitelist_or_reply(callback, db_path, language):
+    if not await check_whitelist_or_reply(callback, db_path, language):
         return
 
-    if not await _check_limit_or_reply(callback, db_path, language):
+    if not await check_limit_or_reply(callback, db_path, language):
         return
 
     # Checked before claim_image_prompt: claiming deletes the stored prompt,
     # and a refusal must leave this photo upgradeable tomorrow rather than
     # silently consuming its one-shot prompt.
     if not await ensure_image_budget(callback.message.answer, db_path, telegram_id, language):
-        await _safe_answer(callback)
+        await safe_answer(callback)
         return
 
     image_prompt = claim_image_prompt(db_path, callback.message.chat.id, callback.message.message_id)
     if not image_prompt:
         await callback.message.answer(get_string("error_refine_missing_context", language))
-        await _safe_answer(callback)
+        await safe_answer(callback)
         return
 
     # WHY disable the button before calling the (slow, billed) AI Gateway
@@ -464,7 +413,7 @@ async def on_image_upgrade(callback: CallbackQuery, state: FSMContext, db_path: 
         await callback.message.answer(get_string(error_key, language))
         save_image_prompt(db_path, callback.message.chat.id, callback.message.message_id, image_prompt)
         await _restore_upgrade_button(callback, language)
-        await _safe_answer(callback)
+        await safe_answer(callback)
         return
 
     try:
@@ -481,7 +430,7 @@ async def on_image_upgrade(callback: CallbackQuery, state: FSMContext, db_path: 
         await callback.message.answer(get_string("image_delivery_failed", language))
         save_image_prompt(db_path, callback.message.chat.id, callback.message.message_id, image_prompt)
         await _restore_upgrade_button(callback, language)
-        await _safe_answer(callback)
+        await safe_answer(callback)
         return
 
     increment_usage(db_path, telegram_id)
@@ -498,7 +447,7 @@ async def on_image_upgrade(callback: CallbackQuery, state: FSMContext, db_path: 
     file_id = sent_message.photo[-1].file_id
     set_pending_media(db_path, telegram_id, file_id, "photo")
 
-    await _safe_answer(callback)
+    await safe_answer(callback)
 
 
 async def _restore_upgrade_button(callback: CallbackQuery, language: str) -> None:
@@ -521,4 +470,4 @@ async def on_image_upgrade_done(callback: CallbackQuery) -> None:
     # The "✅ Готово" button left behind after a successful upgrade is
     # inert by design (see design doc) — this only stops the client-side
     # loading spinner if someone taps it anyway.
-    await _safe_answer(callback)
+    await safe_answer(callback)

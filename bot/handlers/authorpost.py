@@ -9,10 +9,10 @@ from aiogram.types import CallbackQuery, Message
 
 from bot.config import load_settings
 from bot.handlers.content import _AI_ERROR_KEYS, _resolve_language, send_variants
-from bot.handlers.refine import (
-    _check_limit_or_reply,
-    _check_whitelist_or_reply,
-    _safe_answer,
+from bot.handlers.guards import (
+    check_limit_or_reply,
+    check_whitelist_or_reply,
+    safe_answer,
 )
 from bot.handlers.settov import MAX_EXAMPLE_LENGTH
 from bot.keyboards.authorpost import (
@@ -67,7 +67,7 @@ async def _report_expired_digest(callback: CallbackQuery, language: str) -> None
     # bot/main.py), but also when a button from a previous digest is tapped
     # after a newer, shorter digest replaced the list.
     await callback.message.answer(get_string("authorpost_digest_expired", language))
-    await _safe_answer(callback)
+    await safe_answer(callback)
 
 
 @router.callback_query(F.data == CALLBACK_START)
@@ -75,7 +75,7 @@ async def on_authorpost_start(callback: CallbackQuery, state: FSMContext, db_pat
     telegram_id = callback.from_user.id
     language = _resolve_language(db_path, telegram_id, callback.from_user.language_code)
 
-    if not await _check_whitelist_or_reply(callback, db_path, language):
+    if not await check_whitelist_or_reply(callback, db_path, language):
         return
 
     data = await state.get_data()
@@ -91,7 +91,7 @@ async def on_authorpost_start(callback: CallbackQuery, state: FSMContext, db_pat
         get_string("authorpost_choose_item", language),
         reply_markup=build_item_choice_keyboard(len(items), generation),
     )
-    await _safe_answer(callback)
+    await safe_answer(callback)
 
 
 @router.callback_query(F.data.startswith(f"{CALLBACK_ITEM_PREFIX}:"))
@@ -99,7 +99,7 @@ async def on_authorpost_item(callback: CallbackQuery, state: FSMContext, db_path
     telegram_id = callback.from_user.id
     language = _resolve_language(db_path, telegram_id, callback.from_user.language_code)
 
-    if not await _check_whitelist_or_reply(callback, db_path, language):
+    if not await check_whitelist_or_reply(callback, db_path, language):
         return
 
     data = await state.get_data()
@@ -109,7 +109,7 @@ async def on_authorpost_item(callback: CallbackQuery, state: FSMContext, db_path
     # matching the startswith filter above, not just the generation:index
     # pairs this bot's own keyboard emitted. So both numbers are parsed
     # defensively and checked here, rather than trusted to match the keyboard
-    # the bot sent — a non-integer would otherwise raise past _safe_answer and
+    # the bot sent — a non-integer would otherwise raise past safe_answer and
     # leave the button's spinner hanging, and a negative index would otherwise
     # silently select the last item via Python's negative indexing instead of
     # the one the user actually asked for.
@@ -145,7 +145,7 @@ async def on_authorpost_item(callback: CallbackQuery, state: FSMContext, db_path
         get_string("authorpost_item_chosen", language, item=item),
         reply_markup=build_next_step_keyboard(language),
     )
-    await _safe_answer(callback)
+    await safe_answer(callback)
 
 
 async def _ask_for_samples(callback: CallbackQuery, state: FSMContext, language: str) -> None:
@@ -153,7 +153,7 @@ async def _ask_for_samples(callback: CallbackQuery, state: FSMContext, language:
     await callback.message.answer(
         get_string("authorpost_samples_prompt", language, required=REQUIRED_EXAMPLES)
     )
-    await _safe_answer(callback)
+    await safe_answer(callback)
 
 
 async def _ask_for_platform(callback: CallbackQuery, language: str) -> None:
@@ -161,7 +161,7 @@ async def _ask_for_platform(callback: CallbackQuery, language: str) -> None:
         get_string("authorpost_choose_platform", language),
         reply_markup=build_platform_keyboard(language),
     )
-    await _safe_answer(callback)
+    await safe_answer(callback)
 
 
 def _stored_example_count(db_path: str, telegram_id: int) -> int:
@@ -173,7 +173,7 @@ async def on_authorpost_next(callback: CallbackQuery, state: FSMContext, db_path
     telegram_id = callback.from_user.id
     language = _resolve_language(db_path, telegram_id, callback.from_user.language_code)
 
-    if not await _check_whitelist_or_reply(callback, db_path, language):
+    if not await check_whitelist_or_reply(callback, db_path, language):
         return
 
     count = _stored_example_count(db_path, telegram_id)
@@ -182,7 +182,7 @@ async def on_authorpost_next(callback: CallbackQuery, state: FSMContext, db_path
             get_string("authorpost_saved_examples_intro", language, count=count),
             reply_markup=build_saved_examples_keyboard(language),
         )
-        await _safe_answer(callback)
+        await safe_answer(callback)
         return
 
     await _ask_for_samples(callback, state, language)
@@ -193,7 +193,7 @@ async def on_authorpost_use_saved(callback: CallbackQuery, db_path: str) -> None
     telegram_id = callback.from_user.id
     language = _resolve_language(db_path, telegram_id, callback.from_user.language_code)
 
-    if not await _check_whitelist_or_reply(callback, db_path, language):
+    if not await check_whitelist_or_reply(callback, db_path, language):
         return
 
     await _ask_for_platform(callback, language)
@@ -206,7 +206,7 @@ async def on_authorpost_new_samples(
     telegram_id = callback.from_user.id
     language = _resolve_language(db_path, telegram_id, callback.from_user.language_code)
 
-    if not await _check_whitelist_or_reply(callback, db_path, language):
+    if not await check_whitelist_or_reply(callback, db_path, language):
         return
 
     # Wipe rather than append: leaving the old examples in would blend two
@@ -257,7 +257,7 @@ async def on_authorpost_samples_done(
     telegram_id = callback.from_user.id
     language = _resolve_language(db_path, telegram_id, callback.from_user.language_code)
 
-    if not await _check_whitelist_or_reply(callback, db_path, language):
+    if not await check_whitelist_or_reply(callback, db_path, language):
         return
 
     # Back to None before anything else: while a state is set, route_content
@@ -284,7 +284,7 @@ async def on_authorpost_platform(
         db_path, telegram_id, callback.from_user.language_code
     )
 
-    if not await _check_whitelist_or_reply(callback, db_path, language):
+    if not await check_whitelist_or_reply(callback, db_path, language):
         return
 
     source_text = data.get("source_text")
@@ -292,13 +292,13 @@ async def on_authorpost_platform(
         await _report_expired_digest(callback, language)
         return
 
-    if not await _check_limit_or_reply(callback, db_path, language):
+    if not await check_limit_or_reply(callback, db_path, language):
         return
 
     # callback.data is client-supplied, same reasoning as on_authorpost_item:
     # a modified client can send a suffix outside {"telegram", "vk", "both"},
     # the only values this bot's own keyboard emits. A raw dict lookup would
-    # raise KeyError past _safe_answer and leave the button's spinner
+    # raise KeyError past safe_answer and leave the button's spinner
     # hanging, so an unrecognised suffix is treated the same as a stale
     # digest reference rather than trusted to match the keyboard sent.
     try:
@@ -347,7 +347,7 @@ async def on_authorpost_platform(
                 },
             )
             await callback.message.answer(get_string(error_key, language))
-            await _safe_answer(callback)
+            await safe_answer(callback)
             return
         generated.append((platform, variants))
 
@@ -373,4 +373,4 @@ async def on_authorpost_platform(
             True,
         )
 
-    await _safe_answer(callback)
+    await safe_answer(callback)

@@ -262,7 +262,7 @@ async def test_menu_news_digest_blocked_when_not_whitelisted(db_path):
 
 @pytest.mark.asyncio
 async def test_menu_news_digest_builds_digest_immediately_when_topic_saved(db_path, monkeypatch):
-    # _check_limit_or_reply (bot/handlers/refine.py) calls load_settings()
+    # check_limit_or_reply (bot/handlers/guards.py) calls load_settings()
     # internally, same as test_menu_create_post_shows_submenu_keyboard above —
     # required env vars must be set or ConfigError raises before the handler
     # body even runs.
@@ -607,7 +607,7 @@ from bot.storage.users import set_digest_topic
 from bot.storage.whitelist import add_user
 
 
-# on_menu_news_digest goes through _check_limit_or_reply, which calls
+# on_menu_news_digest goes through check_limit_or_reply (bot/handlers/guards.py), which calls
 # load_settings() — without these the whole test errors on missing env.
 @pytest.fixture
 def _settings_env(monkeypatch):

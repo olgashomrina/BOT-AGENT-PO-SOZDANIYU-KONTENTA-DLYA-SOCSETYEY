@@ -557,7 +557,7 @@ async def test_platform_choice_forged_callback_data_reports_expired(db_path, mon
     # callback.data is client-supplied, same as in on_authorpost_item: a
     # modified client can send a suffix that isn't one of this bot's own
     # keyboard's "telegram"/"vk"/"both" values. A raw dict lookup would raise
-    # KeyError before _safe_answer runs, leaving the button's spinner hanging.
+    # KeyError before safe_answer runs, leaving the button's spinner hanging.
     state = _make_state()
     await _seed_ready_session(state, db_path)
     mock_generate = AsyncMock(return_value=["Вариант"])
