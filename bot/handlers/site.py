@@ -16,7 +16,6 @@ from bot.keyboards.site import PILOT_BLOCK, PILOT_PAGE, build_site_menu_keyboard
 from bot.locales.loader import get_string
 from bot.logging_config import LOGGER_NAME
 from bot.services.media_cache import cache_photo
-from bot.storage.limits import increment_usage
 from bot.storage.site_content import get_site_content, upsert_site_content
 from bot.storage.users import get_pending_media, set_pending_media
 
@@ -58,8 +57,11 @@ async def on_site_pull(callback: CallbackQuery, state: FSMContext, db_path: str)
     if content.photo_file_id:
         set_pending_media(db_path, telegram_id, content.photo_file_id, "photo")
 
-    increment_usage(db_path, telegram_id)
-    await _finish(callback.message, language, content.text, state, telegram_id, db_path)
+    # Billed by _finish rather than here, so that a generation that fails
+    # inside it costs the user nothing — same rule as every other paid path.
+    await _finish(
+        callback.message, language, content.text, state, telegram_id, db_path, bill=True
+    )
     await callback.answer()
 
 

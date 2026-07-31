@@ -131,7 +131,7 @@ def test_dispatcher_includes_costs_router():
     from bot.handlers.costs import router as costs_router
     from bot.main import build_dispatcher
 
-    dispatcher = build_dispatcher(daily_limit=10, monthly_limit=100)
+    dispatcher = build_dispatcher()
 
     assert costs_router in dispatcher.sub_routers
 
@@ -140,6 +140,6 @@ def test_dispatcher_includes_authorpost_router():
     from bot.handlers.authorpost import router as authorpost_router
     from bot.main import build_dispatcher
 
-    dispatcher = build_dispatcher(daily_limit=10, monthly_limit=100)
+    dispatcher = build_dispatcher()
 
     assert authorpost_router in dispatcher.sub_routers

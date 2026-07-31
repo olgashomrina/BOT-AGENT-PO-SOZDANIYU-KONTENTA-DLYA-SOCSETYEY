@@ -20,7 +20,6 @@ from bot.handlers.site import router as site_router
 from bot.handlers.start import router as start_router
 from bot.locales.loader import SUPPORTED_LANGUAGES, get_string
 from bot.logging_config import setup_logging
-from bot.middlewares.rate_limit_middleware import RateLimitMiddleware
 from bot.middlewares.whitelist_middleware import WhitelistMiddleware
 from bot.services.balance_watcher import build_balance_scheduler
 from bot.services.digest_scheduler import build_digest_scheduler
@@ -36,12 +35,15 @@ _OWNER_CRASH_NOTICE = (
 )
 
 
-def build_dispatcher(daily_limit: int, monthly_limit: int) -> Dispatcher:
+def build_dispatcher() -> Dispatcher:
     dispatcher = Dispatcher()
-    # Whitelist gating must run before the rate-limit middleware consumes a
-    # usage slot, otherwise uninvited users could exhaust other users' quota.
+    # Whitelist gating stays at the message level: an uninvited user must not
+    # reach a handler at all. Quota deliberately is NOT charged here — a
+    # middleware sees every message, including the ones that make no AI call
+    # (style samples, commands, transcript edits), and charging those is what
+    # made five style samples exhaust a day's quota. It is checked and charged
+    # at each paid call instead, via bot/handlers/guards.py.
     dispatcher.message.outer_middleware(WhitelistMiddleware())
-    dispatcher.message.outer_middleware(RateLimitMiddleware(daily_limit, monthly_limit))
     dispatcher.include_router(start_router)
     dispatcher.include_router(language_router)
     dispatcher.include_router(channel_router)
@@ -84,7 +86,7 @@ async def run() -> None:
 
     bot = Bot(token=settings.bot_token)
     await _configure_start_menu_button(bot)
-    dispatcher = build_dispatcher(settings.daily_limit, settings.monthly_limit)
+    dispatcher = build_dispatcher()
 
     digest_scheduler = build_digest_scheduler(bot, settings.db_path, settings.digest_send_hour)
     digest_scheduler.start()

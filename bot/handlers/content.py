@@ -31,6 +31,8 @@ from bot.services.ai_gateway import (
 )
 from bot.services.input_processor import LinkExtractionError
 from bot.storage.costs import record_cost
+from bot.handlers.guards import check_message_limit_or_reply
+from bot.storage.limits import increment_usage
 from bot.storage.refine_context import save_refine_context
 from bot.storage.style_examples import get_style_examples
 from bot.storage.users import (
@@ -132,10 +134,18 @@ async def route_content(message: Message, db_path: str, bot: Bot, state: FSMCont
         await _handle_media_attachment(message, db_path, telegram_id, language)
         return
 
+    # Quota is checked once here, for every branch below: text and link both
+    # end in a generation, voice ends in a paid transcription. Everything
+    # that returned above this line stays free, and so does every
+    # state-filtered handler that never reaches route_content at all —
+    # style samples among them, which is the bug this placement fixes.
+    if not await check_message_limit_or_reply(message, db_path, language):
+        return
+
     input_type = detect_input_type(message)
 
     if input_type == "text":
-        await _finish(message, language, message.text, state, telegram_id, db_path)
+        await _finish(message, language, message.text, state, telegram_id, db_path, bill=True)
         return
 
     if input_type == "link":
@@ -159,7 +169,7 @@ async def _handle_link(
         await message.answer(get_string("error_link_extraction", language))
         return
 
-    await _finish(message, language, extracted_text, state, telegram_id, db_path)
+    await _finish(message, language, extracted_text, state, telegram_id, db_path, bill=True)
 
 
 async def _reject_overlong_voice(message: Message, language: str) -> bool:
@@ -231,6 +241,8 @@ async def _handle_voice(
         ),
     )
 
+    increment_usage(db_path, message.from_user.id)
+
     await _show_transcript_confirmation(message, language, transcript, state)
 
 
@@ -252,7 +264,15 @@ async def on_transcript_confirm(callback: CallbackQuery, state: FSMContext, db_p
     language = data.get("language", DEFAULT_LANGUAGE)
 
     logger.info("Voice transcript confirmed", extra={"user_id": callback.from_user.id, "operation": "handler:content"})
-    await _finish(callback.message, language, transcript, state, callback.from_user.id, db_path)
+    await _finish(
+        callback.message,
+        language,
+        transcript,
+        state,
+        callback.from_user.id,
+        db_path,
+        bill=False,
+    )
     await callback.answer()
 
 
@@ -315,7 +335,13 @@ async def send_variants(
 
 
 async def _finish(
-    message: Message, language: str, text: str, state: FSMContext, telegram_id: int, db_path: str
+    message: Message,
+    language: str,
+    text: str,
+    state: FSMContext,
+    telegram_id: int,
+    db_path: str,
+    bill: bool,
 ) -> None:
     content_language = get_content_language(db_path, telegram_id) or language
     # Keep FSM state itself at None (route_content's StateFilter(None) needs
@@ -371,6 +397,14 @@ async def _finish(
         )
         await message.answer(get_string(error_key, language))
         return
+
+    # Charged after the calls succeeded, like bot/handlers/refine.py: a
+    # failed generation costs the user nothing. `bill` is False on the
+    # voice path — _handle_voice already charged for that request when it
+    # paid for the transcription, and charging again here would make a
+    # voice post cost twice what the same post costs as text.
+    if bill:
+        increment_usage(db_path, telegram_id)
 
     await send_variants(
         message,

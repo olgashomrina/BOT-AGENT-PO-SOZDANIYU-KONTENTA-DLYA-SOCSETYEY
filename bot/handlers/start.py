@@ -14,6 +14,7 @@ from bot.handlers.content import _AI_ERROR_KEYS, _resolve_language
 from bot.handlers.image_budget import ensure_image_budget
 from bot.handlers.guards import (
     check_limit_or_reply,
+    check_message_limit_or_reply,
     check_whitelist_or_reply,
     safe_answer,
 )
@@ -215,11 +216,15 @@ async def on_digest_topic_input(message: Message, state: FSMContext, db_path: st
         )
         return
 
+    if not await check_message_limit_or_reply(message, db_path, language):
+        return
+
     set_digest_topic(db_path, telegram_id, topic)
     await state.set_state(None)
     await message.answer(get_string("digest_topic_saved", language, topic=topic))
 
     result = await digest.build_digest(topic)
+    increment_usage(db_path, telegram_id)
     # Same generation bump as on_menu_news_digest above: this is the other
     # path that can deliver a digest, and skipping it here would leave the
     # most common route through the feature (change topic -> get a fresh
@@ -278,6 +283,9 @@ async def on_photo_gen_description(
         await message.answer(get_string("photo_gen_prompt", language))
         return
 
+    if not await check_message_limit_or_reply(message, db_path, language):
+        return
+
     if not await ensure_image_budget(message.answer, db_path, telegram_id, language):
         return
 
@@ -308,6 +316,7 @@ async def on_photo_gen_description(
         await message.answer(get_string("image_delivery_failed", language))
         return
 
+    increment_usage(db_path, telegram_id)
     increment_image_usage(db_path, telegram_id)
     image_model = load_settings().ai_gateway_image_model
     record_cost(
