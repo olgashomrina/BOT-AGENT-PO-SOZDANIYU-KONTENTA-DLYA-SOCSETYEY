@@ -56,16 +56,31 @@ _TONE_INSTRUCTION = (
 # directly into the prompt rather than fed through any separate linguistic
 # analysis (sentence length, emoji frequency, etc.) — that stays explicitly
 # out of scope for this slice per Plan.md/speca.md §8.
-def _build_style_section(style_examples: list[str] | None) -> str:
-    if not style_examples:
+def _build_style_section(
+    style_examples: list[str] | None, style_profile: str | None = None
+) -> str:
+    if not style_examples and not style_profile:
         return ""
-    quoted = "\n".join(f"- {example}" for example in style_examples)
-    return (
-        "Match the writing voice and style of the examples below — the same "
-        "tone, phrasing habits and rhythm — while writing about the new "
-        "source material, not about the examples themselves:\n"
-        f"{quoted}\n"
-    )
+
+    section = ""
+    # The analysed profile goes first, the raw examples after it: the profile
+    # is a short instruction the model can follow directly, the examples are
+    # the evidence behind it. Neither replaces the other.
+    if style_profile:
+        section += (
+            "The author's own voice, analysed from their previous posts — "
+            "write in it:\n"
+            f"{style_profile}\n"
+        )
+    if style_examples:
+        quoted = "\n".join(f"- {example}" for example in style_examples)
+        section += (
+            "Match the writing voice and style of the examples below — the same "
+            "tone, phrasing habits and rhythm — while writing about the new "
+            "source material, not about the examples themselves:\n"
+            f"{quoted}\n"
+        )
+    return section
 
 
 # Hashtag instruction for the "authored post from digest" flow (see
@@ -79,6 +94,38 @@ _HASHTAG_INSTRUCTION = (
 )
 
 
+# Style analysis (docs/superpowers/specs/2026-07-30-style-profile-design.md).
+# Written in English like every other prompt here, but the answer itself is
+# requested in the user's own interface language: it is shown to them verbatim.
+_STYLE_ANALYSIS_INSTRUCTION = (
+    "You are a writing-style analyst. Below are several social media posts "
+    "written by one author. Describe that author's own voice as 4-6 very "
+    "short bullet points: typical sentence and paragraph length, tone, how "
+    "they address the reader, emoji habits, punctuation habits, and recurring "
+    "devices such as how they open and close a post. Describe only HOW they "
+    "write, never what the posts are about.\n"
+    "Write the bullet points in this language (ISO 639-1 code): {language}.\n"
+    "Start every bullet with '• ' and return only the bullets themselves, "
+    "without any preamble, title or explanation.\n\n"
+    "Posts:\n{posts}"
+)
+
+
+def build_style_analysis_prompt(style_examples: list[str], language: str) -> str:
+    return _STYLE_ANALYSIS_INSTRUCTION.format(
+        language=language, posts="\n\n---\n\n".join(style_examples)
+    )
+
+
+async def analyze_style(style_examples: list[str], language: str) -> str:
+    # Default temperature, unlike generate_variants: this describes something
+    # that already exists, so stability beats variety.
+    result = await ai_gateway.generate_text(
+        build_style_analysis_prompt(style_examples, language)
+    )
+    return result.strip()
+
+
 def build_prompt(
     source_text: str,
     platform: Platform,
@@ -86,10 +133,11 @@ def build_prompt(
     extra_instruction: str | None = None,
     style_examples: list[str] | None = None,
     with_hashtags: bool = False,
+    style_profile: str | None = None,
 ) -> str:
     extra_line = f"{extra_instruction}\n" if extra_instruction else ""
     hashtag_line = f"{_HASHTAG_INSTRUCTION}\n" if with_hashtags else ""
-    style_section = _build_style_section(style_examples)
+    style_section = _build_style_section(style_examples, style_profile)
     return (
         "You are a social media copywriter. Write ONE ready-to-publish social "
         "media post based on the source material below.\n"
@@ -133,6 +181,7 @@ async def generate_variants(
     extra_instruction: str | None = None,
     style_examples: list[str] | None = None,
     with_hashtags: bool = False,
+    style_profile: str | None = None,
 ) -> list[str]:
     # Design call: call generate_text() `count` times with the same prompt
     # rather than asking the model for N variants in one response. Simpler
@@ -147,6 +196,7 @@ async def generate_variants(
         extra_instruction,
         style_examples,
         with_hashtags,
+        style_profile,
     )
     variants = []
     for _ in range(count):

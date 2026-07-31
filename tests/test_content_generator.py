@@ -256,3 +256,81 @@ async def test_generate_variants_passes_hashtag_flag_into_prompt(monkeypatch):
         "исходник", "telegram", "ru", with_hashtags=True
     )
     assert content_generator._HASHTAG_INSTRUCTION in called_prompt
+
+
+def test_style_analysis_prompt_contains_every_example_and_the_language():
+    prompt = content_generator.build_style_analysis_prompt(
+        ["Первый пост", "Второй пост"], "ru"
+    )
+
+    assert "Первый пост" in prompt
+    assert "Второй пост" in prompt
+    assert "ru" in prompt
+
+
+@pytest.mark.asyncio
+async def test_analyze_style_strips_the_model_answer(monkeypatch):
+    mock = AsyncMock(return_value="  • короткие абзацы\n• на «ты»  \n")
+    monkeypatch.setattr(content_generator.ai_gateway, "generate_text", mock)
+
+    result = await content_generator.analyze_style(["Пост"], "ru")
+
+    assert result == "• короткие абзацы\n• на «ты»"
+    mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_analyze_style_sends_the_analysis_prompt(monkeypatch):
+    mock = AsyncMock(return_value="• тон")
+    monkeypatch.setattr(content_generator.ai_gateway, "generate_text", mock)
+
+    await content_generator.analyze_style(["Пост про ИИ"], "en")
+
+    sent_prompt = mock.await_args.args[0]
+    assert "Пост про ИИ" in sent_prompt
+    assert sent_prompt == content_generator.build_style_analysis_prompt(
+        ["Пост про ИИ"], "en"
+    )
+
+
+def test_prompt_includes_the_style_profile_when_given():
+    prompt = content_generator.build_prompt(
+        "Исходник",
+        "telegram",
+        "ru",
+        style_profile="• короткие абзацы\n• на «ты»",
+    )
+
+    assert "• короткие абзацы" in prompt
+
+
+def test_prompt_includes_both_profile_and_examples():
+    prompt = content_generator.build_prompt(
+        "Исходник",
+        "telegram",
+        "ru",
+        style_examples=["Мой старый пост"],
+        style_profile="• ирония",
+    )
+
+    assert "• ирония" in prompt
+    assert "Мой старый пост" in prompt
+
+
+def test_prompt_without_profile_or_examples_has_no_style_section():
+    prompt = content_generator.build_prompt("Исходник", "telegram", "ru")
+
+    assert "author's own voice" not in prompt
+    assert "Match the writing voice" not in prompt
+
+
+@pytest.mark.asyncio
+async def test_generate_variants_forwards_the_style_profile(monkeypatch):
+    mock = AsyncMock(return_value="вариант")
+    monkeypatch.setattr(content_generator.ai_gateway, "generate_text", mock)
+
+    await content_generator.generate_variants(
+        "Исходник", "telegram", "ru", count=1, style_profile="• ирония"
+    )
+
+    assert "• ирония" in mock.await_args.args[0]
