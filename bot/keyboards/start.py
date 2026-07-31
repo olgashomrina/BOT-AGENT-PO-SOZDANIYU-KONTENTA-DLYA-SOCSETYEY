@@ -9,6 +9,7 @@ from aiogram.types import (
 )
 
 from bot.keyboards.authorpost import CALLBACK_START as CALLBACK_AUTHORPOST_START
+from bot.keyboards.circle import CALLBACK_MY_DOUBLE
 from bot.locales.loader import get_string
 
 CALLBACK_CAPABILITIES = "menu:capabilities"
@@ -45,6 +46,12 @@ def build_start_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text=get_string("menu_news_digest_button", lang),
                     callback_data=CALLBACK_NEWS_DIGEST,
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=get_string("menu_my_double_button", lang),
+                    callback_data=CALLBACK_MY_DOUBLE,
                 )
             ],
         ]

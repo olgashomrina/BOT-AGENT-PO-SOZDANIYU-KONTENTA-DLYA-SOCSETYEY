@@ -10,6 +10,7 @@ from aiohttp import web
 from bot.config import load_settings
 from bot.handlers.authorpost import router as authorpost_router
 from bot.handlers.channel import router as channel_router
+from bot.handlers.circle import router as circle_router
 from bot.handlers.content import router as content_router
 from bot.handlers.costs import router as costs_router
 from bot.handlers.errors import router as errors_router
@@ -57,6 +58,10 @@ def build_dispatcher() -> Dispatcher:
     # router ahead of content_router's catch-all StateFilter(None) matches
     # how settov_router is already ordered.
     dispatcher.include_router(authorpost_router)
+    # Before content_router on purpose: circle_router intercepts messages while
+    # its donor-collection state is set, and content_router filters on
+    # StateFilter(None), so it has to come after.
+    dispatcher.include_router(circle_router)
     dispatcher.include_router(content_router)
     dispatcher.include_router(refine_router)
     # Registered last: per-request errors are already handled locally inside

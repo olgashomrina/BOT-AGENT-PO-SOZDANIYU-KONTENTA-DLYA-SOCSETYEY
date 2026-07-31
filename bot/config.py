@@ -59,6 +59,8 @@ DEFAULT_MINI_APP_URL = ""
 DEFAULT_SITE_API_HOST = "0.0.0.0"
 DEFAULT_SITE_API_PORT = 8080
 DEFAULT_SITE_MEDIA_DIR = "site_media"
+DEFAULT_ELEVENLABS_BASE_URL = "https://api.elevenlabs.io/v1"
+DEFAULT_TMP_MEDIA_DIR = "tmp_media"
 
 
 class ConfigError(Exception):
@@ -94,6 +96,9 @@ class Settings:
     site_api_host: str
     site_api_port: int
     site_media_dir: str
+    elevenlabs_api_key: str
+    elevenlabs_base_url: str
+    tmp_media_dir: str
 
 
 def _require(key: str) -> str:
@@ -193,6 +198,12 @@ def load_settings(env_file: str | None = None) -> Settings:
     mini_app_url = os.environ.get("MINI_APP_URL", DEFAULT_MINI_APP_URL)
     site_api_host = os.environ.get("SITE_API_HOST", DEFAULT_SITE_API_HOST)
     site_media_dir = os.environ.get("SITE_MEDIA_DIR", DEFAULT_SITE_MEDIA_DIR)
+    # Намеренно НЕ через _require: уже развёрнутый в проде бот не должен
+    # падать при старте после выката фичи «двойник». Пустой ключ означает,
+    # что фича недоступна, и об этом сообщает voice_gateway, а не краш.
+    elevenlabs_api_key = os.environ.get("ELEVENLABS_API_KEY", "")
+    elevenlabs_base_url = os.environ.get("ELEVENLABS_BASE_URL", DEFAULT_ELEVENLABS_BASE_URL)
+    tmp_media_dir = os.environ.get("TMP_MEDIA_DIR", DEFAULT_TMP_MEDIA_DIR)
 
     try:
         site_api_port = int(os.environ.get("SITE_API_PORT", DEFAULT_SITE_API_PORT))
@@ -227,4 +238,7 @@ def load_settings(env_file: str | None = None) -> Settings:
         site_api_host=site_api_host,
         site_api_port=site_api_port,
         site_media_dir=site_media_dir,
+        elevenlabs_api_key=elevenlabs_api_key,
+        elevenlabs_base_url=elevenlabs_base_url,
+        tmp_media_dir=tmp_media_dir,
     )

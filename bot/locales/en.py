@@ -306,4 +306,40 @@ STRINGS = {
         "🤖 When uploading, mark the video as AI-generated (on YouTube this is "
         "mandatory)"
     ),
+    "double_consent_accept_button": "Agreed, build my double",
+    "double_donors_done_button": "Done, build the double",
+    "double_add_donors_button": "Add circles",
+    "double_delete_button": "Delete double",
+    "double_delete_confirm_button": "Yes, delete everything",
+    "double_consent_text": (
+        "I'll build your double for video circles.\n\n"
+        "I'll take your circles and learn your face, expressions and voice from them. "
+        "Stored on my side, and one button deletes it all whenever you want."
+    ),
+    "double_donors_invite": (
+        "Forward me {minimum}-5 of your longer circles — the ones you like yourself.\n"
+        "Send them one by one, I'll keep count."
+    ),
+    "double_donor_saved": "Got {collected} of {minimum}.",
+    "double_donor_too_short": (
+        "This circle is shorter than {minimum} seconds — too short to carry speech. "
+        "Send a longer one."
+    ),
+    "double_expected_video_note": "I need a circle — record or forward a video message.",
+    "double_status_text": "Your double: {donors} donor circles, voice — {voice}.",
+    "double_voice_ready": "ready",
+    "double_voice_missing": "not built yet",
+    "double_need_more_donors": "I need at least {minimum} circles. Send more.",
+    "double_voice_building": "Building the voice, this takes about a minute…",
+    "double_voice_failed": (
+        "Couldn't build the voice. Try again a bit later — "
+        "your circles are saved, no need to resend them."
+    ),
+    "double_ready": "Double ready: built on {donors} circles, voice created.",
+    "double_delete_confirm_text": (
+        "This deletes the circles, the transcripts and the voice. "
+        "It can't be undone — the double would have to be built from scratch."
+    ),
+    "double_deleted": "The double and all of its data are deleted.",
+    "menu_my_double_button": "🎭 My double",
 }
