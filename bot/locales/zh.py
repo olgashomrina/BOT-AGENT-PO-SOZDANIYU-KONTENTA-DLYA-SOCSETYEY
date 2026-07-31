@@ -222,4 +222,37 @@ STRINGS = {
     "package_note_hashtags_trimmed": "#️⃣ 话题标签已精简至 {max} 个——这是该平台的合适数量",
     "package_note_preview": "👀 «展开»前只显示前 {preview} 个字符——请把钩子放在这里面",
     "package_note_ai_disclosure": "🤖 上传时请标注视频由 AI 生成（在 YouTube 上这是强制要求）",
+    "double_consent_accept_button": "同意，创建我的分身",
+    "double_donors_done_button": "完成，开始创建分身",
+    "double_add_donors_button": "添加圆形视频",
+    "double_delete_button": "删除分身",
+    "double_delete_confirm_button": "是的，全部删除",
+    "double_consent_text": (
+        "我来为您创建用于圆形视频的分身。\n\n"
+        "我会用您的圆形视频学习您的面容、表情和声音。数据保存在我这边，"
+        "您随时可以一键全部删除。"
+    ),
+    "double_donors_invite": (
+        "请转发 {minimum}–5 条您较长的圆形视频——挑您自己满意的那些。\n"
+        "一条一条发，我来计数。"
+    ),
+    "double_donor_saved": "已收到 {collected} / {minimum}。",
+    "double_donor_too_short": (
+        "这条圆形视频短于 {minimum} 秒——太短，无法承载语音。请发送更长的。"
+    ),
+    "double_expected_video_note": "我需要的是圆形视频——请录制或转发视频消息。",
+    "double_status_text": "您的分身：素材圆形视频 {donors} 条，声音——{voice}。",
+    "double_voice_ready": "已就绪",
+    "double_voice_missing": "尚未创建",
+    "double_need_more_donors": "至少需要 {minimum} 条圆形视频。请再发一些。",
+    "double_voice_building": "正在合成声音，大约需要一分钟……",
+    "double_voice_failed": (
+        "未能创建声音。请稍后再试——圆形视频已保存，无需重新发送。"
+    ),
+    "double_ready": "分身已就绪：基于 {donors} 条圆形视频，声音已创建。",
+    "double_delete_confirm_text": (
+        "此操作将删除圆形视频、文字记录和声音。无法撤销——分身需要从头重建。"
+    ),
+    "double_deleted": "分身及其全部数据已删除。",
+    "menu_my_double_button": "🎭 我的分身",
 }

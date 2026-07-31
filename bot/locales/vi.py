@@ -297,4 +297,48 @@ STRINGS = {
         "🤖 Khi tải lên, hãy đánh dấu video được tạo bằng AI (trên YouTube đây "
         "là yêu cầu bắt buộc)"
     ),
+    "double_consent_accept_button": "Đồng ý, tạo bản sao của tôi",
+    "double_donors_done_button": "Xong, hãy tạo bản sao",
+    "double_add_donors_button": "Thêm video tròn",
+    "double_delete_button": "Xoá bản sao",
+    "double_delete_confirm_button": "Có, xoá tất cả",
+    "double_consent_text": (
+        "Tôi sẽ tạo bản sao của bạn cho các video tròn.\n\n"
+        "Tôi sẽ lấy các video tròn của bạn và học khuôn mặt, nét mặt và giọng "
+        "nói từ đó. Dữ liệu lưu ở phía tôi, và bạn có thể xoá tất cả bất cứ "
+        "lúc nào chỉ bằng một nút."
+    ),
+    "double_donors_invite": (
+        "Hãy chuyển tiếp cho tôi {minimum}–5 video tròn dài hơn của bạn — "
+        "những cái chính bạn thấy ưng ý.\n"
+        "Gửi từng cái một, tôi sẽ đếm."
+    ),
+    "double_donor_saved": "Đã nhận {collected} trên {minimum}.",
+    "double_donor_too_short": (
+        "Video tròn này ngắn hơn {minimum} giây — quá ngắn để dựng lời nói. "
+        "Hãy gửi cái dài hơn."
+    ),
+    "double_expected_video_note": (
+        "Tôi cần đúng một video tròn — hãy quay hoặc chuyển tiếp tin nhắn video."
+    ),
+    "double_status_text": (
+        "Bản sao của bạn: {donors} video tròn nguồn, giọng nói — {voice}."
+    ),
+    "double_voice_ready": "đã sẵn sàng",
+    "double_voice_missing": "chưa được tạo",
+    "double_need_more_donors": "Tôi cần ít nhất {minimum} video tròn. Hãy gửi thêm.",
+    "double_voice_building": "Đang dựng giọng nói, việc này mất khoảng một phút…",
+    "double_voice_failed": (
+        "Không tạo được giọng nói. Hãy thử lại sau một chút — các video tròn "
+        "đã được lưu, bạn không cần gửi lại."
+    ),
+    "double_ready": (
+        "Bản sao đã sẵn sàng: dựng trên {donors} video tròn, giọng nói đã được tạo."
+    ),
+    "double_delete_confirm_text": (
+        "Thao tác này xoá các video tròn, bản ghi lời và giọng nói. Không thể "
+        "hoàn tác — bản sao sẽ phải dựng lại từ đầu."
+    ),
+    "double_deleted": "Bản sao và toàn bộ dữ liệu của nó đã bị xoá.",
+    "menu_my_double_button": "🎭 Bản sao của tôi",
 }
