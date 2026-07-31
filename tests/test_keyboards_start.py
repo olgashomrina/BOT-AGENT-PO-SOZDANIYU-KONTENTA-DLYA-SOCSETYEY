@@ -97,3 +97,15 @@ def test_digest_topic_keyboard_includes_authorpost_button_without_saved_topic():
     keyboard = build_digest_topic_keyboard("en", has_saved_topic=False)
 
     assert keyboard.inline_keyboard[1][0].callback_data == CALLBACK_AUTHORPOST_START
+
+
+def test_start_menu_offers_my_double():
+    from bot.keyboards.circle import CALLBACK_MY_DOUBLE
+
+    markup = build_start_menu_keyboard("ru")
+
+    callbacks = [
+        button.callback_data for row in markup.inline_keyboard for button in row
+    ]
+
+    assert CALLBACK_MY_DOUBLE in callbacks

@@ -4,6 +4,7 @@ import pytest
 
 from bot.handlers.authorpost import router as authorpost_router
 from bot.handlers.channel import router as channel_router
+from bot.handlers.circle import router as circle_router
 from bot.handlers.content import router as content_router
 from bot.handlers.costs import router as costs_router
 from bot.handlers.errors import router as errors_router
@@ -33,6 +34,7 @@ _SINGLETON_ROUTERS = (
     settov_router,
     costs_router,
     authorpost_router,
+    circle_router,
     content_router,
     refine_router,
     errors_router,
