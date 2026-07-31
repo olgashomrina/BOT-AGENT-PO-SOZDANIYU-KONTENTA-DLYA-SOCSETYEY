@@ -30,6 +30,12 @@ DEFAULT_DAILY_IMAGE_LIMIT = 3
 # AI-прокси, и период проверки.
 DEFAULT_BALANCE_ALERT_THRESHOLD_RUB = 50.0
 DEFAULT_BALANCE_CHECK_INTERVAL_SECONDS = 3600
+# openrouter.ai bills in dollars, but every budget in this project — the alert
+# threshold, the /costs report, the "this buys N more pictures" estimates — is
+# in rubles, because that is what the owner budgets in. A rough constant is
+# deliberate: it feeds warnings and estimates, never an actual charge, and a
+# live FX lookup would add a dependency and a failure mode for no real gain.
+DEFAULT_USD_RUB_RATE = 92.0
 # dall-e-3 (vsegpt.ru's own docs example) is currently rejected by their
 # proxy with "Temporarily disabled due to OpenAI blocking" (confirmed via a
 # live request, 2026-07-20) — not a vsegpt.ru catalog-naming mismatch this
@@ -80,6 +86,7 @@ class Settings:
     daily_image_limit: int
     balance_alert_threshold_rub: float
     balance_check_interval_seconds: int
+    usd_rub_rate: float
     digest_send_hour: int
     db_path: str
     log_level: str
@@ -142,8 +149,11 @@ def load_settings(env_file: str | None = None) -> Settings:
         balance_alert_threshold_rub = float(
             os.environ.get("BALANCE_ALERT_THRESHOLD_RUB", DEFAULT_BALANCE_ALERT_THRESHOLD_RUB)
         )
+        usd_rub_rate = float(os.environ.get("USD_RUB_RATE", DEFAULT_USD_RUB_RATE))
     except ValueError as exc:
-        raise ConfigError("BALANCE_ALERT_THRESHOLD_RUB должен быть числом (рубли).") from exc
+        raise ConfigError(
+            "BALANCE_ALERT_THRESHOLD_RUB и USD_RUB_RATE должны быть числами."
+        ) from exc
 
     db_path = os.environ.get("DB_PATH", DEFAULT_DB_PATH)
     log_level = os.environ.get("LOG_LEVEL", DEFAULT_LOG_LEVEL)
@@ -209,6 +219,7 @@ def load_settings(env_file: str | None = None) -> Settings:
         daily_image_limit=daily_image_limit,
         balance_alert_threshold_rub=balance_alert_threshold_rub,
         balance_check_interval_seconds=balance_check_interval_seconds,
+        usd_rub_rate=usd_rub_rate,
         digest_send_hour=digest_send_hour,
         db_path=db_path,
         log_level=log_level,

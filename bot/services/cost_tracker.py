@@ -1,5 +1,12 @@
 """What each AI call costs, in rubles.
 
+Covers both proxies the bot can be pointed at. openrouter.ai prices are in
+dollars and were measured against a live account on 2026-07-31 (see
+dengi.md); they are stored here already converted at `_USD_RUB`, which is the
+same rough constant the balance check uses. Model slugs differ between the
+two — openrouter.ai has no `stt-` prefix — so the tables never collide and a
+single lookup serves whichever provider is configured.
+
 Prices are taken from the live vsegpt.ru catalog (`GET /v1/models`, checked
 2026-07-30 — see dengi.md for the readings and the reasoning). Two things
 about that catalog matter here:
@@ -23,22 +30,38 @@ model never silently reports as free.
 
 from __future__ import annotations
 
+_USD_RUB = 92.0
+
 # ₽ per 1000 seconds of audio (the catalog's own unit for STT models).
 _STT_RUB_PER_1000_SECONDS = {
+    # vsegpt.ru
     "stt-openai/gpt-4o-mini-transcribe": 16.00,
     "stt-openai/whisper-1": 20.00,
     "stt-openai/whisper-1-diarize": 30.00,
     "stt-openai/gpt-4o-transcribe": 32.00,
     "stt-deepgram/nova-3": 20.00,
     "stt-deepgram/nova-3-diarize": 30.00,
+    # openrouter.ai — measured: whisper-1 billed $0.0001 per second, i.e.
+    # $0.006/min, which is 0.55 ₽/min against 1.20 ₽/min at vsegpt.ru.
+    "openai/whisper-1": 0.0001 * 1000 * _USD_RUB,
+    "openai/gpt-4o-mini-transcribe": 0.00005 * 1000 * _USD_RUB,
+    "openai/gpt-4o-transcribe": 0.0001 * 1000 * _USD_RUB,
 }
 _STT_FALLBACK_RUB_PER_1000_SECONDS = 32.00
 
 # ₽ per generated image.
 _IMAGE_RUB_PER_IMAGE = {
+    # vsegpt.ru
     "img-flux/flux-2-klein-4b": 3.90,
     "img-flux/flux-2-klein-9b": 10.00,
     "img-flux/pro1.1": 10.00,
+    # openrouter.ai — measured on a real 1024x1024 generation: $0.0085 for
+    # gpt-5-image-mini, five times cheaper than the vsegpt.ru budget model.
+    # The rest are scaled from their per-image-token catalog prices.
+    "openai/gpt-5-image-mini": 0.0085 * _USD_RUB,
+    "openai/gpt-5-image": 0.042 * _USD_RUB,
+    "google/gemini-2.5-flash-image": 0.032 * _USD_RUB,
+    "google/gemini-3.1-flash-image": 0.063 * _USD_RUB,
 }
 _IMAGE_FALLBACK_RUB_PER_IMAGE = 15.00
 

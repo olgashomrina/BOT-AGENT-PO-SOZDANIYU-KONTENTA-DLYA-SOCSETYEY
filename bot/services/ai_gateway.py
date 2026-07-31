@@ -185,6 +185,12 @@ _OUT_OF_BUDGET_MARKERS = (
 
 
 def _is_out_of_budget(response: httpx.Response) -> bool:
+    # 402 Payment Required means exactly this and nothing else — it is how
+    # openrouter.ai reports an empty account, and it needs no body sniffing.
+    # vsegpt.ru instead answers 400 with the reason in the body, hence the
+    # marker list.
+    if response.status_code == 402:
+        return True
     try:
         text = response.text
     except Exception:
@@ -450,6 +456,41 @@ async def generate_text(prompt: str, model: str | None = None, temperature: floa
     )
 
 
+# Container signatures, longest-prefix first where they could overlap. Only
+# formats Telegram can actually deliver are listed; anything else falls back
+# to OGG, which is what a `voice` message always is.
+_AUDIO_SIGNATURES: tuple[tuple[bytes, str, str], ...] = (
+    (b"OggS", "telegram-voice.ogg", "audio/ogg"),
+    (b"RIFF", "telegram-voice.wav", "audio/wav"),
+    (b"fLaC", "telegram-voice.flac", "audio/flac"),
+    (b"ID3", "telegram-voice.mp3", "audio/mpeg"),
+    (b"\xff\xfb", "telegram-voice.mp3", "audio/mpeg"),
+    (b"\xff\xf3", "telegram-voice.mp3", "audio/mpeg"),
+    (b"\x1a\x45\xdf\xa3", "telegram-voice.webm", "audio/webm"),
+)
+_DEFAULT_AUDIO_PART = ("telegram-voice.ogg", "audio/ogg")
+
+
+def _audio_part_metadata(audio_bytes: bytes) -> tuple[str, str]:
+    """Filename and MIME type for the multipart audio part, from the bytes.
+
+    Transcription hosts pick their decoder from this metadata rather than by
+    sniffing the payload, so a wrong label is not cosmetic: openrouter.ai
+    answers a mislabelled part with a bare `Provider returned 400`.
+
+    This used to be hardcoded to OGG because a Telegram `voice` message
+    always is one — but `handle_voice` also accepts `message.audio`, which is
+    any file the user sent: mp3, m4a, wav. Those were being labelled as OGG.
+    """
+    for signature, filename, media_type in _AUDIO_SIGNATURES:
+        if audio_bytes.startswith(signature):
+            return filename, media_type
+    # MP4/M4A keeps its marker at offset 4, after the box length.
+    if len(audio_bytes) >= 12 and audio_bytes[4:8] == b"ftyp":
+        return "telegram-voice.m4a", "audio/mp4"
+    return _DEFAULT_AUDIO_PART
+
+
 async def transcribe(audio_bytes: bytes, language_hint: str | None = None) -> str:
     settings = load_settings()
     resolved_model = settings.ai_gateway_transcription_model
@@ -460,10 +501,8 @@ async def transcribe(audio_bytes: bytes, language_hint: str | None = None) -> st
         data: dict[str, str] = {"model": resolved_model, "response_format": "json"}
         if language_hint:
             data["language"] = language_hint
-        # Telegram voice messages are OGG containers with an Opus stream.
-        # VseGPT's current Whisper host selects its decoder from multipart
-        # metadata; a generic octet-stream part can stall until our timeout.
-        files = {"file": ("telegram-voice.ogg", audio_bytes, "audio/ogg")}
+        filename, media_type = _audio_part_metadata(audio_bytes)
+        files = {"file": (filename, audio_bytes, media_type)}
         return await client.post("/audio/transcriptions", data=data, files=files)
 
     async with httpx.AsyncClient(
@@ -529,6 +568,35 @@ async def generate_image(prompt: str, model: str | None = None, size: str | None
     )
 
 
+# openrouter.ai keeps the remaining balance in a different place, under a
+# different endpoint, in a different currency — so it gets an explicit reader
+# rather than the tolerant walk below.
+OPENROUTER_PROVIDER = "openrouter"
+_OPENROUTER_BALANCE_PATH = "/credits"
+_DEFAULT_BALANCE_PATH = "/balance"
+
+
+def _extract_openrouter_balance(payload: Any) -> float | None:
+    """Remaining credits from openrouter.ai's `GET /credits`, in dollars.
+
+    Confirmed against a live account on 2026-07-31:
+
+        {"data": {"total_credits": 20, "total_usage": 1.2842976}}
+
+    Both numbers are lifetime totals, so the remaining balance is their
+    difference. This must not go through `_extract_balance`: that walk would
+    return `total_credits` — everything ever topped up — and the low-balance
+    warning would then never fire.
+    """
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(data, dict):
+        return None
+    try:
+        return float(data["total_credits"]) - float(data["total_usage"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def _extract_balance(payload: Any) -> float | None:
     """Find the account balance anywhere in a `GET /balance` payload.
 
@@ -568,7 +636,14 @@ def _extract_balance(payload: Any) -> float | None:
 
 
 async def get_balance() -> float:
-    """Remaining account balance at the AI proxy, in rubles.
+    """Remaining account balance at the AI proxy, **in rubles**.
+
+    Rubles regardless of provider: openrouter.ai bills in dollars, and the
+    whole point of this number is to compare it against a budget the owner
+    thinks about in rubles (`BALANCE_ALERT_THRESHOLD_RUB`, and the "this buys
+    N more pictures" estimates). The conversion uses `USD_RUB_RATE`, which is
+    a rough constant rather than a live rate — good enough for a warning
+    threshold, and never used to bill anyone.
 
     Raises AIGatewayError (the same hierarchy as every other call here) when
     the proxy is unreachable or answers in an unrecognisable shape.
@@ -577,6 +652,8 @@ async def get_balance() -> float:
     operation = "get_balance"
     # Not a model call; the log fields still want the field filled in.
     model = "-"
+    is_openrouter = settings.ai_gateway_provider.lower() == OPENROUTER_PROVIDER
+    path = _OPENROUTER_BALANCE_PATH if is_openrouter else _DEFAULT_BALANCE_PATH
     overall_started = time.monotonic()
 
     async with httpx.AsyncClient(
@@ -585,7 +662,7 @@ async def get_balance() -> float:
         headers={"Authorization": f"Bearer {settings.ai_proxy_api_key}"},
     ) as client:
         result = await _call_with_retries(
-            request=lambda: client.get("/balance"),
+            request=lambda: client.get(path),
             operation=operation,
             provider=settings.ai_gateway_provider,
             model=model,
@@ -611,7 +688,9 @@ async def get_balance() -> float:
             retry_count=result.retry_count,
         )
 
-    balance = _extract_balance(payload)
+    balance = (
+        _extract_openrouter_balance(payload) if is_openrouter else _extract_balance(payload)
+    )
     if balance is None:
         _fail(
             AIGatewayInvalidResponseError(
@@ -624,6 +703,9 @@ async def get_balance() -> float:
             duration_ms=duration_ms,
             retry_count=result.retry_count,
         )
+
+    if is_openrouter:
+        balance *= settings.usd_rub_rate
 
     _info(operation, settings.ai_gateway_provider, model, duration_ms, result.retry_count)
     return balance

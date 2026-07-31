@@ -173,6 +173,22 @@ async def test_generate_image_out_of_budget_raises_its_own_error():
 
 @respx.mock
 @pytest.mark.asyncio
+async def test_http_402_is_out_of_budget_whatever_the_body_says():
+    # openrouter.ai reports an empty account with 402 Payment Required rather
+    # than with vsegpt.ru's 400-plus-explanation, so the status alone has to
+    # be enough.
+    respx.post(CHAT_URL).mock(
+        return_value=httpx.Response(
+            402, json={"error": {"message": "This request requires more credits", "code": 402}}
+        )
+    )
+
+    with pytest.raises(AIGatewayOutOfBudgetError):
+        await generate_text("write something")
+
+
+@respx.mock
+@pytest.mark.asyncio
 async def test_ordinary_4xx_is_still_an_invalid_response_error():
     # Guards the marker matching: a plain bad request must not be reported as
     # a money problem.
@@ -563,6 +579,97 @@ async def test_get_balance_reads_a_flat_balance_field():
     respx.get(BALANCE_URL).mock(return_value=httpx.Response(200, json={"balance": 123.45}))
 
     assert await get_balance() == pytest.approx(123.45)
+
+
+# --- audio part metadata ---
+
+
+@pytest.mark.parametrize(
+    "payload, expected",
+    [
+        (b"OggS\x00\x02" + b"\x00" * 20, ("telegram-voice.ogg", "audio/ogg")),
+        (b"RIFF\x24\x08\x00\x00WAVEfmt ", ("telegram-voice.wav", "audio/wav")),
+        (b"fLaC\x00\x00\x00\x22", ("telegram-voice.flac", "audio/flac")),
+        (b"ID3\x03\x00\x00\x00", ("telegram-voice.mp3", "audio/mpeg")),
+        (b"\xff\xfb\x90\x00", ("telegram-voice.mp3", "audio/mpeg")),
+        (b"\x00\x00\x00\x20ftypM4A ", ("telegram-voice.m4a", "audio/mp4")),
+        (b"\x1a\x45\xdf\xa3\x01\x00", ("telegram-voice.webm", "audio/webm")),
+    ],
+)
+def test_audio_part_metadata_identifies_the_container(payload, expected):
+    assert ai_gateway._audio_part_metadata(payload) == expected
+
+
+def test_audio_part_metadata_falls_back_to_ogg():
+    # A Telegram `voice` message is always OGG, so that is the safe default
+    # for anything unrecognised.
+    assert ai_gateway._audio_part_metadata(b"\x00\x01\x02\x03") == (
+        "telegram-voice.ogg",
+        "audio/ogg",
+    )
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_transcribe_labels_the_part_with_the_real_container():
+    # openrouter.ai picks its decoder from this metadata and answers a
+    # mislabelled part with a bare "Provider returned 400" — so an mp3 sent
+    # as message.audio must not go out labelled as OGG.
+    route = respx.post(TRANSCRIBE_URL).mock(
+        return_value=httpx.Response(200, json={"text": "ok"})
+    )
+
+    await transcribe(b"ID3\x03\x00\x00\x00 pretend mp3")
+
+    body = route.calls[0].request.content
+    assert b"telegram-voice.mp3" in body
+    assert b"audio/mpeg" in body
+
+
+CREDITS_URL = f"{BASE_URL}/credits"
+
+# Captured from a live openrouter.ai account on 2026-07-31. Both numbers are
+# lifetime totals; the remaining balance is their difference.
+_OPENROUTER_CREDITS = {"data": {"total_credits": 20, "total_usage": 1.2842976}}
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_get_balance_uses_the_credits_endpoint_for_openrouter(monkeypatch):
+    monkeypatch.setenv("AI_GATEWAY_PROVIDER", "openrouter")
+    monkeypatch.setenv("USD_RUB_RATE", "100")
+    respx.get(CREDITS_URL).mock(return_value=httpx.Response(200, json=_OPENROUTER_CREDITS))
+
+    # (20 - 1.2842976) dollars, reported in rubles because every budget in the
+    # project is in rubles.
+    assert await get_balance() == pytest.approx(1871.57024)
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_get_balance_does_not_mistake_total_credits_for_the_remainder(monkeypatch):
+    # The trap this exists for: a tolerant search for a "credits"-ish key
+    # finds total_credits — everything ever topped up — and the low-balance
+    # warning would then never fire. Spent almost everything here.
+    monkeypatch.setenv("AI_GATEWAY_PROVIDER", "openrouter")
+    monkeypatch.setenv("USD_RUB_RATE", "100")
+    respx.get(CREDITS_URL).mock(
+        return_value=httpx.Response(
+            200, json={"data": {"total_credits": 20, "total_usage": 19.9}}
+        )
+    )
+
+    assert await get_balance() == pytest.approx(10.0)
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_get_balance_raises_on_unrecognisable_openrouter_shape(monkeypatch):
+    monkeypatch.setenv("AI_GATEWAY_PROVIDER", "openrouter")
+    respx.get(CREDITS_URL).mock(return_value=httpx.Response(200, json={"data": {"nope": 1}}))
+
+    with pytest.raises(AIGatewayInvalidResponseError):
+        await get_balance()
 
 
 @respx.mock
