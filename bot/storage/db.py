@@ -52,7 +52,8 @@ CREATE TABLE IF NOT EXISTS style_examples (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     telegram_id INTEGER NOT NULL,
     example_text TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'written'
 );
 
 CREATE TABLE IF NOT EXISTS site_content (
@@ -84,6 +85,34 @@ CREATE TABLE IF NOT EXISTS image_prompts (
     prompt TEXT NOT NULL,
     created_at TEXT NOT NULL,
     UNIQUE (chat_id, message_id)
+);
+
+CREATE TABLE IF NOT EXISTS avatar_donors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    telegram_id INTEGER NOT NULL,
+    file_id TEXT NOT NULL,
+    duration_sec INTEGER NOT NULL,
+    transcript TEXT,
+    created_at TEXT NOT NULL,
+    last_used_at TEXT,
+    is_active INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS voice_profiles (
+    telegram_id INTEGER PRIMARY KEY,
+    provider TEXT NOT NULL,
+    external_voice_id TEXT NOT NULL,
+    consent_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+-- One row per user, keyed on telegram_id rather than an autoincrement id: a
+-- user has exactly one current style profile, so INSERT OR REPLACE gives
+-- overwrite semantics for free — unlike style_examples, which keeps a history.
+CREATE TABLE IF NOT EXISTS style_profiles (
+    telegram_id INTEGER PRIMARY KEY,
+    summary TEXT NOT NULL,
+    created_at TEXT NOT NULL
 );
 """
 
@@ -131,6 +160,18 @@ def _ensure_digest_topic_column(connection: sqlite3.Connection) -> None:
         connection.execute("ALTER TABLE users ADD COLUMN digest_topic TEXT")
 
 
+def _ensure_style_example_kind_column(connection: sqlite3.Connection) -> None:
+    # Этап 1 фичи «двойник» добавляет вид образца стиля: письменные посты
+    # и расшифровки кружков нельзя смешивать в одном промпте. CREATE TABLE
+    # IF NOT EXISTS покрывает только чистые установки — уже развёрнутой базе
+    # нужна явная миграция, иначе бот упадёт на первом запросе после выката.
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(style_examples)")}
+    if "kind" not in columns:
+        connection.execute(
+            "ALTER TABLE style_examples ADD COLUMN kind TEXT NOT NULL DEFAULT 'written'"
+        )
+
+
 def init_db(db_path: str) -> None:
     connection = sqlite3.connect(db_path)
     try:
@@ -139,6 +180,7 @@ def init_db(db_path: str) -> None:
         _ensure_pending_media_columns(connection)
         _ensure_onboarding_shown_column(connection)
         _ensure_digest_topic_column(connection)
+        _ensure_style_example_kind_column(connection)
         connection.commit()
     finally:
         connection.close()
