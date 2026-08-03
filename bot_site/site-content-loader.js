@@ -8,7 +8,7 @@
 // 1. Добавьте id="pilot-card-text" на элемент с описанием карточки услуги
 //    (например "Принятие тела") и id="pilot-card-photo" на её <img>.
 // 2. Перед закрывающим </body> на services.html добавьте:
-//    <script src="site-content-loader.js" data-api-base="https://147-45-175-189.sslip.io"></script>
+//    <script src="site-content-loader.js" data-api-base="https://159-194-214-72.sslip.io"></script>
 
 (function () {
   var scriptTag = document.currentScript;

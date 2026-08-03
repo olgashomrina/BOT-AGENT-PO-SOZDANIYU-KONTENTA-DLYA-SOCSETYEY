@@ -15,7 +15,7 @@
 5. Перед `</body>` в `services.html` добавьте:
 
    ```html
-   <script src="site-content-loader.js" data-api-base="https://147-45-175-189.sslip.io"></script>
+   <script src="site-content-loader.js" data-api-base="https://159-194-214-72.sslip.io"></script>
    ```
 
 6. Закоммитьте и запушьте в репозиторий сайта — GitHub Pages пересоберёт
@@ -32,5 +32,5 @@
 
 Если ничего не поменялось — откройте консоль разработчика в браузере
 (F12 → Console/Network) и проверьте, что запрос к
-`https://147-45-175-189.sslip.io/content/services/card_1` возвращает
+`https://159-194-214-72.sslip.io/content/services/card_1` возвращает
 `200 OK`, а не ошибку сети/CORS.
