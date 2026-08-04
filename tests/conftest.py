@@ -53,3 +53,29 @@ def db_path(tmp_path) -> str:
     path = str(tmp_path / "test.db")
     init_db(path)
     return path
+
+
+# Обязательные переменные окружения для всего прогона.
+#
+# Хендлеры зовут `load_settings()` внутри себя, а он через `load_dotenv`
+# подхватывает файл `.env` из корня проекта. На машине разработчика и на
+# сервере такой файл есть, поэтому тесты кружочков проходили — и молча
+# зависели от чужого файла с настоящими секретами. На GitHub Actions `.env`
+# нет, и те же восемь тестов падали там с 31.07.2026 каждым запуском, а
+# заодно валили выкладку. Значения заведомо ненастоящие: тест, которому
+# нужен живой ключ, — это не тест.
+#
+# Тесты самой конфигурации это не ломает: они удаляют нужные переменные
+# через `monkeypatch.delenv` уже после этой фикстуры и передают в
+# `load_settings` заведомо отсутствующий файл.
+_REQUIRED_ENV = {
+    "BOT_TOKEN": "123456:test-token",
+    "AI_PROXY_API_KEY": "test-ai-key",
+    "OWNER_CHAT_ID": "42",
+}
+
+
+@pytest.fixture(autouse=True)
+def _required_env(monkeypatch):
+    for key, value in _REQUIRED_ENV.items():
+        monkeypatch.setenv(key, value)
