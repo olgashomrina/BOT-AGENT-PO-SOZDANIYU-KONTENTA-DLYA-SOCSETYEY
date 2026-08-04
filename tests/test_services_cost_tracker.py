@@ -64,3 +64,13 @@ def test_voice_minutes_affordable_counts_whole_minutes():
 
 def test_voice_minutes_affordable_is_zero_for_empty_balance():
     assert cost_tracker.voice_minutes_affordable(0.0, "stt-openai/whisper-1") == 0
+
+
+def test_runware_image_models_are_priced_from_live_measurements():
+    """Иначе картинка Runware считалась бы по запасной цене 15 ₽ вместо 0.06 ₽.
+
+    Отчёт `/costs` и оценка «на остаток хватит на N картинок» берут цену
+    отсюда, и промах в 250 раз сделал бы обе бесполезными.
+    """
+    assert cost_tracker.image_cost("runware:100@1") == pytest.approx(0.0006 * 92.0)
+    assert cost_tracker.image_cost("runware:101@1") == pytest.approx(0.0013 * 92.0)

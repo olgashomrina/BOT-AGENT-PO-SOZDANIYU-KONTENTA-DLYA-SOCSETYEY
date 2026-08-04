@@ -233,3 +233,81 @@ def test_digest_send_hour_reads_from_env(monkeypatch, tmp_path):
     settings = load_settings(env_file=_missing_env_file(tmp_path))
 
     assert settings.digest_send_hour == 14
+
+
+def test_image_provider_defaults_to_the_general_provider(monkeypatch, tmp_path):
+    """Без отдельной настройки картинки идут туда же, куда всё остальное."""
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("AI_GATEWAY_PROVIDER", "vsegpt")
+    monkeypatch.delenv("IMAGE_PROVIDER", raising=False)
+
+    settings = load_settings(env_file=_missing_env_file(tmp_path))
+
+    assert settings.image_provider == "vsegpt"
+
+
+def test_runware_endpoint_has_defaults(monkeypatch, tmp_path):
+    """Адрес и модель Runware заданы по умолчанию, ключ — пустой до настройки."""
+    _set_required_env(monkeypatch)
+    for key in ("RUNWARE_API_KEY", "RUNWARE_BASE_URL", "RUNWARE_IMAGE_MODEL"):
+        monkeypatch.delenv(key, raising=False)
+
+    settings = load_settings(env_file=_missing_env_file(tmp_path))
+
+    assert settings.runware_api_key == ""
+    assert settings.runware_base_url == "https://api.runware.ai/v1"
+    assert settings.runware_image_model == "runware:100@1"
+
+
+def test_runware_settings_read_from_env(monkeypatch, tmp_path):
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("RUNWARE_API_KEY", "rw-key")
+    monkeypatch.setenv("RUNWARE_BASE_URL", "https://runware.test/v1")
+    monkeypatch.setenv("RUNWARE_IMAGE_MODEL", "runware:101@1")
+
+    settings = load_settings(env_file=_missing_env_file(tmp_path))
+
+    assert settings.runware_api_key == "rw-key"
+    assert settings.runware_base_url == "https://runware.test/v1"
+    assert settings.runware_image_model == "runware:101@1"
+
+
+def test_text_provider_defaults_to_the_general_provider(monkeypatch, tmp_path):
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("AI_GATEWAY_PROVIDER", "vsegpt")
+    monkeypatch.delenv("TEXT_PROVIDER", raising=False)
+    monkeypatch.delenv("RUNWARE_TEXT_MODEL", raising=False)
+
+    settings = load_settings(env_file=_missing_env_file(tmp_path))
+
+    assert settings.text_provider == "vsegpt"
+    assert settings.runware_text_model == "deepseek-v4-flash"
+
+
+def test_empty_values_mean_unset_not_empty(monkeypatch, tmp_path):
+    """`.env.example` предлагает оставлять эти строки пустыми.
+
+    `os.environ.get` вернул бы для них пустую строку, а не значение по
+    умолчанию: пустой RUNWARE_BASE_URL — это сломанный адрес запроса, а
+    пустой IMAGE_PROVIDER — провайдер, который не совпадает ни с чем.
+    """
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("AI_GATEWAY_PROVIDER", "vsegpt")
+    for key in (
+        "IMAGE_PROVIDER",
+        "TEXT_PROVIDER",
+        "RUNWARE_BASE_URL",
+        "RUNWARE_IMAGE_MODEL",
+        "RUNWARE_PREMIUM_IMAGE_MODEL",
+        "RUNWARE_TEXT_MODEL",
+    ):
+        monkeypatch.setenv(key, "")
+
+    settings = load_settings(env_file=_missing_env_file(tmp_path))
+
+    assert settings.image_provider == "vsegpt"
+    assert settings.text_provider == "vsegpt"
+    assert settings.runware_base_url == "https://api.runware.ai/v1"
+    assert settings.runware_image_model == "runware:100@1"
+    assert settings.runware_premium_image_model == "runware:101@1"
+    assert settings.runware_text_model == "deepseek-v4-flash"

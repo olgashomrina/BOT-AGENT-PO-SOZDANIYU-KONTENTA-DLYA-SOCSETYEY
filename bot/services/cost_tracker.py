@@ -62,6 +62,11 @@ _IMAGE_RUB_PER_IMAGE = {
     "openai/gpt-5-image": 0.042 * _USD_RUB,
     "google/gemini-2.5-flash-image": 0.032 * _USD_RUB,
     "google/gemini-3.1-flash-image": 0.063 * _USD_RUB,
+    # runware.ai — measured on real 1024x1024 generations on 2026-08-04, with
+    # `includeCost` in the request, so these are the amounts actually billed
+    # rather than list prices. Two orders of magnitude below vsegpt.ru.
+    "runware:100@1": 0.0006 * _USD_RUB,  # FLUX.1 Schnell — 0.06 ₽
+    "runware:101@1": 0.0013 * _USD_RUB,  # FLUX.1 Dev — 0.12 ₽
 }
 _IMAGE_FALLBACK_RUB_PER_IMAGE = 15.00
 

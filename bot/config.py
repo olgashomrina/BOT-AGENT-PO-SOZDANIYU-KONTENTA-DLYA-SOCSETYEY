@@ -52,6 +52,24 @@ DEFAULT_AI_GATEWAY_IMAGE_SIZE = "1024x1024"
 # button (bot/handlers/refine.py::on_image_upgrade) keeps working regardless
 # of which model the default (cheap) generation is pinned to.
 DEFAULT_AI_GATEWAY_PREMIUM_IMAGE_MODEL = "img-flux/pro1.1"
+# Runware — отдельный провайдер только для картинок: у него свой формат
+# запроса (задачи `taskType`, а не openai-совместимый `/images/generations`),
+# поэтому и адрес, и ключ, и модель живут отдельно от основного шлюза.
+# Замеры живыми запросами 04.08.2026: `runware:100@1` (FLUX.1 Schnell) —
+# $0.0006 ≈ 0.06 ₽ за картинку 1024×1024, `runware:101@1` (FLUX.1 Dev) —
+# $0.0013 ≈ 0.12 ₽. Против 3.90 ₽ у vsegpt. По умолчанию берём Schnell: он
+# вдвое дешевле и на тестовых кадрах оказался даже резче Dev.
+DEFAULT_RUNWARE_BASE_URL = "https://api.runware.ai/v1"
+DEFAULT_RUNWARE_IMAGE_MODEL = "runware:100@1"
+# Пара к AI_GATEWAY_PREMIUM_IMAGE_MODEL: кнопка «Сделать реалистичнее» просит
+# модель подороже, и у Runware ей соответствует Dev (0.12 ₽ против 0.06 ₽).
+DEFAULT_RUNWARE_PREMIUM_IMAGE_MODEL = "runware:101@1"
+# Текстовый эндпоинт Runware, в отличие от картиночного, openai-совместимый —
+# меняются только адрес, ключ и модель. `deepseek-v4-flash` выбрана по живой
+# проверке 04.08.2026: написала связный русский пост примерно за 0.002 ₽ и, в
+# отличие от `qwen3.5-4b`, кладёт ответ в `content`, а не в `reasoning`, и, в
+# отличие от моделей `gpt-5*`, принимает параметр `max_tokens`.
+DEFAULT_RUNWARE_TEXT_MODEL = "deepseek-v4-flash"
 DEFAULT_AI_GATEWAY_MAX_RETRIES = 2
 DEFAULT_AI_GATEWAY_TIMEOUT_SECONDS = 30.0
 DEFAULT_CONTENT_VARIANTS_COUNT = 2
@@ -73,11 +91,18 @@ class Settings:
     ai_proxy_api_key: str
     ai_proxy_base_url: str
     ai_gateway_provider: str
+    image_provider: str
+    text_provider: str
     ai_gateway_text_model: str
     ai_gateway_transcription_model: str
     ai_gateway_image_model: str
     ai_gateway_image_size: str
     ai_gateway_premium_image_model: str
+    runware_api_key: str
+    runware_base_url: str
+    runware_image_model: str
+    runware_premium_image_model: str
+    runware_text_model: str
     ai_gateway_max_retries: int
     ai_gateway_timeout_seconds: float
     content_variants_count: int
@@ -99,6 +124,17 @@ class Settings:
     elevenlabs_api_key: str
     elevenlabs_base_url: str
     tmp_media_dir: str
+
+
+def _optional(key: str, default: str) -> str:
+    """Значение переменной окружения, где пустая строка означает "не задано".
+
+    `.env.example` предлагает оставлять необязательные строки пустыми
+    (`RUNWARE_BASE_URL=`), а `os.environ.get` вернул бы для такой строки не
+    значение по умолчанию, а пустоту — то есть сломанный адрес запроса вместо
+    рабочего.
+    """
+    return os.environ.get(key) or default
 
 
 def _require(key: str) -> str:
@@ -165,6 +201,12 @@ def load_settings(env_file: str | None = None) -> Settings:
 
     ai_proxy_base_url = os.environ.get("AI_PROXY_BASE_URL", DEFAULT_AI_PROXY_BASE_URL)
     ai_gateway_provider = os.environ.get("AI_GATEWAY_PROVIDER", DEFAULT_AI_GATEWAY_PROVIDER)
+    # Провайдер выбирается на операцию, а не на весь шлюз: картинки у Runware
+    # стоят 0.06 ₽ против 3.90 ₽ у vsegpt, но распознавания речи у Runware нет
+    # вовсе (проверено 04.08.2026, см. dengi.md), поэтому голос обязан остаться
+    # на vsegpt. Без раздельной настройки пришлось бы выбирать одно из двух.
+    image_provider = _optional("IMAGE_PROVIDER", ai_gateway_provider)
+    text_provider = _optional("TEXT_PROVIDER", ai_gateway_provider)
     ai_gateway_text_model = os.environ.get("AI_GATEWAY_TEXT_MODEL", DEFAULT_AI_GATEWAY_TEXT_MODEL)
     ai_gateway_transcription_model = os.environ.get(
         "AI_GATEWAY_TRANSCRIPTION_MODEL", DEFAULT_AI_GATEWAY_TRANSCRIPTION_MODEL
@@ -174,6 +216,16 @@ def load_settings(env_file: str | None = None) -> Settings:
     ai_gateway_premium_image_model = os.environ.get(
         "AI_GATEWAY_PREMIUM_IMAGE_MODEL", DEFAULT_AI_GATEWAY_PREMIUM_IMAGE_MODEL
     )
+    # Пустой ключ — не ошибка конфигурации: бот, уже развёрнутый в проде,
+    # не должен падать при старте после выката. Отсутствие ключа означает
+    # только, что провайдер картинок Runware выбрать нельзя.
+    runware_api_key = os.environ.get("RUNWARE_API_KEY", "")
+    runware_base_url = _optional("RUNWARE_BASE_URL", DEFAULT_RUNWARE_BASE_URL)
+    runware_image_model = _optional("RUNWARE_IMAGE_MODEL", DEFAULT_RUNWARE_IMAGE_MODEL)
+    runware_premium_image_model = _optional(
+        "RUNWARE_PREMIUM_IMAGE_MODEL", DEFAULT_RUNWARE_PREMIUM_IMAGE_MODEL
+    )
+    runware_text_model = _optional("RUNWARE_TEXT_MODEL", DEFAULT_RUNWARE_TEXT_MODEL)
 
     try:
         ai_gateway_max_retries = int(
@@ -215,11 +267,18 @@ def load_settings(env_file: str | None = None) -> Settings:
         ai_proxy_api_key=ai_proxy_api_key,
         ai_proxy_base_url=ai_proxy_base_url,
         ai_gateway_provider=ai_gateway_provider,
+        image_provider=image_provider,
+        text_provider=text_provider,
         ai_gateway_text_model=ai_gateway_text_model,
         ai_gateway_transcription_model=ai_gateway_transcription_model,
         ai_gateway_image_model=ai_gateway_image_model,
         ai_gateway_image_size=ai_gateway_image_size,
         ai_gateway_premium_image_model=ai_gateway_premium_image_model,
+        runware_api_key=runware_api_key,
+        runware_base_url=runware_base_url,
+        runware_image_model=runware_image_model,
+        runware_premium_image_model=runware_premium_image_model,
+        runware_text_model=runware_text_model,
         ai_gateway_max_retries=ai_gateway_max_retries,
         ai_gateway_timeout_seconds=ai_gateway_timeout_seconds,
         content_variants_count=content_variants_count,

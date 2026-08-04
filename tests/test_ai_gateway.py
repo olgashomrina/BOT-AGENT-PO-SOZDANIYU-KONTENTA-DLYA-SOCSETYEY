@@ -754,3 +754,131 @@ async def test_get_balance_raises_on_rejected_api_key():
 
     with pytest.raises(AIGatewayInvalidResponseError):
         await get_balance()
+
+
+# --- generate_image через Runware: у него свой формат запроса и ответа ---
+
+RUNWARE_URL = "https://runware.test/v1"
+
+
+@pytest.fixture
+def _runware_env(monkeypatch):
+    monkeypatch.setenv("IMAGE_PROVIDER", "runware")
+    monkeypatch.setenv("RUNWARE_API_KEY", "rw-test-key")
+    monkeypatch.setenv("RUNWARE_BASE_URL", RUNWARE_URL)
+    monkeypatch.setenv("RUNWARE_IMAGE_MODEL", "runware:100@1")
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_generate_image_via_runware_returns_decoded_bytes(_runware_env):
+    raw = b"runware-image-bytes"
+    respx.post(RUNWARE_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": [
+                    {
+                        "taskType": "imageInference",
+                        "imageBase64Data": base64.b64encode(raw).decode(),
+                    }
+                ]
+            },
+        )
+    )
+
+    assert await generate_image("a cat astronaut") == raw
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_generate_image_via_runware_sends_a_task_shaped_request(_runware_env):
+    """Runware ждёт массив задач, а не openai-совместимое тело запроса."""
+    route = respx.post(RUNWARE_URL).mock(
+        return_value=httpx.Response(
+            200, json={"data": [{"imageBase64Data": base64.b64encode(b"x").decode()}]}
+        )
+    )
+
+    await generate_image("рыжий кот в скафандре", size="768x512")
+
+    body = json.loads(route.calls.last.request.content)
+    assert isinstance(body, list) and len(body) == 1
+    task = body[0]
+    assert task["taskType"] == "imageInference"
+    assert task["positivePrompt"] == "рыжий кот в скафандре"
+    assert task["model"] == "runware:100@1"
+    assert task["width"] == 768
+    assert task["height"] == 512
+    assert task["outputType"] == "base64Data"
+    assert route.calls.last.request.headers["Authorization"] == "Bearer rw-test-key"
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_runware_translates_the_premium_model_into_its_own(_runware_env, monkeypatch):
+    """Кнопка «Сделать реалистичнее» просит модель словами vsegpt.
+
+    `bot/handlers/refine.py` передаёт `AI_GATEWAY_PREMIUM_IMAGE_MODEL`, то есть
+    слаг vsegpt. Для Runware это бессмысленная строка, и запрос упал бы — а
+    пользователь увидел бы поломку ровно на кнопке улучшения качества.
+    """
+    monkeypatch.setenv("AI_GATEWAY_PREMIUM_IMAGE_MODEL", "img-flux/pro1.1")
+    route = respx.post(RUNWARE_URL).mock(
+        return_value=httpx.Response(
+            200, json={"data": [{"imageBase64Data": base64.b64encode(b"x").decode()}]}
+        )
+    )
+
+    await generate_image("кот", model="img-flux/pro1.1")
+
+    task = json.loads(route.calls.last.request.content)[0]
+    assert task["model"] == "runware:101@1"
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_runware_reports_errors_returned_with_http_200(_runware_env):
+    """Runware сообщает об отказе телом, а не кодом ответа.
+
+    HTTP 200 с непустым `errors` — это провал задачи (нехватка баланса,
+    неизвестная модель). Без разбора тела бот принял бы такой ответ за успех
+    и упал бы позже, на попытке декодировать отсутствующую картинку.
+    """
+    respx.post(RUNWARE_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": [],
+                "errors": [
+                    {"code": "insufficientCredits", "message": "Insufficient available balance."}
+                ],
+            },
+        )
+    )
+
+    with pytest.raises(AIGatewayInvalidResponseError) as exc_info:
+        await generate_image("кот")
+
+    assert "Insufficient available balance." in str(exc_info.value)
+
+
+# --- generate_text через Runware: протокол тот же, меняются адрес и ключ ---
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_generate_text_via_runware_uses_its_endpoint_key_and_model(monkeypatch):
+    monkeypatch.setenv("TEXT_PROVIDER", "runware")
+    monkeypatch.setenv("RUNWARE_API_KEY", "rw-test-key")
+    monkeypatch.setenv("RUNWARE_BASE_URL", RUNWARE_URL)
+    monkeypatch.setenv("RUNWARE_TEXT_MODEL", "deepseek-v4-flash")
+    route = respx.post(f"{RUNWARE_URL}/chat/completions").mock(
+        return_value=_chat_response("готовый пост")
+    )
+
+    assert await generate_text("напиши пост") == "готовый пост"
+
+    request = route.calls.last.request
+    assert request.headers["Authorization"] == "Bearer rw-test-key"
+    assert json.loads(request.content)["model"] == "deepseek-v4-flash"

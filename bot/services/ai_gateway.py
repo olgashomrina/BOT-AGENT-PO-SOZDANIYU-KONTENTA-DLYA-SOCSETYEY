@@ -5,13 +5,14 @@ import base64
 import binascii
 import logging
 import time
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, NoReturn
 
 import httpx
 
-from bot.config import load_settings
+from bot.config import Settings, load_settings
 from bot.logging_config import LOGGER_NAME
 
 logger = logging.getLogger(LOGGER_NAME)
@@ -421,9 +422,33 @@ def _parse_image_response(
         _fail(mapped, operation=operation, provider=provider, model=model, duration_ms=duration_ms, retry_count=retry_count)
 
 
+def _text_endpoint(settings: Settings) -> tuple[str, str, str, str]:
+    """Куда идти за текстом: адрес, ключ, имя провайдера и модель по умолчанию.
+
+    Провайдер выбирается на операцию: тексты и картинки могут жить у Runware,
+    а распознавание речи обязано остаться у vsegpt, потому что у Runware его
+    нет вовсе. Текстовый эндпоинт Runware openai-совместим, поэтому меняются
+    только эти четыре значения — тело запроса и разбор ответа общие.
+    """
+    if settings.text_provider.lower() == RUNWARE_PROVIDER:
+        return (
+            settings.runware_base_url,
+            settings.runware_api_key,
+            RUNWARE_PROVIDER,
+            settings.runware_text_model,
+        )
+    return (
+        settings.ai_proxy_base_url,
+        settings.ai_proxy_api_key,
+        settings.ai_gateway_provider,
+        settings.ai_gateway_text_model,
+    )
+
+
 async def generate_text(prompt: str, model: str | None = None, temperature: float | None = None) -> str:
     settings = load_settings()
-    resolved_model = model or settings.ai_gateway_text_model
+    base_url, api_key, provider, default_model = _text_endpoint(settings)
+    resolved_model = model or default_model
     operation = "generate_text"
     overall_started = time.monotonic()
 
@@ -437,14 +462,14 @@ async def generate_text(prompt: str, model: str | None = None, temperature: floa
         return await client.post("/chat/completions", json=payload)
 
     async with httpx.AsyncClient(
-        base_url=settings.ai_proxy_base_url,
+        base_url=base_url,
         timeout=settings.ai_gateway_timeout_seconds,
-        headers={"Authorization": f"Bearer {settings.ai_proxy_api_key}"},
+        headers={"Authorization": f"Bearer {api_key}"},
     ) as client:
         result = await _call_with_retries(
             request=lambda: _do_request(client),
             operation=operation,
-            provider=settings.ai_gateway_provider,
+            provider=provider,
             model=resolved_model,
             max_retries=settings.ai_gateway_max_retries,
             sleep=_sleep,
@@ -452,7 +477,7 @@ async def generate_text(prompt: str, model: str | None = None, temperature: floa
 
     duration_ms = (time.monotonic() - overall_started) * 1000
     return _parse_text_response(
-        result.response, operation, settings.ai_gateway_provider, resolved_model, result.retry_count, duration_ms
+        result.response, operation, provider, resolved_model, result.retry_count, duration_ms
     )
 
 
@@ -525,8 +550,157 @@ async def transcribe(audio_bytes: bytes, language_hint: str | None = None) -> st
     )
 
 
+RUNWARE_PROVIDER = "runware"
+
+
+def _runware_dimensions(size: str) -> tuple[int, int]:
+    """`"1024x1024"` → `(1024, 1024)`.
+
+    Runware принимает ширину и высоту числами, а не строкой размера, как
+    openai-совместимые модели. Разбор терпимый: при неразборчивом значении
+    берём квадрат 1024, потому что уронить генерацию из-за настройки размера
+    хуже, чем нарисовать картинку не того размера.
+    """
+    try:
+        width, height = (int(part) for part in size.lower().split("x", 1))
+    except (ValueError, AttributeError):
+        return 1024, 1024
+    return width, height
+
+
+def _parse_runware_image_response(
+    response: httpx.Response,
+    operation: str,
+    provider: str,
+    model: str,
+    retry_count: int,
+    duration_ms: float,
+) -> bytes:
+    """Картинка из ответа Runware.
+
+    Формат другой, чем у openai-совместимых шлюзов: ответ — объект с массивом
+    `data` по одной записи на задачу, картинка лежит в `imageBase64Data`.
+    Ошибки Runware кладёт в отдельный массив `errors` и отвечает при этом
+    двумя сотнями, поэтому одного HTTP-кода мало — надо смотреть тело.
+    """
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        mapped: AIGatewayError = AIGatewayInvalidResponseError(
+            "Не удалось разобрать ответ сервиса генерации изображений"
+        )
+        mapped.__cause__ = exc
+        _fail(mapped, operation=operation, provider=provider, model=model, duration_ms=duration_ms, retry_count=retry_count)
+
+    errors = payload.get("errors") if isinstance(payload, dict) else None
+    if errors:
+        message = str(errors[0].get("message", "")) if isinstance(errors[0], dict) else str(errors[0])
+        _fail(
+            AIGatewayInvalidResponseError(f"Сервис генерации изображений вернул ошибку: {message}"),
+            operation=operation,
+            provider=provider,
+            model=model,
+            duration_ms=duration_ms,
+            retry_count=retry_count,
+        )
+
+    try:
+        b64_data = payload["data"][0]["imageBase64Data"]
+    except (KeyError, IndexError, TypeError) as exc:
+        mapped = AIGatewayInvalidResponseError("Ответ сервиса генерации изображений не прошёл базовую валидацию")
+        mapped.__cause__ = exc
+        _fail(mapped, operation=operation, provider=provider, model=model, duration_ms=duration_ms, retry_count=retry_count)
+
+    if not b64_data or not b64_data.strip():
+        _fail(
+            AIGatewayInvalidResponseError("Получено пустое изображение от ИИ-модели"),
+            operation=operation,
+            provider=provider,
+            model=model,
+            duration_ms=duration_ms,
+            retry_count=retry_count,
+        )
+
+    try:
+        return base64.b64decode(b64_data)
+    except (binascii.Error, ValueError) as exc:
+        mapped = AIGatewayInvalidResponseError("Не удалось декодировать изображение от ИИ-модели")
+        mapped.__cause__ = exc
+        _fail(mapped, operation=operation, provider=provider, model=model, duration_ms=duration_ms, retry_count=retry_count)
+
+
+def _runware_model(requested: str | None, settings: Settings) -> str:
+    """Модель Runware по тому, что попросил вызывающий код.
+
+    Хендлеры просят модель словами того провайдера, который был настроен, —
+    например `bot/handlers/refine.py` передаёт слаг vsegpt из
+    `AI_GATEWAY_PREMIUM_IMAGE_MODEL`. Отправить такую строку в Runware значит
+    сломать кнопку «Сделать реалистичнее», поэтому чужие слаги не передаются
+    дальше, а переводятся: премиальный — в премиальный, любой другой — в
+    модель по умолчанию. Свои идентификаторы Runware (вида `runware:100@1`)
+    проходят как есть.
+    """
+    if not requested:
+        return settings.runware_image_model
+    if requested == settings.ai_gateway_premium_image_model:
+        return settings.runware_premium_image_model
+    if "@" in requested:
+        return requested
+    return settings.runware_image_model
+
+
+async def _generate_image_runware(prompt: str, model: str | None, size: str | None) -> bytes:
+    settings = load_settings()
+    resolved_model = _runware_model(model, settings)
+    width, height = _runware_dimensions(size or settings.ai_gateway_image_size)
+    operation = "generate_image"
+    overall_started = time.monotonic()
+
+    async def _do_request(client: httpx.AsyncClient) -> httpx.Response:
+        payload = [
+            {
+                "taskType": "imageInference",
+                # Runware требует UUIDv4 и сверяет по нему ответ с запросом;
+                # своего он не придумывает и отвергает любую другую строку.
+                "taskUUID": str(uuid.uuid4()),
+                "positivePrompt": prompt,
+                "width": width,
+                "height": height,
+                "model": resolved_model,
+                "numberResults": 1,
+                # base64Data, а не URL: бот возвращает байты, и лишний поход
+                # за картинкой по ссылке — это ещё одна точка отказа.
+                "outputType": "base64Data",
+            }
+        ]
+        # Полный адрес, а не base_url плюс путь: у Runware все задачи идут в
+        # один-единственный эндпоинт, а httpx при пустом пути дописал бы к
+        # адресу косую черту.
+        return await client.post(settings.runware_base_url, json=payload)
+
+    async with httpx.AsyncClient(
+        timeout=settings.ai_gateway_timeout_seconds,
+        headers={"Authorization": f"Bearer {settings.runware_api_key}"},
+    ) as client:
+        result = await _call_with_retries(
+            request=lambda: _do_request(client),
+            operation=operation,
+            provider=RUNWARE_PROVIDER,
+            model=resolved_model,
+            max_retries=settings.ai_gateway_max_retries,
+            sleep=_sleep,
+        )
+
+    duration_ms = (time.monotonic() - overall_started) * 1000
+    return _parse_runware_image_response(
+        result.response, operation, RUNWARE_PROVIDER, resolved_model, result.retry_count, duration_ms
+    )
+
+
 async def generate_image(prompt: str, model: str | None = None, size: str | None = None) -> bytes:
     settings = load_settings()
+    if settings.image_provider.lower() == RUNWARE_PROVIDER:
+        return await _generate_image_runware(prompt, model, size)
     resolved_model = model or settings.ai_gateway_image_model
     resolved_size = size or settings.ai_gateway_image_size
     operation = "generate_image"
