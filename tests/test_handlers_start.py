@@ -782,3 +782,88 @@ async def test_news_digest_clears_a_leftover_collecting_state(db_path, monkeypat
     await on_menu_news_digest(callback, state, db_path)
 
     assert await state.get_state() is None
+
+
+from bot.handlers.start import on_menu_post_length, on_set_post_length
+from bot.keyboards.start import CALLBACK_POST_LENGTH_SET_PREFIX
+from bot.storage.users import get_post_length, set_post_length
+from bot.storage.whitelist import add_user
+
+
+def _make_length_callback(telegram_id: int, data: str, language_code: str = "ru"):
+    callback = AsyncMock()
+    callback.from_user = SimpleNamespace(id=telegram_id, language_code=language_code)
+    callback.data = data
+    callback.message = AsyncMock()
+    return callback
+
+
+@pytest.mark.asyncio
+async def test_post_length_screen_shows_the_current_choice(db_path):
+    add_user(db_path, 111)
+    set_post_length(db_path, 111, "expanded")
+    callback = _make_length_callback(111, "menu:post_length")
+
+    await on_menu_post_length(callback, db_path)
+
+    args, kwargs = callback.message.answer.call_args
+    assert args[0] == get_string("post_length_prompt", "ru")
+    keyboard = kwargs["reply_markup"]
+    marked = [row[0].text for row in keyboard.inline_keyboard if row[0].text.startswith("✓")]
+    assert marked == [f"✓ {get_string('post_length_expanded', 'ru')}"]
+
+
+@pytest.mark.asyncio
+async def test_choosing_a_preset_saves_it(db_path):
+    add_user(db_path, 111)
+    callback = _make_length_callback(111, f"{CALLBACK_POST_LENGTH_SET_PREFIX}:short")
+
+    await on_set_post_length(callback, db_path)
+
+    assert get_post_length(db_path, 111) == "short"
+
+
+@pytest.mark.asyncio
+async def test_choosing_a_preset_confirms_and_returns_to_the_create_post_screen(db_path):
+    add_user(db_path, 111)
+    callback = _make_length_callback(111, f"{CALLBACK_POST_LENGTH_SET_PREFIX}:short")
+
+    await on_set_post_length(callback, db_path)
+
+    args, kwargs = callback.message.answer.call_args
+    assert args[0] == get_string(
+        "post_length_saved", "ru", value=get_string("post_length_short", "ru")
+    )
+    callbacks = [
+        button.callback_data
+        for row in kwargs["reply_markup"].inline_keyboard
+        for button in row
+    ]
+    assert CALLBACK_TEXT_HINT in callbacks
+    callback.answer.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_preset_key_does_not_change_the_setting(db_path):
+    # Значение callback_data приходит от клиента, а клиент можно подменить.
+    add_user(db_path, 111)
+    set_post_length(db_path, 111, "medium")
+    callback = _make_length_callback(111, f"{CALLBACK_POST_LENGTH_SET_PREFIX}:bogus")
+
+    await on_set_post_length(callback, db_path)
+
+    assert get_post_length(db_path, 111) == "medium"
+    callback.message.answer.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_post_length_screen_blocked_for_a_user_not_in_the_whitelist(db_path, monkeypatch):
+    monkeypatch.setenv("WHITELIST_ENABLED", "true")
+    callback = _make_length_callback(999, "menu:post_length")
+
+    await on_menu_post_length(callback, db_path)
+
+    keyboards = [
+        kwargs.get("reply_markup") for _, kwargs in callback.message.answer.call_args_list
+    ]
+    assert all(keyboard is None for keyboard in keyboards)

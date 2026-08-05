@@ -25,16 +25,20 @@ from bot.keyboards.start import (
     CALLBACK_DIGEST_SET_TOPIC,
     CALLBACK_NEWS_DIGEST,
     CALLBACK_PHOTO_GEN,
+    CALLBACK_POST_LENGTH,
+    CALLBACK_POST_LENGTH_SET_PREFIX,
     CALLBACK_TEXT_HINT,
     build_create_post_keyboard,
     build_digest_topic_keyboard,
     build_persistent_start_keyboard,
+    build_post_length_keyboard,
     build_start_menu_keyboard,
 )
 from bot.locales.loader import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, get_string
 from bot.logging_config import LOGGER_NAME
 from bot.services import ai_gateway, content_generator, cost_tracker, digest
 from bot.services.ai_gateway import AIGatewayError
+from bot.services.post_length import PRESETS as _LENGTH_PRESETS
 from bot.storage.costs import record_cost
 from bot.storage.image_prompts import save_image_prompt
 from bot.storage.limits import increment_image_usage, increment_usage
@@ -47,6 +51,7 @@ from bot.storage.users import (
     set_interface_language,
     set_onboarding_shown,
     set_pending_media,
+    set_post_length,
 )
 
 router = Router(name="start")
@@ -134,6 +139,50 @@ async def on_menu_create_post(callback: CallbackQuery, db_path: str) -> None:
         reply_markup=build_create_post_keyboard(
             settings.mini_app_url, language, get_post_length(db_path, telegram_id)
         ),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == CALLBACK_POST_LENGTH)
+async def on_menu_post_length(callback: CallbackQuery, db_path: str) -> None:
+    telegram_id = callback.from_user.id
+    language = _resolve_language(db_path, telegram_id, callback.from_user.language_code)
+
+    if not await check_whitelist_or_reply(callback, db_path, language):
+        return
+
+    await callback.message.answer(
+        get_string("post_length_prompt", language),
+        reply_markup=build_post_length_keyboard(
+            get_post_length(db_path, telegram_id), language
+        ),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith(CALLBACK_POST_LENGTH_SET_PREFIX))
+async def on_set_post_length(callback: CallbackQuery, db_path: str) -> None:
+    telegram_id = callback.from_user.id
+    language = _resolve_language(db_path, telegram_id, callback.from_user.language_code)
+
+    if not await check_whitelist_or_reply(callback, db_path, language):
+        return
+
+    # callback_data приходит от клиента, а клиент может быть модифицирован —
+    # тот же приём защиты, что в bot/handlers/authorpost.py. Записать в базу
+    # неизвестный ключ не смертельно (get_post_length его нормализует), но
+    # молча подтвердить пользователю несуществующий выбор — хуже.
+    key = callback.data.split(":")[-1]
+    if key not in _LENGTH_PRESETS:
+        await safe_answer(callback)
+        return
+
+    set_post_length(db_path, telegram_id, key)
+
+    settings = load_settings()
+    await callback.message.answer(
+        get_string("post_length_saved", language, value=get_string(f"post_length_{key}", language)),
+        reply_markup=build_create_post_keyboard(settings.mini_app_url, language, key),
     )
     await callback.answer()
 
