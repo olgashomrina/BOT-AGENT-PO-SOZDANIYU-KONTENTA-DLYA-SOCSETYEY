@@ -231,13 +231,18 @@ async def _handle_voice(
         return
 
     settings = load_settings()
+    transcription_model = cost_tracker.transcription_model_label(
+        settings.transcription_provider,
+        settings.local_whisper_model,
+        settings.ai_gateway_transcription_model,
+    )
     record_cost(
         db_path,
         message.from_user.id,
         "transcribe",
-        settings.ai_gateway_transcription_model,
+        transcription_model,
         cost_tracker.transcription_cost(
-            settings.ai_gateway_transcription_model,
+            transcription_model,
             (message.voice or message.audio).duration,
         ),
     )

@@ -516,8 +516,18 @@ def _audio_part_metadata(audio_bytes: bytes) -> tuple[str, str]:
     return _DEFAULT_AUDIO_PART
 
 
+LOCAL_PROVIDER = "local"
+
+
 async def transcribe(audio_bytes: bytes, language_hint: str | None = None) -> str:
     settings = load_settings()
+    if settings.transcription_provider.lower() == LOCAL_PROVIDER:
+        # Импорт внутри функции намеренно: local_transcriber берёт отсюда
+        # TranscriptionError, и импорт на уровне модуля замкнул бы кольцо.
+        from bot.services.local_transcriber import transcribe_locally
+
+        return await transcribe_locally(audio_bytes, language_hint=language_hint)
+
     resolved_model = settings.ai_gateway_transcription_model
     operation = "transcribe"
     overall_started = time.monotonic()

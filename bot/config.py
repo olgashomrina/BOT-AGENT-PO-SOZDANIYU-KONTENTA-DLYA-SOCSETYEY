@@ -70,6 +70,16 @@ DEFAULT_RUNWARE_PREMIUM_IMAGE_MODEL = "runware:101@1"
 # отличие от `qwen3.5-4b`, кладёт ответ в `content`, а не в `reasoning`, и, в
 # отличие от моделей `gpt-5*`, принимает параметр `max_tokens`.
 DEFAULT_RUNWARE_TEXT_MODEL = "deepseek-v4-flash"
+# Распознавание речи на своём сервере (faster-whisper), без внешнего сервиса
+# и без оплаты за минуту. Модель по умолчанию — `small`, и это не
+# осторожность: на живой записи владельца 05.08.2026 модель `base`
+# расслышала "Создай мне пост" как "Создание пуст", то есть потеряла саму
+# команду, а `small` расшифровала фразу верно. Замеры на том же сервере:
+# 15.7 с речи — 3.2 с работы и 698 МБ пика памяти против 1.2 с и 353 МБ у
+# `base`. `medium` точнее, но просит около 1.5 ГБ и на сервере с 2 ГБ
+# рискует убить бота нехваткой памяти.
+DEFAULT_LOCAL_WHISPER_MODEL = "small"
+DEFAULT_LOCAL_WHISPER_COMPUTE_TYPE = "int8"
 DEFAULT_AI_GATEWAY_MAX_RETRIES = 2
 DEFAULT_AI_GATEWAY_TIMEOUT_SECONDS = 30.0
 DEFAULT_CONTENT_VARIANTS_COUNT = 2
@@ -93,6 +103,7 @@ class Settings:
     ai_gateway_provider: str
     image_provider: str
     text_provider: str
+    transcription_provider: str
     ai_gateway_text_model: str
     ai_gateway_transcription_model: str
     ai_gateway_image_model: str
@@ -103,6 +114,8 @@ class Settings:
     runware_image_model: str
     runware_premium_image_model: str
     runware_text_model: str
+    local_whisper_model: str
+    local_whisper_compute_type: str
     ai_gateway_max_retries: int
     ai_gateway_timeout_seconds: float
     content_variants_count: int
@@ -207,6 +220,7 @@ def load_settings(env_file: str | None = None) -> Settings:
     # на vsegpt. Без раздельной настройки пришлось бы выбирать одно из двух.
     image_provider = _optional("IMAGE_PROVIDER", ai_gateway_provider)
     text_provider = _optional("TEXT_PROVIDER", ai_gateway_provider)
+    transcription_provider = _optional("TRANSCRIPTION_PROVIDER", ai_gateway_provider)
     ai_gateway_text_model = os.environ.get("AI_GATEWAY_TEXT_MODEL", DEFAULT_AI_GATEWAY_TEXT_MODEL)
     ai_gateway_transcription_model = os.environ.get(
         "AI_GATEWAY_TRANSCRIPTION_MODEL", DEFAULT_AI_GATEWAY_TRANSCRIPTION_MODEL
@@ -226,6 +240,10 @@ def load_settings(env_file: str | None = None) -> Settings:
         "RUNWARE_PREMIUM_IMAGE_MODEL", DEFAULT_RUNWARE_PREMIUM_IMAGE_MODEL
     )
     runware_text_model = _optional("RUNWARE_TEXT_MODEL", DEFAULT_RUNWARE_TEXT_MODEL)
+    local_whisper_model = _optional("LOCAL_WHISPER_MODEL", DEFAULT_LOCAL_WHISPER_MODEL)
+    local_whisper_compute_type = _optional(
+        "LOCAL_WHISPER_COMPUTE_TYPE", DEFAULT_LOCAL_WHISPER_COMPUTE_TYPE
+    )
 
     try:
         ai_gateway_max_retries = int(
@@ -269,6 +287,7 @@ def load_settings(env_file: str | None = None) -> Settings:
         ai_gateway_provider=ai_gateway_provider,
         image_provider=image_provider,
         text_provider=text_provider,
+        transcription_provider=transcription_provider,
         ai_gateway_text_model=ai_gateway_text_model,
         ai_gateway_transcription_model=ai_gateway_transcription_model,
         ai_gateway_image_model=ai_gateway_image_model,
@@ -279,6 +298,8 @@ def load_settings(env_file: str | None = None) -> Settings:
         runware_image_model=runware_image_model,
         runware_premium_image_model=runware_premium_image_model,
         runware_text_model=runware_text_model,
+        local_whisper_model=local_whisper_model,
+        local_whisper_compute_type=local_whisper_compute_type,
         ai_gateway_max_retries=ai_gateway_max_retries,
         ai_gateway_timeout_seconds=ai_gateway_timeout_seconds,
         content_variants_count=content_variants_count,

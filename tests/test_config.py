@@ -311,3 +311,19 @@ def test_empty_values_mean_unset_not_empty(monkeypatch, tmp_path):
     assert settings.runware_image_model == "runware:100@1"
     assert settings.runware_premium_image_model == "runware:101@1"
     assert settings.runware_text_model == "deepseek-v4-flash"
+
+
+def test_transcription_provider_defaults_and_local_model(monkeypatch, tmp_path):
+    """Расшифровка тоже выбирается на операцию, но по умолчанию не меняется."""
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("AI_GATEWAY_PROVIDER", "vsegpt")
+    for key in ("TRANSCRIPTION_PROVIDER", "LOCAL_WHISPER_MODEL", "LOCAL_WHISPER_COMPUTE_TYPE"):
+        monkeypatch.delenv(key, raising=False)
+
+    settings = load_settings(env_file=_missing_env_file(tmp_path))
+
+    assert settings.transcription_provider == "vsegpt"
+    # `base` на живой записи владельца превратила "Создай мне пост" в
+    # "Создание пуст" — по умолчанию только `small` (замер 05.08.2026).
+    assert settings.local_whisper_model == "small"
+    assert settings.local_whisper_compute_type == "int8"

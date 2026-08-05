@@ -882,3 +882,23 @@ async def test_generate_text_via_runware_uses_its_endpoint_key_and_model(monkeyp
     request = route.calls.last.request
     assert request.headers["Authorization"] == "Bearer rw-test-key"
     assert json.loads(request.content)["model"] == "deepseek-v4-flash"
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_transcribe_locally_makes_no_network_call(monkeypatch):
+    """С провайдером `local` расшифровка не должна никуда ходить.
+
+    respx без замоканных маршрутов роняет любой исходящий запрос, поэтому
+    сам факт успешного возврата доказывает, что в сеть никто не пошёл.
+    """
+    monkeypatch.setenv("TRANSCRIPTION_PROVIDER", "local")
+    from bot.services import local_transcriber
+
+    async def _fake(audio_bytes, language_hint=None):
+        assert audio_bytes == b"voice-bytes"
+        return "Создай мне пост про отпуск."
+
+    monkeypatch.setattr(local_transcriber, "transcribe_locally", _fake)
+
+    assert await transcribe(b"voice-bytes", language_hint="ru") == "Создай мне пост про отпуск."

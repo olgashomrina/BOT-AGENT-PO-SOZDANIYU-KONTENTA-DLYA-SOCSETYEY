@@ -71,8 +71,31 @@ _IMAGE_RUB_PER_IMAGE = {
 _IMAGE_FALLBACK_RUB_PER_IMAGE = 15.00
 
 
+# Recognition running on our own server costs nothing per minute — the server
+# is paid for either way. Matched by prefix rather than by exact name so that
+# switching the local model (small → medium) doesn't silently start charging
+# the fallback rate to the report.
+_LOCAL_MODEL_PREFIX = "local-whisper"
+
+
+def transcription_model_label(
+    provider: str, local_model: str, remote_model: str
+) -> str:
+    """What to write into the cost log as the transcription model.
+
+    The report is read by a human deciding where the money goes, so it has to
+    name what actually did the work, not what the remote provider would have
+    used if it had been asked.
+    """
+    if provider.lower() == "local":
+        return f"{_LOCAL_MODEL_PREFIX}-{local_model}"
+    return remote_model
+
+
 def transcription_cost(model: str, duration_seconds: float) -> float:
     """Cost of transcribing `duration_seconds` of audio with `model`."""
+    if model.startswith(_LOCAL_MODEL_PREFIX):
+        return 0.0
     rate = _STT_RUB_PER_1000_SECONDS.get(model, _STT_FALLBACK_RUB_PER_1000_SECONDS)
     return rate * duration_seconds / 1000
 

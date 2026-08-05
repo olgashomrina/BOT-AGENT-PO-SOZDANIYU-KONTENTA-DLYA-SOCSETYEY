@@ -74,3 +74,23 @@ def test_runware_image_models_are_priced_from_live_measurements():
     """
     assert cost_tracker.image_cost("runware:100@1") == pytest.approx(0.0006 * 92.0)
     assert cost_tracker.image_cost("runware:101@1") == pytest.approx(0.0013 * 92.0)
+
+
+def test_local_transcription_is_free():
+    """Своя модель на своём сервере не стоит за минуту ничего.
+
+    Без этого `/costs` списывал бы на расшифровку цену vsegpt, которой на
+    самом деле никто не платит, и отчёт врал бы тем сильнее, чем больше
+    голосовых наговорили.
+    """
+    assert cost_tracker.transcription_cost("local-whisper-small", 600) == 0.0
+
+
+def test_transcription_model_label_names_the_local_model():
+    """В отчёте должно быть видно, чем именно расшифровано."""
+    assert cost_tracker.transcription_model_label("local", "small", "stt-openai/x") == (
+        "local-whisper-small"
+    )
+    assert cost_tracker.transcription_model_label("vsegpt", "small", "stt-openai/x") == (
+        "stt-openai/x"
+    )
