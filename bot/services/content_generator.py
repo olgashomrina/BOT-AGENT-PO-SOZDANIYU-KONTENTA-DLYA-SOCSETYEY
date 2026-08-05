@@ -21,7 +21,13 @@ _PLATFORM_INSTRUCTIONS: dict[Platform, str] = {
     "telegram": (
         "Platform: Telegram post. Keep it short and casual (a few sentences), "
         "use light Markdown-style emphasis (*bold*/_italic_) sparingly, include "
-        "a couple of fitting emoji, and end with a short, punchy call-to-action."
+        # Владелец попросила эмодзи чуть больше прежнего («плюс один-два, но
+        # не перебарщивай», 05.08.2026): было "a couple", то есть примерно два.
+        # Верхняя граница названа явно — без неё модели засыпают эмодзи весь
+        # короткий пост, и просьба «чуть больше» оборачивается пестротой.
+        "three or four fitting emoji spread through the text (do not overdo "
+        "it — no emoji in every sentence), and end with a short, punchy "
+        "call-to-action."
     ),
     "vk": (
         "Platform: VK (VKontakte) post. You may write a bit longer than for "

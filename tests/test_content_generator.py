@@ -334,3 +334,20 @@ async def test_generate_variants_forwards_the_style_profile(monkeypatch):
     )
 
     assert "• ирония" in mock.await_args.args[0]
+
+
+def test_telegram_prompt_asks_for_a_few_emoji_with_an_upper_bound():
+    """Владелец попросила эмодзи «чуть побольше, плюс один-два, не перебарщивая».
+
+    Просьба именно про меру: без верхней границы модели охотно засыпают
+    короткий пост эмодзи, и текст перестаёт читаться. Поэтому в промпте
+    названо и число, и запрет перебора.
+    """
+    prompt = content_generator.build_prompt(
+        source_text="исходный текст",
+        platform="telegram",
+        content_language="ru",
+    )
+
+    assert "three or four" in prompt
+    assert "do not overdo" in prompt.lower()
