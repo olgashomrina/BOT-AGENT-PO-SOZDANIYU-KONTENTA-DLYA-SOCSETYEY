@@ -902,3 +902,27 @@ async def test_transcribe_locally_makes_no_network_call(monkeypatch):
     monkeypatch.setattr(local_transcriber, "transcribe_locally", _fake)
 
     assert await transcribe(b"voice-bytes", language_hint="ru") == "Создай мне пост про отпуск."
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_get_balance_reads_runware_account_details(monkeypatch):
+    """У Runware баланс лежит не по своему адресу, а в задаче accountManagement.
+
+    Возвращает он доллары, а весь бюджет проекта рублёвый — иначе порог
+    предупреждения в 50 ₽ сравнивался бы с двадцатью долларами и не срабатывал
+    бы никогда.
+    """
+    monkeypatch.setenv("BALANCE_PROVIDER", "runware")
+    monkeypatch.setenv("RUNWARE_API_KEY", "rw-test-key")
+    monkeypatch.setenv("RUNWARE_BASE_URL", RUNWARE_URL)
+    monkeypatch.setenv("USD_RUB_RATE", "92")
+    route = respx.post(RUNWARE_URL).mock(
+        return_value=httpx.Response(200, json={"data": [{"balance": 19.95644}]})
+    )
+
+    assert await get_balance() == pytest.approx(19.95644 * 92)
+
+    task = json.loads(route.calls.last.request.content)[0]
+    assert task["taskType"] == "accountManagement"
+    assert task["operation"] == "getDetails"

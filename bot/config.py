@@ -104,6 +104,7 @@ class Settings:
     image_provider: str
     text_provider: str
     transcription_provider: str
+    balance_provider: str
     ai_gateway_text_model: str
     ai_gateway_transcription_model: str
     ai_gateway_image_model: str
@@ -221,6 +222,12 @@ def load_settings(env_file: str | None = None) -> Settings:
     image_provider = _optional("IMAGE_PROVIDER", ai_gateway_provider)
     text_provider = _optional("TEXT_PROVIDER", ai_gateway_provider)
     transcription_provider = _optional("TRANSCRIPTION_PROVIDER", ai_gateway_provider)
+    # За какой счёт следит предупреждение о низком балансе. Отдельная
+    # настройка нужна потому, что деньги уходят туда, где генерация, а не
+    # туда, что записано основным провайдером: расшифровка ушла на свой
+    # сервер, тексты и картинки — на Runware, и следить за балансом vsegpt
+    # стало бессмысленно.
+    balance_provider = _optional("BALANCE_PROVIDER", ai_gateway_provider)
     ai_gateway_text_model = os.environ.get("AI_GATEWAY_TEXT_MODEL", DEFAULT_AI_GATEWAY_TEXT_MODEL)
     ai_gateway_transcription_model = os.environ.get(
         "AI_GATEWAY_TRANSCRIPTION_MODEL", DEFAULT_AI_GATEWAY_TRANSCRIPTION_MODEL
@@ -288,6 +295,7 @@ def load_settings(env_file: str | None = None) -> Settings:
         image_provider=image_provider,
         text_provider=text_provider,
         transcription_provider=transcription_provider,
+        balance_provider=balance_provider,
         ai_gateway_text_model=ai_gateway_text_model,
         ai_gateway_transcription_model=ai_gateway_transcription_model,
         ai_gateway_image_model=ai_gateway_image_model,

@@ -819,6 +819,63 @@ def _extract_balance(payload: Any) -> float | None:
     return None
 
 
+async def _get_balance_runware(settings: Settings) -> float:
+    """Остаток на счёте Runware, в рублях.
+
+    Своего эндпоинта баланса у Runware нет: остаток лежит в задаче
+    `accountManagement` с операцией `getDetails`, полем `balance`, и считается
+    в долларах (проверено живым запросом 05.08.2026). Перевод в рубли — не
+    придирка: порог предупреждения задан в рублях, и без пересчёта «20»
+    сравнивалось бы с «50» и тревога звучала бы постоянно.
+    """
+    operation = "get_balance"
+    overall_started = time.monotonic()
+
+    async def _do_request(client: httpx.AsyncClient) -> httpx.Response:
+        payload = [
+            {
+                "taskType": "accountManagement",
+                "taskUUID": str(uuid.uuid4()),
+                "operation": "getDetails",
+            }
+        ]
+        return await client.post(settings.runware_base_url, json=payload)
+
+    async with httpx.AsyncClient(
+        timeout=settings.ai_gateway_timeout_seconds,
+        headers={"Authorization": f"Bearer {settings.runware_api_key}"},
+    ) as client:
+        result = await _call_with_retries(
+            request=lambda: _do_request(client),
+            operation=operation,
+            provider=RUNWARE_PROVIDER,
+            model="-",
+            max_retries=settings.ai_gateway_max_retries,
+            sleep=_sleep,
+        )
+
+    duration_ms = (time.monotonic() - overall_started) * 1000
+
+    try:
+        balance_usd = float(result.response.json()["data"][0]["balance"])
+    except (ValueError, KeyError, IndexError, TypeError) as exc:
+        mapped: AIGatewayError = AIGatewayInvalidResponseError(
+            "Не удалось разобрать ответ о балансе Runware"
+        )
+        mapped.__cause__ = exc
+        _fail(
+            mapped,
+            operation=operation,
+            provider=RUNWARE_PROVIDER,
+            model="-",
+            duration_ms=duration_ms,
+            retry_count=result.retry_count,
+        )
+
+    _info(operation, RUNWARE_PROVIDER, "-", duration_ms, result.retry_count)
+    return balance_usd * settings.usd_rub_rate
+
+
 async def get_balance() -> float:
     """Remaining account balance at the AI proxy, **in rubles**.
 
@@ -836,6 +893,8 @@ async def get_balance() -> float:
     operation = "get_balance"
     # Not a model call; the log fields still want the field filled in.
     model = "-"
+    if settings.balance_provider.lower() == RUNWARE_PROVIDER:
+        return await _get_balance_runware(settings)
     is_openrouter = settings.ai_gateway_provider.lower() == OPENROUTER_PROVIDER
     path = _OPENROUTER_BALANCE_PATH if is_openrouter else _DEFAULT_BALANCE_PATH
     overall_started = time.monotonic()

@@ -327,3 +327,13 @@ def test_transcription_provider_defaults_and_local_model(monkeypatch, tmp_path):
     # "Создание пуст" — по умолчанию только `small` (замер 05.08.2026).
     assert settings.local_whisper_model == "small"
     assert settings.local_whisper_compute_type == "int8"
+
+
+def test_balance_provider_defaults_to_the_general_provider(monkeypatch, tmp_path):
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("AI_GATEWAY_PROVIDER", "vsegpt")
+    monkeypatch.delenv("BALANCE_PROVIDER", raising=False)
+
+    settings = load_settings(env_file=_missing_env_file(tmp_path))
+
+    assert settings.balance_provider == "vsegpt"
