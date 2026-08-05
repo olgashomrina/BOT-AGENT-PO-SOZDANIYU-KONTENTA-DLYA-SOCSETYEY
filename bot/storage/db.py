@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS users (
     pending_media_file_id TEXT,
     pending_media_type TEXT,
     onboarding_shown INTEGER,
-    digest_topic TEXT
+    digest_topic TEXT,
+    post_length TEXT
 );
 
 CREATE TABLE IF NOT EXISTS usage_log (
@@ -127,6 +128,14 @@ def _ensure_channel_id_column(connection: sqlite3.Connection) -> None:
         connection.execute("ALTER TABLE users ADD COLUMN channel_id INTEGER")
 
 
+def _ensure_content_language_column(connection: sqlite3.Connection) -> None:
+    # content_language has been part of the schema for a long time, but ensure
+    # it exists for any edge-case legacy databases that might be missing it.
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(users)")}
+    if "content_language" not in columns:
+        connection.execute("ALTER TABLE users ADD COLUMN content_language TEXT")
+
+
 def _ensure_pending_media_columns(connection: sqlite3.Connection) -> None:
     # Phase 13 added these columns after Phases 0-12 were already deployed in
     # production (Plan.md "Фаза 13"). CREATE TABLE IF NOT EXISTS above only
@@ -160,6 +169,17 @@ def _ensure_digest_topic_column(connection: sqlite3.Connection) -> None:
         connection.execute("ALTER TABLE users ADD COLUMN digest_topic TEXT")
 
 
+def _ensure_post_length_column(connection: sqlite3.Connection) -> None:
+    # Настройка объёма поста (docs/superpowers/specs/
+    # 2026-08-05-post-length-budget-design.md) появилась, когда бот уже был
+    # развёрнут. CREATE TABLE IF NOT EXISTS покрывает только чистые установки —
+    # уже существующей базе нужна явная миграция, иначе бот упадёт на первом
+    # же запросе после выката.
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(users)")}
+    if "post_length" not in columns:
+        connection.execute("ALTER TABLE users ADD COLUMN post_length TEXT")
+
+
 def _ensure_style_example_kind_column(connection: sqlite3.Connection) -> None:
     # Этап 1 фичи «двойник» добавляет вид образца стиля: письменные посты
     # и расшифровки кружков нельзя смешивать в одном промпте. CREATE TABLE
@@ -176,10 +196,12 @@ def init_db(db_path: str) -> None:
     connection = sqlite3.connect(db_path)
     try:
         connection.executescript(SCHEMA)
+        _ensure_content_language_column(connection)
         _ensure_channel_id_column(connection)
         _ensure_pending_media_columns(connection)
         _ensure_onboarding_shown_column(connection)
         _ensure_digest_topic_column(connection)
+        _ensure_post_length_column(connection)
         _ensure_style_example_kind_column(connection)
         connection.commit()
     finally:

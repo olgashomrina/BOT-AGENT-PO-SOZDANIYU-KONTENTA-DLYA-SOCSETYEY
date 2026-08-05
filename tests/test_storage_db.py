@@ -238,3 +238,23 @@ def test_init_db_migrates_existing_database_missing_digest_topic_column(tmp_path
     columns = {row[1] for row in connection.execute("PRAGMA table_info(users)")}
     connection.close()
     assert "digest_topic" in columns
+
+
+def test_init_db_adds_post_length_to_a_pre_existing_users_table(tmp_path):
+    import sqlite3
+
+    from bot.storage.db import init_db
+    from bot.storage.users import get_post_length, set_post_length
+
+    path = str(tmp_path / "legacy.db")
+    connection = sqlite3.connect(path)
+    connection.execute(
+        "CREATE TABLE users (telegram_id INTEGER PRIMARY KEY, interface_language TEXT)"
+    )
+    connection.commit()
+    connection.close()
+
+    init_db(path)
+
+    set_post_length(path, 111, "short")
+    assert get_post_length(path, 111) == "short"

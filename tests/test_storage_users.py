@@ -185,3 +185,31 @@ def test_get_users_with_digest_topic_returns_only_users_with_topic_set(db_path):
     result = get_users_with_digest_topic(db_path)
 
     assert set(result) == {(111, "психология"), (222, "дизайн интерьеров")}
+
+
+from bot.services import post_length
+from bot.storage.users import get_post_length, set_post_length
+
+
+def test_unknown_user_gets_the_default_post_length(db_path):
+    assert get_post_length(db_path, 111) == post_length.DEFAULT_PRESET
+
+
+def test_set_post_length_is_readable(db_path):
+    set_post_length(db_path, 111, "short")
+
+    assert get_post_length(db_path, 111) == "short"
+
+
+def test_post_length_survives_other_user_settings(db_path):
+    set_post_length(db_path, 111, "expanded")
+    set_interface_language(db_path, 111, "en")
+
+    assert get_post_length(db_path, 111) == "expanded"
+
+
+def test_unknown_stored_preset_falls_back_to_the_default(db_path):
+    # Значение могло попасть в базу от более новой версии бота или руками.
+    set_post_length(db_path, 111, "bogus")
+
+    assert get_post_length(db_path, 111) == post_length.DEFAULT_PRESET

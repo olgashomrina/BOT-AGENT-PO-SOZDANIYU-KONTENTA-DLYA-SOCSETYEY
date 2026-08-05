@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from bot.services import post_length
 from bot.storage.db import get_connection
 
 
@@ -189,5 +190,37 @@ def get_users_with_digest_topic(db_path: str) -> list[tuple[int, str]]:
             "WHERE digest_topic IS NOT NULL AND digest_topic != ''"
         ).fetchall()
         return [(row[0], row[1]) for row in rows]
+    finally:
+        connection.close()
+
+
+def set_post_length(db_path: str, telegram_id: int, preset: str) -> None:
+    connection = get_connection(db_path)
+    try:
+        _ensure_user_row(connection, telegram_id)
+        connection.execute(
+            "UPDATE users SET post_length = ? WHERE telegram_id = ?",
+            (preset, telegram_id),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def get_post_length(db_path: str, telegram_id: int) -> str:
+    """Всегда возвращает валидный ключ пресета, а не NULL и не мусор.
+
+    Нормализация живёт здесь, чтобы три вызывающих хендлера не повторяли
+    одну и ту же проверку. bot.services.post_length — модуль без зависимостей
+    (только стандартная библиотека), поэтому импорт из storage цикла не создаёт.
+    """
+    connection = get_connection(db_path)
+    try:
+        row = connection.execute(
+            "SELECT post_length FROM users WHERE telegram_id = ?",
+            (telegram_id,),
+        ).fetchone()
+        stored = row[0] if row else None
+        return post_length.get_preset(stored).key
     finally:
         connection.close()
