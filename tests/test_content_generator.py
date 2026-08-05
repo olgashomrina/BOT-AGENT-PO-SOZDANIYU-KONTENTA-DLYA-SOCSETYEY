@@ -351,3 +351,126 @@ def test_telegram_prompt_asks_for_a_few_emoji_with_an_upper_bound():
 
     assert "three or four" in prompt
     assert "do not overdo" in prompt.lower()
+
+
+from bot.services import post_length
+
+
+def test_build_prompt_includes_the_budget_when_a_preset_is_given():
+    prompt = content_generator.build_prompt("текст", "telegram", "ru", length_preset="short")
+
+    assert str(post_length.get_preset("short").target_chars) in prompt
+
+
+def test_build_prompt_without_a_preset_is_unchanged_from_default():
+    prompt = content_generator.build_prompt("текст", "telegram", "ru")
+
+    assert prompt == content_generator.build_prompt(
+        "текст", "telegram", "ru", length_preset=None
+    )
+
+
+def test_build_prompt_budget_differs_between_presets():
+    short_prompt = content_generator.build_prompt(
+        "текст", "telegram", "ru", length_preset="short"
+    )
+    expanded_prompt = content_generator.build_prompt(
+        "текст", "telegram", "ru", length_preset="expanded"
+    )
+
+    assert short_prompt != expanded_prompt
+
+
+@pytest.mark.asyncio
+async def test_generate_variants_does_not_retry_when_the_variant_fits(monkeypatch):
+    mock = AsyncMock(return_value="Короткий пост. Заходите!")
+    monkeypatch.setattr(ai_gateway, "generate_text", mock)
+
+    await content_generator.generate_variants(
+        "текст", "telegram", "ru", count=2, length_preset="short"
+    )
+
+    assert mock.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_generate_variants_retries_once_when_the_variant_is_too_long(monkeypatch):
+    too_long = "Слишком длинно. " * 60
+    mock = AsyncMock(side_effect=[too_long, "Коротко. Жми!"])
+    monkeypatch.setattr(ai_gateway, "generate_text", mock)
+
+    variants = await content_generator.generate_variants(
+        "текст", "telegram", "ru", count=1, length_preset="short"
+    )
+
+    assert mock.await_count == 2
+    assert variants == ["Коротко. Жми!"]
+
+
+@pytest.mark.asyncio
+async def test_generate_variants_retry_prompt_asks_for_a_smaller_number(monkeypatch):
+    too_long = "Слишком длинно. " * 60
+    mock = AsyncMock(side_effect=[too_long, "Коротко. Жми!"])
+    monkeypatch.setattr(ai_gateway, "generate_text", mock)
+
+    await content_generator.generate_variants(
+        "текст", "telegram", "ru", count=1, length_preset="short"
+    )
+
+    retry_prompt = mock.await_args_list[1].args[0]
+    assert str(post_length.get_preset("short").retry_target_chars) in retry_prompt
+
+
+@pytest.mark.asyncio
+async def test_generate_variants_trims_when_the_retry_is_also_too_long(monkeypatch):
+    too_long = "Слишком длинно. " * 60
+    mock = AsyncMock(side_effect=[too_long, too_long])
+    monkeypatch.setattr(ai_gateway, "generate_text", mock)
+
+    variants = await content_generator.generate_variants(
+        "текст", "telegram", "ru", count=1, length_preset="short"
+    )
+
+    assert mock.await_count == 2
+    assert post_length.measure(variants[0]) <= post_length.get_preset("short").max_units
+
+
+@pytest.mark.asyncio
+async def test_generate_variants_returns_a_trimmed_first_attempt_when_the_retry_fails(
+    monkeypatch,
+):
+    too_long = "Слишком длинно. " * 60
+    mock = AsyncMock(side_effect=[too_long, AIGatewayTimeoutError("timed out")])
+    monkeypatch.setattr(ai_gateway, "generate_text", mock)
+
+    variants = await content_generator.generate_variants(
+        "текст", "telegram", "ru", count=1, length_preset="short"
+    )
+
+    assert post_length.measure(variants[0]) <= post_length.get_preset("short").max_units
+
+
+@pytest.mark.asyncio
+async def test_generate_variants_retries_only_the_variant_that_overshot(monkeypatch):
+    too_long = "Слишком длинно. " * 60
+    mock = AsyncMock(side_effect=["Коротко. Жми!", too_long, "Тоже коротко. Жми!"])
+    monkeypatch.setattr(ai_gateway, "generate_text", mock)
+
+    variants = await content_generator.generate_variants(
+        "текст", "telegram", "ru", count=2, length_preset="short"
+    )
+
+    assert mock.await_count == 3
+    assert variants == ["Коротко. Жми!", "Тоже коротко. Жми!"]
+
+
+@pytest.mark.asyncio
+async def test_generate_variants_without_a_preset_never_retries(monkeypatch):
+    too_long = "Слишком длинно. " * 60
+    mock = AsyncMock(return_value=too_long)
+    monkeypatch.setattr(ai_gateway, "generate_text", mock)
+
+    variants = await content_generator.generate_variants("текст", "vk", "ru", count=2)
+
+    assert mock.await_count == 2
+    assert variants == [too_long, too_long]

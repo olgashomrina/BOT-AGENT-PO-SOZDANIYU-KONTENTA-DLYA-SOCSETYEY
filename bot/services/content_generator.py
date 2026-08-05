@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import Literal
 
-from bot.services import ai_gateway
+from bot.services import ai_gateway, post_length
+from bot.services.ai_gateway import AIGatewayError
 
 Platform = Literal["telegram", "vk"]
 
@@ -140,16 +141,23 @@ def build_prompt(
     style_examples: list[str] | None = None,
     with_hashtags: bool = False,
     style_profile: str | None = None,
+    length_preset: str | None = None,
 ) -> str:
     extra_line = f"{extra_instruction}\n" if extra_instruction else ""
     hashtag_line = f"{_HASHTAG_INSTRUCTION}\n" if with_hashtags else ""
     style_section = _build_style_section(style_examples, style_profile)
+    budget_line = ""
+    if length_preset is not None:
+        budget_line = (
+            post_length.build_budget_instruction(post_length.get_preset(length_preset)) + "\n"
+        )
     return (
         "You are a social media copywriter. Write ONE ready-to-publish social "
         "media post based on the source material below.\n"
         f"{_PLATFORM_INSTRUCTIONS[platform]}\n"
         f"{_TONE_INSTRUCTION}\n"
         f"Write the post in this language (ISO 639-1 code): {content_language}.\n"
+        f"{budget_line}"
         f"{extra_line}"
         f"{hashtag_line}"
         f"{style_section}"
@@ -179,6 +187,30 @@ async def generate_image_prompt(post_text: str) -> str:
     return result.strip()
 
 
+async def _fit_to_budget(variant: str, retry_prompt: str, length_preset: str) -> str:
+    """Укладывает вариант в бюджет: один перезапрос, потом обрезка.
+
+    Перезапрос ровно один, а не цикл «пока не влезет»: цикл не даёт гарантии
+    завершения, зато уверенно разгоняет счёт за ИИ. Обрезка гарантию даёт
+    всегда, поэтому она и стоит последней.
+    """
+    preset = post_length.get_preset(length_preset)
+    if post_length.fits(variant, preset.max_units):
+        return variant
+
+    try:
+        retried = await ai_gateway.generate_text(retry_prompt, temperature=_VARIANT_TEMPERATURE)
+    except AIGatewayError:
+        # Первая генерация уже удалась и оплачена — отдаём её подрезанной.
+        # Уронить весь запрос из-за необязательной второй попытки означало бы
+        # взять с пользователя деньги и не отдать ничего.
+        return post_length.trim(variant, preset.max_units)
+
+    if post_length.fits(retried, preset.max_units):
+        return retried
+    return post_length.trim(retried, preset.max_units)
+
+
 async def generate_variants(
     source_text: str,
     platform: Platform,
@@ -188,6 +220,7 @@ async def generate_variants(
     style_examples: list[str] | None = None,
     with_hashtags: bool = False,
     style_profile: str | None = None,
+    length_preset: str | None = None,
 ) -> list[str]:
     # Design call: call generate_text() `count` times with the same prompt
     # rather than asking the model for N variants in one response. Simpler
@@ -203,9 +236,35 @@ async def generate_variants(
         style_examples,
         with_hashtags,
         style_profile,
+        length_preset,
     )
+
+    # Промпт перезапроса собирается один раз на весь набор, а применяется
+    # только к тем вариантам, которые не уложились: перегенерировать все
+    # `count` штук из-за одного длинного значило бы платить втрое.
+    retry_prompt = ""
+    if length_preset is not None:
+        retry_instruction = post_length.build_retry_instruction(
+            post_length.get_preset(length_preset)
+        )
+        combined = (
+            f"{extra_instruction}\n{retry_instruction}" if extra_instruction else retry_instruction
+        )
+        retry_prompt = build_prompt(
+            source_text,
+            platform,
+            content_language,
+            combined,
+            style_examples,
+            with_hashtags,
+            style_profile,
+            length_preset,
+        )
+
     variants = []
     for _ in range(count):
         variant = await ai_gateway.generate_text(prompt, temperature=_VARIANT_TEMPERATURE)
+        if length_preset is not None:
+            variant = await _fit_to_budget(variant, retry_prompt, length_preset)
         variants.append(variant)
     return variants
