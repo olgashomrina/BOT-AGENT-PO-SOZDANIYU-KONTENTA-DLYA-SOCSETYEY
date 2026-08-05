@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from bot.services import post_length
 from bot.storage.users import (
     clear_pending_media,
     get_channel_id,
@@ -8,6 +9,7 @@ from bot.storage.users import (
     get_interface_language,
     get_onboarding_shown,
     get_pending_media,
+    get_post_length,
     get_users_with_digest_topic,
     set_channel_id,
     set_content_language,
@@ -15,6 +17,7 @@ from bot.storage.users import (
     set_interface_language,
     set_onboarding_shown,
     set_pending_media,
+    set_post_length,
 )
 
 
@@ -185,10 +188,6 @@ def test_get_users_with_digest_topic_returns_only_users_with_topic_set(db_path):
     result = get_users_with_digest_topic(db_path)
 
     assert set(result) == {(111, "психология"), (222, "дизайн интерьеров")}
-
-
-from bot.services import post_length
-from bot.storage.users import get_post_length, set_post_length
 
 
 def test_unknown_user_gets_the_default_post_length(db_path):

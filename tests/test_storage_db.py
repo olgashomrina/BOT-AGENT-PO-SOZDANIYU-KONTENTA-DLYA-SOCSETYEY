@@ -249,7 +249,13 @@ def test_init_db_adds_post_length_to_a_pre_existing_users_table(tmp_path):
     path = str(tmp_path / "legacy.db")
     connection = sqlite3.connect(path)
     connection.execute(
-        "CREATE TABLE users (telegram_id INTEGER PRIMARY KEY, interface_language TEXT)"
+        """
+        CREATE TABLE users (
+            telegram_id INTEGER PRIMARY KEY,
+            interface_language TEXT,
+            content_language TEXT
+        )
+        """
     )
     connection.commit()
     connection.close()

@@ -128,14 +128,6 @@ def _ensure_channel_id_column(connection: sqlite3.Connection) -> None:
         connection.execute("ALTER TABLE users ADD COLUMN channel_id INTEGER")
 
 
-def _ensure_content_language_column(connection: sqlite3.Connection) -> None:
-    # content_language has been part of the schema for a long time, but ensure
-    # it exists for any edge-case legacy databases that might be missing it.
-    columns = {row[1] for row in connection.execute("PRAGMA table_info(users)")}
-    if "content_language" not in columns:
-        connection.execute("ALTER TABLE users ADD COLUMN content_language TEXT")
-
-
 def _ensure_pending_media_columns(connection: sqlite3.Connection) -> None:
     # Phase 13 added these columns after Phases 0-12 were already deployed in
     # production (Plan.md "Фаза 13"). CREATE TABLE IF NOT EXISTS above only
@@ -196,7 +188,6 @@ def init_db(db_path: str) -> None:
     connection = sqlite3.connect(db_path)
     try:
         connection.executescript(SCHEMA)
-        _ensure_content_language_column(connection)
         _ensure_channel_id_column(connection)
         _ensure_pending_media_columns(connection)
         _ensure_onboarding_shown_column(connection)
