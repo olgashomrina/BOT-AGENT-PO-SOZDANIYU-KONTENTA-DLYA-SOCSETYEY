@@ -42,6 +42,7 @@ from bot.storage.users import (
     get_digest_topic,
     get_interface_language,
     get_onboarding_shown,
+    get_post_length,
     set_digest_topic,
     set_interface_language,
     set_onboarding_shown,
@@ -130,7 +131,9 @@ async def on_menu_create_post(callback: CallbackQuery, db_path: str) -> None:
     settings = load_settings()
     await callback.message.answer(
         get_string("menu_cta_button", language),
-        reply_markup=build_create_post_keyboard(settings.mini_app_url, language),
+        reply_markup=build_create_post_keyboard(
+            settings.mini_app_url, language, get_post_length(db_path, telegram_id)
+        ),
     )
     await callback.answer()
 

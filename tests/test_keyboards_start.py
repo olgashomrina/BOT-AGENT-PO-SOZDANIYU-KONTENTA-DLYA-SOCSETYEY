@@ -39,7 +39,9 @@ def test_start_menu_keyboard_has_news_digest_button():
 
 
 def test_create_post_keyboard_includes_site_button_when_url_set():
-    keyboard = build_create_post_keyboard("https://olgashomrina.github.io/my-lending-test/", "ru")
+    keyboard = build_create_post_keyboard(
+        "https://olgashomrina.github.io/my-lending-test/", "ru", "medium"
+    )
 
     first_row = keyboard.inline_keyboard[0]
     assert first_row[0].text == get_string("open_site_button", "ru")
@@ -47,18 +49,19 @@ def test_create_post_keyboard_includes_site_button_when_url_set():
 
 
 def test_create_post_keyboard_omits_site_button_when_url_missing():
-    keyboard = build_create_post_keyboard("", "ru")
+    keyboard = build_create_post_keyboard("", "ru", "medium")
 
-    assert len(keyboard.inline_keyboard) == 2
+    assert len(keyboard.inline_keyboard) == 3
     assert keyboard.inline_keyboard[0][0].callback_data == CALLBACK_TEXT_HINT
     assert keyboard.inline_keyboard[1][0].callback_data == CALLBACK_PHOTO_GEN
+    assert keyboard.inline_keyboard[2][0].callback_data == CALLBACK_POST_LENGTH
 
 
 def test_create_post_keyboard_text_and_photo_buttons():
-    keyboard = build_create_post_keyboard("https://example.com/", "vi")
+    keyboard = build_create_post_keyboard("https://example.com/", "vi", "medium")
 
-    text_button = keyboard.inline_keyboard[-2][0]
-    photo_button = keyboard.inline_keyboard[-1][0]
+    text_button = keyboard.inline_keyboard[-3][0]
+    photo_button = keyboard.inline_keyboard[-2][0]
     assert text_button.text == get_string("menu_text_generation_button", "vi")
     assert text_button.callback_data == CALLBACK_TEXT_HINT
     assert photo_button.text == get_string("menu_photo_generation_button", "vi")
@@ -109,3 +112,54 @@ def test_start_menu_offers_my_double():
     ]
 
     assert CALLBACK_MY_DOUBLE in callbacks
+
+
+from bot.keyboards.start import (
+    CALLBACK_POST_LENGTH,
+    CALLBACK_POST_LENGTH_SET_PREFIX,
+    build_post_length_keyboard,
+)
+from bot.services import post_length
+
+
+def test_create_post_keyboard_shows_the_current_post_length():
+    keyboard = build_create_post_keyboard("", "ru", "short")
+
+    button = keyboard.inline_keyboard[-1][0]
+    assert button.callback_data == CALLBACK_POST_LENGTH
+    assert get_string("post_length_short", "ru") in button.text
+
+
+def test_create_post_keyboard_length_button_reflects_the_chosen_preset():
+    short_button = build_create_post_keyboard("", "ru", "short").inline_keyboard[-1][0]
+    expanded_button = build_create_post_keyboard("", "ru", "expanded").inline_keyboard[-1][0]
+
+    assert short_button.text != expanded_button.text
+
+
+def test_post_length_keyboard_has_a_row_per_preset():
+    keyboard = build_post_length_keyboard("medium", "ru")
+
+    assert len(keyboard.inline_keyboard) == len(post_length.PRESETS)
+    callbacks = [row[0].callback_data for row in keyboard.inline_keyboard]
+    assert callbacks == [
+        f"{CALLBACK_POST_LENGTH_SET_PREFIX}:short",
+        f"{CALLBACK_POST_LENGTH_SET_PREFIX}:medium",
+        f"{CALLBACK_POST_LENGTH_SET_PREFIX}:expanded",
+    ]
+
+
+def test_post_length_keyboard_marks_the_current_preset():
+    keyboard = build_post_length_keyboard("medium", "ru")
+
+    texts = {row[0].callback_data: row[0].text for row in keyboard.inline_keyboard}
+    assert texts[f"{CALLBACK_POST_LENGTH_SET_PREFIX}:medium"].startswith("✓")
+    assert not texts[f"{CALLBACK_POST_LENGTH_SET_PREFIX}:short"].startswith("✓")
+
+
+def test_post_length_keyboard_marks_a_different_preset_when_chosen():
+    keyboard = build_post_length_keyboard("expanded", "en")
+
+    texts = {row[0].callback_data: row[0].text for row in keyboard.inline_keyboard}
+    assert texts[f"{CALLBACK_POST_LENGTH_SET_PREFIX}:expanded"].startswith("✓")
+    assert not texts[f"{CALLBACK_POST_LENGTH_SET_PREFIX}:medium"].startswith("✓")

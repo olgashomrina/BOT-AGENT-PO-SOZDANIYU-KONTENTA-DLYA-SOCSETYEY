@@ -11,6 +11,7 @@ from aiogram.types import (
 from bot.keyboards.authorpost import CALLBACK_START as CALLBACK_AUTHORPOST_START
 from bot.keyboards.circle import CALLBACK_MY_DOUBLE
 from bot.locales.loader import get_string
+from bot.services.post_length import PRESETS as _LENGTH_PRESETS
 
 CALLBACK_CAPABILITIES = "menu:capabilities"
 CALLBACK_CREATE_POST = "menu:create_post"
@@ -18,6 +19,8 @@ CALLBACK_NEWS_DIGEST = "menu:news_digest"
 CALLBACK_TEXT_HINT = "menu:text_hint"
 CALLBACK_PHOTO_GEN = "menu:photo_gen"
 CALLBACK_DIGEST_SET_TOPIC = "menu:digest_set_topic"
+CALLBACK_POST_LENGTH = "menu:post_length"
+CALLBACK_POST_LENGTH_SET_PREFIX = "menu:post_length:set"
 
 
 def build_persistent_start_keyboard(lang: str) -> ReplyKeyboardMarkup:
@@ -58,7 +61,9 @@ def build_start_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
     )
 
 
-def build_create_post_keyboard(mini_app_url: str, lang: str) -> InlineKeyboardMarkup:
+def build_create_post_keyboard(
+    mini_app_url: str, lang: str, post_length_key: str
+) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     if mini_app_url:
         rows.append(
@@ -85,6 +90,36 @@ def build_create_post_keyboard(mini_app_url: str, lang: str) -> InlineKeyboardMa
             )
         ]
     )
+    # Текущее значение стоит прямо в подписи: настройка меняется редко, и без
+    # него пользователю пришлось бы открывать экран только чтобы вспомнить,
+    # что там выбрано.
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=get_string(
+                    "post_length_button",
+                    lang,
+                    value=get_string(f"post_length_{post_length_key}", lang),
+                ),
+                callback_data=CALLBACK_POST_LENGTH,
+            )
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def build_post_length_keyboard(current_key: str, lang: str) -> InlineKeyboardMarkup:
+    rows = []
+    for key in _LENGTH_PRESETS:
+        label = get_string(f"post_length_{key}", lang)
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"✓ {label}" if key == current_key else label,
+                    callback_data=f"{CALLBACK_POST_LENGTH_SET_PREFIX}:{key}",
+                )
+            ]
+        )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

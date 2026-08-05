@@ -126,6 +126,15 @@ STRINGS = {
         "подготовлю варианты постов для Telegram и VK."
     ),
     "menu_photo_generation_button": "Генерация фото",
+    "post_length_button": "📏 Объём поста: {value}",
+    "post_length_prompt": (
+        "Какого объёма писать посты? Любой из вариантов гарантированно "
+        "помещается в пост Telegram — даже когда к нему приложена картинка."
+    ),
+    "post_length_saved": "Готово. Объём поста: {value}.",
+    "post_length_short": "Короткий",
+    "post_length_medium": "Средний",
+    "post_length_expanded": "Развёрнутый",
     "photo_gen_prompt": (
         "Опишите, какую картинку вы хотите — я сгенерирую её через ИИ."
     ),

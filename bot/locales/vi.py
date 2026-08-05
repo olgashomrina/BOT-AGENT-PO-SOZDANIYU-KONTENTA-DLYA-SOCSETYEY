@@ -127,6 +127,15 @@ STRINGS = {
         "và VK."
     ),
     "menu_photo_generation_button": "Tạo ảnh",
+    "post_length_button": "📏 Độ dài bài đăng: {value}",
+    "post_length_prompt": (
+        "Bài đăng nên dài bao nhiêu? Mọi lựa chọn đều chắc chắn vừa với một "
+        "bài đăng Telegram — kể cả khi có ảnh đính kèm."
+    ),
+    "post_length_saved": "Xong. Độ dài bài đăng: {value}.",
+    "post_length_short": "Ngắn",
+    "post_length_medium": "Trung bình",
+    "post_length_expanded": "Chi tiết",
     "photo_gen_prompt": "Hãy mô tả hình ảnh bạn muốn — tôi sẽ tạo nó bằng AI.",
     "photo_gen_ready": (
         "Hình ảnh đã sẵn sàng! Bây giờ hãy gửi văn bản, đường liên kết "

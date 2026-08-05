@@ -90,6 +90,12 @@ STRINGS = {
         "帖子方案。"
     ),
     "menu_photo_generation_button": "生成图片",
+    "post_length_button": "📏 帖子长度：{value}",
+    "post_length_prompt": "帖子应该写多长？每个选项都保证能放进一条 Telegram 帖子——即使附带图片。",
+    "post_length_saved": "已保存。帖子长度：{value}。",
+    "post_length_short": "简短",
+    "post_length_medium": "适中",
+    "post_length_expanded": "详细",
     "photo_gen_prompt": "请描述您想要的图片——我会用 AI 生成它。",
     "photo_gen_ready": (
         "图片已生成！现在请发送文字、文章链接或语音消息——我会为您准备带有"

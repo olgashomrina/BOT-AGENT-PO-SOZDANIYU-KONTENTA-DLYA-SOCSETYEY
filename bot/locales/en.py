@@ -123,6 +123,15 @@ STRINGS = {
         "I'll prepare post variants for Telegram and VK."
     ),
     "menu_photo_generation_button": "Photo generation",
+    "post_length_button": "📏 Post length: {value}",
+    "post_length_prompt": (
+        "How long should your posts be? Every option is guaranteed to fit a "
+        "Telegram post — even when there is an image attached."
+    ),
+    "post_length_saved": "Done. Post length: {value}.",
+    "post_length_short": "Short",
+    "post_length_medium": "Medium",
+    "post_length_expanded": "Detailed",
     "photo_gen_prompt": "Describe the image you want — I'll generate it using AI.",
     "photo_gen_ready": (
         "The image is ready! Now send me text, a link to an article, "
