@@ -115,6 +115,16 @@ def test_trim_does_not_split_an_emoji_in_half():
     assert post_length.measure(result) <= 22
 
 
+def test_trim_returns_nothing_for_a_zero_budget():
+    assert post_length.trim("Длинный текст, который не влезает.", 0) == ""
+
+
+def test_trim_returns_nothing_for_a_negative_budget():
+    # Регрессия: срез encode()[: units * 2] при отрицательном units — это
+    # питоновский срез с конца, который оставлял почти весь текст.
+    assert post_length.trim("Длинный текст, который не влезает.", -1) == ""
+
+
 def test_budget_instruction_names_the_target_number():
     preset = post_length.get_preset("short")
 

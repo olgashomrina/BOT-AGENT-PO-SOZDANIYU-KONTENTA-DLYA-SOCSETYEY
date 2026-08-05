@@ -96,6 +96,13 @@ def trim(text: str, max_units: int) -> str:
     и только если не помогло — вызывается это. Режем по предложениям, а не по
     символам, чтобы пост не обрывался на полуслове.
     """
+    # Вырожденный бюджет: отдавать «…» на нулевой лимит значило бы вернуть
+    # больше, чем разрешено. Наружу это недостижимо (потолок любого пресета
+    # >= 500), но trim() — публичная функция, и её гарантия «результат всегда
+    # влезает» должна держаться безусловно, а не только на нынешних вызовах.
+    if max_units <= 0:
+        return ""
+
     if fits(text, max_units):
         return text
 
@@ -123,9 +130,6 @@ def _split_hashtag_line(text: str) -> tuple[str, tuple[str, ...]]:
     len(). Связывать два модуля ради десяти строк дороже, чем повторить их.
     """
     lines = text.rstrip().split("\n")
-    if not lines:
-        return text.strip(), ()
-
     tokens = lines[-1].split()
     if tokens and all(token.startswith("#") for token in tokens):
         return "\n".join(lines[:-1]).rstrip(), tuple(tokens)
