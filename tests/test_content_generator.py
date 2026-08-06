@@ -353,6 +353,23 @@ def test_telegram_prompt_asks_for_a_few_emoji_with_an_upper_bound():
     assert "do not overdo" in prompt.lower()
 
 
+def test_telegram_platform_instruction_no_longer_states_a_length():
+    """Regression: the platform instruction used to say "a few sentences"
+
+    (~200-400 chars), which contradicted the per-user length budget line
+    stated elsewhere in the same prompt (see post_length.build_budget_
+    instruction) and made the "Развёрнутый" preset indistinguishable from
+    "Средний". Length must come from the budget line alone.
+    """
+    prompt = content_generator.build_prompt(
+        source_text="исходный текст",
+        platform="telegram",
+        content_language="ru",
+    )
+
+    assert "a few sentences" not in prompt
+
+
 from bot.services import post_length
 
 
@@ -419,6 +436,11 @@ async def test_generate_variants_retry_prompt_asks_for_a_smaller_number(monkeypa
 
     retry_prompt = mock.await_args_list[1].args[0]
     assert str(post_length.get_preset("short").retry_target_chars) in retry_prompt
+    # Regression: build_prompt used to be called with the same length_preset
+    # for the retry prompt, so the normal budget line's target_chars ended up
+    # stated as a second, looser "hard limit" right alongside the retry's
+    # smaller number.
+    assert str(post_length.get_preset("short").target_chars) not in retry_prompt
 
 
 @pytest.mark.asyncio

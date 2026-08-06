@@ -19,9 +19,16 @@ _VARIANT_TEMPERATURE = 0.9
 # regardless of content_language — the model is explicitly told which
 # language to write the POST in via a separate instruction line.
 _PLATFORM_INSTRUCTIONS: dict[Platform, str] = {
+    # WHY no length claim here: length is deliberately not stated in this
+    # instruction — it comes from the per-user budget line appended later in
+    # build_prompt() (post_length.build_budget_instruction). The old wording
+    # ("a few sentences", ~200-400 chars) contradicted that budget line and
+    # was more concrete about shape, so a user who picked «Развёрнутый»
+    # (~950 chars) could still get a post indistinguishable from «Средний».
+    # Do not put length wording back here.
     "telegram": (
-        "Platform: Telegram post. Keep it short and casual (a few sentences), "
-        "use light Markdown-style emphasis (*bold*/_italic_) sparingly, include "
+        "Platform: Telegram post. Keep it casual, use light Markdown-style "
+        "emphasis (*bold*/_italic_) sparingly, include "
         # Владелец попросила эмодзи чуть больше прежнего («плюс один-два, но
         # не перебарщивай», 05.08.2026): было "a couple", то есть примерно два.
         # Верхняя граница названа явно — без неё модели засыпают эмодзи весь
@@ -232,11 +239,11 @@ async def generate_variants(
         source_text,
         platform,
         content_language,
-        extra_instruction,
-        style_examples,
-        with_hashtags,
-        style_profile,
-        length_preset,
+        extra_instruction=extra_instruction,
+        style_examples=style_examples,
+        with_hashtags=with_hashtags,
+        style_profile=style_profile,
+        length_preset=length_preset,
     )
 
     # Промпт перезапроса собирается один раз на весь набор, а применяется
@@ -250,15 +257,22 @@ async def generate_variants(
         combined = (
             f"{extra_instruction}\n{retry_instruction}" if extra_instruction else retry_instruction
         )
+        # WHY length_preset=None here: build_prompt would otherwise also add
+        # the normal budget line ("at most {target_chars} characters") on top
+        # of retry_instruction's own, smaller number ("at most
+        # {retry_target_chars} characters") — two conflicting hard limits in
+        # the one prompt that exists precisely because the model already
+        # missed the looser one. Omitting it leaves retry_instruction as the
+        # only length statement.
         retry_prompt = build_prompt(
             source_text,
             platform,
             content_language,
-            combined,
-            style_examples,
-            with_hashtags,
-            style_profile,
-            length_preset,
+            extra_instruction=combined,
+            style_examples=style_examples,
+            with_hashtags=with_hashtags,
+            style_profile=style_profile,
+            length_preset=None,
         )
 
     variants = []

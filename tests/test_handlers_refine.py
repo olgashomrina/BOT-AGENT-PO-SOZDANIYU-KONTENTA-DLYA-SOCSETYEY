@@ -442,7 +442,12 @@ async def test_publish_with_pending_photo_never_splits_an_html_entity(db_path):
     state = _make_state()
     await _seed_finished_session(state, db_path)
 
-    oversized_text = "Кофе & чай. " * 120
+    # "привет " prefix (7 chars, unescaped) shifts the cut point away from a
+    # clean multiple of "Кофе &amp; чай. " (16 chars escaped) — without it,
+    # 1024 / 16 lands exactly on a block boundary and the old buggy
+    # escape-then-truncate code would happen to cut right after a complete
+    # "&amp;", passing both assertions below despite the bug.
+    oversized_text = "привет " + "Кофе & чай. " * 120
     callback = _make_callback(data="refine:publish:telegram:1")
     callback.message.text = oversized_text
     bot = AsyncMock()
