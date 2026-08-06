@@ -42,7 +42,7 @@ from bot.storage.style_examples import (
     get_style_examples,
 )
 from bot.storage.style_profile import clear_style_profile, get_style_profile
-from bot.storage.users import get_content_language
+from bot.storage.users import get_content_language, get_post_length
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -365,6 +365,11 @@ async def on_authorpost_platform(
                 style_examples=style_examples,
                 with_hashtags=True,
                 style_profile=style_profile,
+                # Бюджет — свойство Telegram-поста: у VK лимит на порядок
+                # больше, и урезать там нечего.
+                length_preset=(
+                    get_post_length(db_path, telegram_id) if platform == "telegram" else None
+                ),
             )
         except AIGatewayError as exc:
             error_key = _AI_ERROR_KEYS.get(type(exc), "error_unexpected")

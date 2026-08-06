@@ -30,6 +30,7 @@ from bot.services import (
     cost_tracker,
     output_formatter,
     platform_package,
+    post_length,
 )
 from bot.services.ai_gateway import AIGatewayError
 from bot.services.content_generator import SHORTEN_INSTRUCTION
@@ -39,7 +40,13 @@ from bot.storage.limits import increment_image_usage, increment_usage
 from bot.storage.refine_context import get_refine_context, save_refine_context
 from bot.storage.style_examples import get_style_examples
 from bot.storage.style_profile import get_style_profile
-from bot.storage.users import clear_pending_media, get_channel_id, get_pending_media, set_pending_media
+from bot.storage.users import (
+    clear_pending_media,
+    get_channel_id,
+    get_pending_media,
+    get_post_length,
+    set_pending_media,
+)
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -63,7 +70,7 @@ async def _generate_and_send(
     state: FSMContext,
     db_path: str,
     platform: str,
-    extra_instruction: str | None,
+    shorten: bool,
 ) -> None:
     telegram_id = callback.from_user.id
     data = await state.get_data()
@@ -94,6 +101,22 @@ async def _generate_and_send(
     style_examples = get_style_examples(db_path, telegram_id)
     style_profile = get_style_profile(db_path, telegram_id)
 
+    # «Короче» теперь означает «на один пресет короче», а не расплывчатое
+    # словесное указание: у нижней ступени лестницы шага нет, поэтому там
+    # сохраняется прежняя формулировка. У VK пресетов нет вовсе.
+    extra_instruction: str | None = None
+    length_preset: str | None = None
+    if platform == "telegram":
+        length_preset = get_post_length(db_path, telegram_id)
+        if shorten:
+            shorter = post_length.next_shorter(length_preset)
+            if shorter is None:
+                extra_instruction = SHORTEN_INSTRUCTION
+            else:
+                length_preset = shorter
+    elif shorten:
+        extra_instruction = SHORTEN_INSTRUCTION
+
     try:
         variants = await content_generator.generate_variants(
             source_text,
@@ -104,6 +127,7 @@ async def _generate_and_send(
             style_examples=style_examples,
             with_hashtags=with_hashtags,
             style_profile=style_profile,
+            length_preset=length_preset,
         )
     except AIGatewayError as exc:
         error_key = _AI_ERROR_KEYS.get(type(exc), "error_unexpected")
@@ -138,13 +162,13 @@ async def _generate_and_send(
 @router.callback_query(F.data.startswith("refine:more:"))
 async def on_refine_more(callback: CallbackQuery, state: FSMContext, db_path: str) -> None:
     platform = callback.data.split(":")[2]
-    await _generate_and_send(callback, state, db_path, platform, extra_instruction=None)
+    await _generate_and_send(callback, state, db_path, platform, shorten=False)
 
 
 @router.callback_query(F.data.startswith("refine:shorten:"))
 async def on_refine_shorten(callback: CallbackQuery, state: FSMContext, db_path: str) -> None:
     platform = callback.data.split(":")[2]
-    await _generate_and_send(callback, state, db_path, platform, extra_instruction=SHORTEN_INSTRUCTION)
+    await _generate_and_send(callback, state, db_path, platform, shorten=True)
 
 
 @router.callback_query(F.data.startswith("refine:publish:"))

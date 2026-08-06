@@ -33,7 +33,7 @@ from bot.services.ai_gateway import AIGatewayTimeoutError
 from bot.storage.image_prompts import claim_image_prompt, save_image_prompt
 from bot.storage.limits import get_daily_count, get_daily_image_count, increment_image_usage
 from bot.storage.refine_context import get_refine_context, save_refine_context
-from bot.storage.users import get_pending_media, set_channel_id, set_pending_media
+from bot.storage.users import get_pending_media, get_post_length, set_channel_id, set_pending_media
 from bot.storage.whitelist import add_user
 
 TELEGRAM_ID = 111
@@ -127,6 +127,7 @@ async def test_refine_more_generates_and_sends_new_variant(db_path, monkeypatch)
         style_examples=[],
         with_hashtags=False,
         style_profile=None,
+        length_preset="medium",
     )
     callback.message.answer.assert_awaited_once()
     args, kwargs = callback.message.answer.call_args
@@ -157,6 +158,7 @@ async def test_refine_shorten_passes_shorten_instruction(db_path, monkeypatch):
         style_examples=[],
         with_hashtags=False,
         style_profile=None,
+        length_preset=None,
     )
     callback.message.answer.assert_awaited_once()
     args, _ = callback.message.answer.call_args
@@ -1064,3 +1066,84 @@ async def test_refine_records_context_for_the_message_it_sends(db_path, monkeypa
     # The freshly sent variant carries its own buttons, so it needs its own
     # context row — otherwise refining a refinement would report "missing".
     assert get_refine_context(db_path, CHAT_ID, 30)["source_text"] == "Первый исходник"
+
+
+from bot.storage.users import set_post_length
+
+
+@pytest.mark.asyncio
+async def test_refine_more_passes_the_users_preset_for_telegram(db_path, monkeypatch):
+    state = _make_state()
+    await _seed_finished_session(state, db_path)
+    set_post_length(db_path, TELEGRAM_ID, "expanded")
+
+    mock_generate = AsyncMock(return_value=["Новый вариант"])
+    monkeypatch.setattr(content_generator, "generate_variants", mock_generate)
+
+    callback = _make_callback(data="refine:more:telegram:1")
+    await on_refine_more(callback, state, db_path)
+
+    assert mock_generate.await_args.kwargs["length_preset"] == "expanded"
+
+
+@pytest.mark.asyncio
+async def test_refine_more_sends_no_preset_for_vk(db_path, monkeypatch):
+    state = _make_state()
+    await _seed_finished_session(state, db_path, platform="vk")
+
+    mock_generate = AsyncMock(return_value=["Новый вариант"])
+    monkeypatch.setattr(content_generator, "generate_variants", mock_generate)
+
+    callback = _make_callback(data="refine:more:vk:1")
+    await on_refine_more(callback, state, db_path)
+
+    assert mock_generate.await_args.kwargs["length_preset"] is None
+
+
+@pytest.mark.asyncio
+async def test_shorten_steps_one_preset_down_instead_of_wording(db_path, monkeypatch):
+    state = _make_state()
+    await _seed_finished_session(state, db_path)
+    set_post_length(db_path, TELEGRAM_ID, "expanded")
+
+    mock_generate = AsyncMock(return_value=["Короче"])
+    monkeypatch.setattr(content_generator, "generate_variants", mock_generate)
+
+    callback = _make_callback(data="refine:shorten:telegram:1")
+    await on_refine_shorten(callback, state, db_path)
+
+    assert mock_generate.await_args.kwargs["length_preset"] == "medium"
+    assert mock_generate.await_args.kwargs["extra_instruction"] is None
+
+
+@pytest.mark.asyncio
+async def test_shorten_on_the_shortest_preset_keeps_the_wording(db_path, monkeypatch):
+    state = _make_state()
+    await _seed_finished_session(state, db_path)
+    set_post_length(db_path, TELEGRAM_ID, "short")
+
+    mock_generate = AsyncMock(return_value=["Ещё короче"])
+    monkeypatch.setattr(content_generator, "generate_variants", mock_generate)
+
+    callback = _make_callback(data="refine:shorten:telegram:1")
+    await on_refine_shorten(callback, state, db_path)
+
+    assert mock_generate.await_args.kwargs["length_preset"] == "short"
+    assert (
+        mock_generate.await_args.kwargs["extra_instruction"]
+        == content_generator.SHORTEN_INSTRUCTION
+    )
+
+
+@pytest.mark.asyncio
+async def test_shorten_does_not_change_the_saved_preset(db_path, monkeypatch):
+    state = _make_state()
+    await _seed_finished_session(state, db_path)
+    set_post_length(db_path, TELEGRAM_ID, "expanded")
+
+    monkeypatch.setattr(content_generator, "generate_variants", AsyncMock(return_value=["x"]))
+
+    callback = _make_callback(data="refine:shorten:telegram:1")
+    await on_refine_shorten(callback, state, db_path)
+
+    assert get_post_length(db_path, TELEGRAM_ID) == "expanded"

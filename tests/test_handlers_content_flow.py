@@ -717,3 +717,22 @@ async def test_send_variants_records_context_for_each_sent_message(db_path):
         assert context["source_text"] == "Исходник"
         assert context["with_hashtags"] is True
         assert context["platform"] == "telegram"
+
+
+from bot.storage.users import set_post_length
+
+
+@pytest.mark.asyncio
+async def test_content_flow_budgets_telegram_but_not_vk(db_path, monkeypatch):
+    message = _make_message(text="Просто текст")
+    bot = _make_bot()
+    state = _make_state()
+    set_post_length(db_path, TELEGRAM_ID, "short")
+
+    mock_generate_variants = _mock_generate_variants(monkeypatch)
+
+    await route_content(message, db_path, bot, state)
+
+    telegram_call, vk_call = mock_generate_variants.await_args_list
+    assert telegram_call.kwargs["length_preset"] == "short"
+    assert "length_preset" not in vk_call.kwargs

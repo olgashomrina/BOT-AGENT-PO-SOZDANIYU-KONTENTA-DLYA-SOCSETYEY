@@ -41,6 +41,7 @@ from bot.storage.users import (
     get_content_language,
     get_interface_language,
     get_pending_media,
+    get_post_length,
     set_pending_media,
 )
 
@@ -389,6 +390,7 @@ async def _finish(
             count=settings.content_variants_count,
             style_examples=style_examples,
             style_profile=style_profile,
+            length_preset=get_post_length(db_path, telegram_id),
         )
         vk_variants = await content_generator.generate_variants(
             text,
