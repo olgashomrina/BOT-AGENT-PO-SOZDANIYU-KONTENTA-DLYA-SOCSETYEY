@@ -52,18 +52,6 @@ logger = logging.getLogger(LOGGER_NAME)
 
 router = Router(name="refine")
 
-# Telegram's hard limit for photo/video captions (Bot API "caption" field),
-# well below the 4096-char limit for plain send_message text. AI-generated
-# variant text is written for send_message and can plausibly exceed this
-# when a photo/video is attached, so publishing must not crash on it.
-_TELEGRAM_CAPTION_LIMIT = 1024
-
-
-def _truncate_caption(text: str) -> str:
-    if len(text) <= _TELEGRAM_CAPTION_LIMIT:
-        return text
-    return text[: _TELEGRAM_CAPTION_LIMIT - 1] + "…"
-
 
 async def _generate_and_send(
     callback: CallbackQuery,
@@ -199,22 +187,37 @@ async def on_refine_publish(callback: CallbackQuery, state: FSMContext, db_path:
     # parse_mode; since that formatting only escapes &/</>, Telegram hands
     # the plain (unescaped) variant text straight back as callback.message.text.
     variant_text = callback.message.text or ""
-    formatted_text = output_formatter.format_variant(variant_text)
     pending_media = get_pending_media(db_path, telegram_id)
+
+    # WHY подрезаем ДО экранирования: format_variant() превращает «&» в
+    # «&amp;», и обрезка уже экранированной строки может разрубить сущность
+    # пополам («&am»). Telegram отклоняет такое сообщение целиком, то есть
+    # починка длины ломала публикацию вместо того, чтобы её спасать.
+    # Подпись к медиа считается по разобранному тексту, поэтому мерять надо
+    # именно чистый вариант.
+    body = variant_text
+    if pending_media is not None:
+        body = post_length.trim(variant_text, post_length.TELEGRAM_CAPTION_LIMIT)
+    formatted_text = output_formatter.format_variant(body)
 
     try:
         if pending_media is None:
             await bot.send_message(channel_id, formatted_text, parse_mode=output_formatter.PARSE_MODE)
         else:
             file_id, media_type = pending_media
-            caption = _truncate_caption(formatted_text)
             if media_type == "photo":
                 await bot.send_photo(
-                    channel_id, photo=file_id, caption=caption, parse_mode=output_formatter.PARSE_MODE
+                    channel_id,
+                    photo=file_id,
+                    caption=formatted_text,
+                    parse_mode=output_formatter.PARSE_MODE,
                 )
             else:
                 await bot.send_video(
-                    channel_id, video=file_id, caption=caption, parse_mode=output_formatter.PARSE_MODE
+                    channel_id,
+                    video=file_id,
+                    caption=formatted_text,
+                    parse_mode=output_formatter.PARSE_MODE,
                 )
     except TelegramAPIError:
         logger.warning(

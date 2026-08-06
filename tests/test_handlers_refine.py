@@ -28,7 +28,7 @@ from bot.keyboards.refine import (
     build_image_upgraded_keyboard,
 )
 from bot.locales.loader import get_string
-from bot.services import ai_gateway, content_generator, output_formatter
+from bot.services import ai_gateway, content_generator, output_formatter, post_length
 from bot.services.ai_gateway import AIGatewayTimeoutError
 from bot.storage.image_prompts import claim_image_prompt, save_image_prompt
 from bot.storage.limits import get_daily_count, get_daily_image_count, increment_image_usage
@@ -413,13 +413,13 @@ async def test_publish_without_pending_media_still_sends_message(db_path):
 
 
 @pytest.mark.asyncio
-async def test_publish_with_pending_photo_truncates_oversized_caption(db_path):
+async def test_publish_with_pending_photo_trims_the_caption_on_a_sentence_boundary(db_path):
     set_channel_id(db_path, TELEGRAM_ID, CHANNEL_ID)
     set_pending_media(db_path, TELEGRAM_ID, "photo-file-id", "photo")
     state = _make_state()
     await _seed_finished_session(state, db_path)
 
-    oversized_text = "А" * 1500
+    oversized_text = "Очень длинное предложение про кофе. " * 40
     callback = _make_callback(data="refine:publish:telegram:1")
     callback.message.text = oversized_text
     bot = AsyncMock()
@@ -428,9 +428,53 @@ async def test_publish_with_pending_photo_truncates_oversized_caption(db_path):
 
     _, kwargs = bot.send_photo.call_args
     caption = kwargs["caption"]
-    assert len(caption) == 1024
-    assert caption.endswith("…")
-    assert caption == output_formatter.format_variant(oversized_text)[:1023] + "…"
+    assert post_length.measure(caption) <= post_length.TELEGRAM_CAPTION_LIMIT
+    assert caption.endswith("кофе.")
+
+
+@pytest.mark.asyncio
+async def test_publish_with_pending_photo_never_splits_an_html_entity(db_path):
+    # Регрессия: раньше подпись резалась уже ПОСЛЕ экранирования, поэтому
+    # разрез мог прийтись на середину «&amp;» — Telegram отклонял такое
+    # сообщение целиком, и публикация падала.
+    set_channel_id(db_path, TELEGRAM_ID, CHANNEL_ID)
+    set_pending_media(db_path, TELEGRAM_ID, "photo-file-id", "photo")
+    state = _make_state()
+    await _seed_finished_session(state, db_path)
+
+    oversized_text = "Кофе & чай. " * 120
+    callback = _make_callback(data="refine:publish:telegram:1")
+    callback.message.text = oversized_text
+    bot = AsyncMock()
+
+    await on_refine_publish(callback, state, db_path, bot)
+
+    _, kwargs = bot.send_photo.call_args
+    caption = kwargs["caption"]
+    plain = caption.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+    # Подпись обязана быть корректным экранированием какого-то целого текста,
+    # который сам укладывается в лимит Telegram (он меряет разобранный текст).
+    assert caption == output_formatter.format_variant(plain)
+    assert post_length.measure(plain) <= post_length.TELEGRAM_CAPTION_LIMIT
+
+
+@pytest.mark.asyncio
+async def test_publish_without_media_does_not_trim(db_path):
+    # Без картинки лимит 4096, а не 1024 — резать нечего.
+    set_channel_id(db_path, TELEGRAM_ID, CHANNEL_ID)
+    state = _make_state()
+    await _seed_finished_session(state, db_path)
+
+    long_text = "Очень длинное предложение про кофе. " * 40
+    callback = _make_callback(data="refine:publish:telegram:1")
+    callback.message.text = long_text
+    bot = AsyncMock()
+
+    await on_refine_publish(callback, state, db_path, bot)
+
+    _, kwargs = bot.send_message.call_args
+    assert kwargs == {"parse_mode": output_formatter.PARSE_MODE}
+    assert bot.send_message.call_args.args[1] == output_formatter.format_variant(long_text)
 
 
 @pytest.mark.asyncio
