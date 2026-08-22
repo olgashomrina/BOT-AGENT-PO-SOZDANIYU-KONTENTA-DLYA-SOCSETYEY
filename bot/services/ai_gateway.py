@@ -752,6 +752,69 @@ async def generate_image(prompt: str, model: str | None = None, size: str | None
     )
 
 
+async def edit_image(
+    reference_bytes: bytes,
+    prompt: str,
+    model: str | None = None,
+    size: str | None = None,
+) -> bytes:
+    """Новый образ из фотографии лица.
+
+    Отдельная функция, а не флаг у `generate_image`: там задача рисуется с
+    нуля по тексту, здесь опорой служит личная фотография пользователя, и
+    провайдер тут всегда Runware — только у него в каталоге есть модель
+    правки по референсу (`google:4@1`, 4 ₽ за картинку, замер 2026-08-06).
+
+    Фотография уходит **только base64**. Публичная ссылка на лицо
+    пользователя не формируется никогда, даже временная.
+    """
+    settings = load_settings()
+    resolved_model = model or settings.avatar_look_model
+    width, height = _runware_dimensions(size or settings.ai_gateway_image_size)
+    operation = "edit_image"
+    overall_started = time.monotonic()
+    reference = "data:image/jpeg;base64," + base64.b64encode(reference_bytes).decode()
+
+    async def _do_request(client: httpx.AsyncClient) -> httpx.Response:
+        payload = [
+            {
+                "taskType": "imageInference",
+                "taskUUID": str(uuid.uuid4()),
+                "positivePrompt": prompt,
+                "referenceImages": [reference],
+                "width": width,
+                "height": height,
+                "model": resolved_model,
+                "numberResults": 1,
+                "outputType": "base64Data",
+            }
+        ]
+        return await client.post(settings.runware_base_url, json=payload)
+
+    async with httpx.AsyncClient(
+        timeout=settings.ai_gateway_timeout_seconds,
+        headers={"Authorization": f"Bearer {settings.runware_api_key}"},
+    ) as client:
+        result = await _call_with_retries(
+            request=lambda: _do_request(client),
+            operation=operation,
+            provider=RUNWARE_PROVIDER,
+            model=resolved_model,
+            max_retries=settings.ai_gateway_max_retries,
+            sleep=_sleep,
+        )
+
+    duration_ms = (time.monotonic() - overall_started) * 1000
+    return _parse_runware_image_response(
+        result.response,
+        operation,
+        RUNWARE_PROVIDER,
+        resolved_model,
+        result.retry_count,
+        duration_ms,
+    )
+
+
 # openrouter.ai keeps the remaining balance in a different place, under a
 # different endpoint, in a different currency — so it gets an explicit reader
 # rather than the tolerant walk below.

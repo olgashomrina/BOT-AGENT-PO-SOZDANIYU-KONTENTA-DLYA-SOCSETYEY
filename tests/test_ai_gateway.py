@@ -16,6 +16,7 @@ from bot.services.ai_gateway import (
     AIGatewayTimeoutError,
     AIGatewayUnavailableError,
     TranscriptionError,
+    edit_image,
     generate_image,
     generate_text,
     get_balance,
@@ -861,6 +862,57 @@ async def test_runware_reports_errors_returned_with_http_200(_runware_env):
         await generate_image("кот")
 
     assert "Insufficient available balance." in str(exc_info.value)
+
+
+# --- edit_image через Runware: новый образ из фотографии лица ---
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_edit_image_returns_decoded_bytes(_runware_env):
+    raw = b"look-image-bytes"
+    respx.post(RUNWARE_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={"data": [{"imageBase64Data": base64.b64encode(raw).decode()}]},
+        )
+    )
+
+    assert await edit_image(b"face-photo", "close-up portrait") == raw
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_edit_image_sends_the_face_as_a_base64_reference(_runware_env):
+    """Личное фото уходит только base64 — публичной ссылки не существует."""
+    route = respx.post(RUNWARE_URL).mock(
+        return_value=httpx.Response(
+            200, json={"data": [{"imageBase64Data": base64.b64encode(b"x").decode()}]}
+        )
+    )
+
+    await edit_image(b"face-photo", "close-up portrait", model="google:4@1")
+
+    task = json.loads(route.calls.last.request.content)[0]
+    assert task["taskType"] == "imageInference"
+    assert task["model"] == "google:4@1"
+    assert task["positivePrompt"] == "close-up portrait"
+    reference = task["referenceImages"][0]
+    assert reference.startswith("data:image/jpeg;base64,")
+    assert base64.b64decode(reference.split(",", 1)[1]) == b"face-photo"
+    assert "http" not in reference
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_edit_image_reports_a_provider_error_body(_runware_env):
+    # Runware кладёт отказ в массив errors и отвечает при этом двумя сотнями.
+    respx.post(RUNWARE_URL).mock(
+        return_value=httpx.Response(200, json={"errors": [{"message": "invalidWidth"}]})
+    )
+
+    with pytest.raises(AIGatewayInvalidResponseError):
+        await edit_image(b"face-photo", "close-up portrait")
 
 
 # --- generate_text через Runware: протокол тот же, меняются адрес и ключ ---
