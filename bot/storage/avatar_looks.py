@@ -120,16 +120,25 @@ def count_looks(db_path: str, telegram_id: int) -> int:
 
 
 def set_active_look(db_path: str, telegram_id: int, look_id: int) -> None:
-    # Снятие и установка флага — одна транзакция: между ними база не должна
-    # быть видна ни с двумя активными образами, ни с нулём.
+    # Сначала включаем целевой образ и проверяем, что строка вообще нашлась:
+    # look_id может прийти с устаревшей инлайн-клавиатуры — образ уже удалён
+    # или принадлежит другому пользователю. В этом случае ничего не меняем
+    # и откатываемся, иначе пользователь остался бы вовсе без активного
+    # образа. Только когда целевая строка реально включена, гасим is_active
+    # у остальных образов этого пользователя — так таблица никогда не видна
+    # ни с двумя активными, ни с нулём.
     connection = get_connection(db_path)
     try:
-        connection.execute(
-            "UPDATE avatar_looks SET is_active = 0 WHERE telegram_id = ?",
-            (telegram_id,),
-        )
-        connection.execute(
+        cursor = connection.execute(
             "UPDATE avatar_looks SET is_active = 1 WHERE telegram_id = ? AND id = ?",
+            (telegram_id, look_id),
+        )
+        if cursor.rowcount == 0:
+            connection.rollback()
+            return
+        connection.execute(
+            "UPDATE avatar_looks SET is_active = 0 "
+            "WHERE telegram_id = ? AND id != ?",
             (telegram_id, look_id),
         )
         connection.commit()

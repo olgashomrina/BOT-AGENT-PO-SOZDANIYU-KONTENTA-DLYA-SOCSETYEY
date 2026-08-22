@@ -50,6 +50,32 @@ def test_set_active_moves_the_flag_and_leaves_exactly_one(db_path):
     assert [look.is_active for look in get_looks(db_path, TELEGRAM_ID)].count(True) == 1
 
 
+def test_set_active_with_missing_look_id_leaves_state_untouched(db_path):
+    # Пользователь мог нажать инлайн-кнопку под давно устаревшей клавиатурой,
+    # когда образ уже удалён. Это не должно оставить пользователя вовсе без
+    # активного образа.
+    first = add_look(db_path, TELEGRAM_ID, "img-1", "студия", SOURCE_UPLOADED)
+    add_look(db_path, TELEGRAM_ID, "img-2", "улица", SOURCE_UPLOADED)
+
+    set_active_look(db_path, TELEGRAM_ID, 999999)
+
+    assert get_active_look(db_path, TELEGRAM_ID).id == first
+    assert [look.is_active for look in get_looks(db_path, TELEGRAM_ID)].count(True) == 1
+
+
+def test_set_active_with_foreign_look_id_leaves_both_users_untouched(db_path):
+    other_id = 602
+    mine = add_look(db_path, TELEGRAM_ID, "img-1", "студия", SOURCE_UPLOADED)
+    theirs = add_look(db_path, other_id, "img-theirs", "улица", SOURCE_UPLOADED)
+
+    set_active_look(db_path, TELEGRAM_ID, theirs)
+
+    assert get_active_look(db_path, TELEGRAM_ID).id == mine
+    assert [look.is_active for look in get_looks(db_path, TELEGRAM_ID)].count(True) == 1
+    assert get_active_look(db_path, other_id).id == theirs
+    assert [look.is_active for look in get_looks(db_path, other_id)].count(True) == 1
+
+
 def test_generated_look_keeps_its_prompt(db_path):
     look_id = add_look(
         db_path,
