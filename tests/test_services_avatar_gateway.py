@@ -212,3 +212,86 @@ async def test_start_render_raises_on_http_error_status():
 
     with pytest.raises(AvatarGatewayUnavailableError):
         await start_render(b"image", b"audio")
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_poll_reports_a_cancelled_render_as_failed():
+    # "cancelled" — терминальный статус без видео, не "ещё работает".
+    respx.post(RUNWARE_URL).mock(
+        return_value=httpx.Response(
+            200, json={"data": [{"taskUUID": TASK_UUID, "status": "cancelled"}]}
+        )
+    )
+
+    status = await poll_render(TASK_UUID)
+
+    assert status.done is False
+    assert status.failed is True
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_poll_reports_success_without_video_as_failed():
+    # "success" без videoBase64Data/videoURL — провайдер соврал, это отказ,
+    # а не "ещё работает".
+    respx.post(RUNWARE_URL).mock(
+        return_value=httpx.Response(
+            200, json={"data": [{"taskUUID": TASK_UUID, "status": "success"}]}
+        )
+    )
+
+    status = await poll_render(TASK_UUID)
+
+    assert status.done is False
+    assert status.failed is True
+    assert status.error
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_poll_keeps_the_video_when_cost_is_unparseable():
+    # Числовые поля провайдера ненадёжны (расхождение с фактом в 7,4 раза
+    # уже наблюдалось для другой модели) — нечитаемый cost не должен стоить
+    # уже оплаченного рендера.
+    raw = b"mp4-bytes"
+    respx.post(RUNWARE_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": [
+                    {
+                        "taskUUID": TASK_UUID,
+                        "status": "success",
+                        "videoBase64Data": base64.b64encode(raw).decode(),
+                        "cost": "не число",
+                    }
+                ]
+            },
+        )
+    )
+
+    status = await poll_render(TASK_UUID)
+
+    assert status.done is True
+    assert status.failed is False
+    assert status.video_bytes == raw
+    assert status.cost_usd is None
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_poll_treats_an_unknown_status_word_as_still_running():
+    # Слово статуса, не входящее ни в один из известных списков, намеренно
+    # читается как "ещё работает" — терять оплаченный рендер дороже, чем
+    # опросить его лишний раз.
+    respx.post(RUNWARE_URL).mock(
+        return_value=httpx.Response(
+            200, json={"data": [{"taskUUID": TASK_UUID, "status": "queued"}]}
+        )
+    )
+
+    status = await poll_render(TASK_UUID)
+
+    assert status.done is False
+    assert status.failed is False

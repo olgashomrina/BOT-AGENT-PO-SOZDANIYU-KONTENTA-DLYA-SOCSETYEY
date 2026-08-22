@@ -32,6 +32,15 @@ PROVIDER_NAME = "runware"
 
 _TIMEOUT_SECONDS = 120.0
 
+# Полный словарь статусов провайдера нам не известен. Слово, которого нет ни
+# в одном из двух множеств ниже, намеренно считается "ещё работает": принять
+# незнакомое "в процессе" за отказ и выбросить уже оплаченный рендер — ошибка
+# дороже, чем один лишний цикл опроса.
+_FAILURE_STATUSES = frozenset(
+    {"error", "failed", "cancelled", "canceled", "expired", "rejected"}
+)
+_SUCCESS_STATUSES = frozenset({"success", "completed", "done"})
+
 
 class AvatarGatewayError(Exception):
     """Базовый класс всех отказов шлюза говорящего видео."""
@@ -207,7 +216,7 @@ async def poll_render(task_uuid: str) -> RenderStatus:
 
     task = _first_task(body)
     status = str(task.get("status", "")).lower()
-    if status in {"error", "failed"}:
+    if status in _FAILURE_STATUSES:
         return RenderStatus(
             done=False,
             failed=True,
@@ -219,6 +228,16 @@ async def poll_render(task_uuid: str) -> RenderStatus:
     encoded = task.get("videoBase64Data")
     url = task.get("videoURL")
     if not encoded and not url:
+        if status in _SUCCESS_STATUSES:
+            # Провайдер отчитался об успехе, но видео не приложил — это уже
+            # не "ещё работает", а отказ, просто без слова "error".
+            return RenderStatus(
+                done=False,
+                failed=True,
+                video_bytes=None,
+                cost_usd=None,
+                error="Сервис видео сообщил об успехе, но не вернул видео",
+            )
         return RenderStatus(
             done=False, failed=False, video_bytes=None, cost_usd=None, error=None
         )
@@ -227,6 +246,19 @@ async def poll_render(task_uuid: str) -> RenderStatus:
     # а иногда телом, остаётся его личным делом.
     video_bytes = base64.b64decode(encoded) if encoded else await _download(str(url))
     cost = task.get("cost")
+    try:
+        cost_usd = float(cost) if cost is not None else None
+    except (TypeError, ValueError):
+        # Числовые поля провайдера ненадёжны (документированная цена одной
+        # модели разошлась с фактом в 7,4 раза) — нечитаемый cost не должен
+        # стоить уже оплаченного и успешно скачанного рендера.
+        logger.warning(
+            "Avatar gateway got an unparseable cost: provider=%s operation=%s cost=%r",
+            PROVIDER_NAME,
+            operation,
+            cost,
+        )
+        cost_usd = None
     logger.info(
         "Avatar render ready: provider=%s operation=%s", PROVIDER_NAME, operation
     )
@@ -234,6 +266,6 @@ async def poll_render(task_uuid: str) -> RenderStatus:
         done=True,
         failed=False,
         video_bytes=video_bytes,
-        cost_usd=float(cost) if cost is not None else None,
+        cost_usd=cost_usd,
         error=None,
     )
