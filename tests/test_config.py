@@ -337,3 +337,43 @@ def test_balance_provider_defaults_to_the_general_provider(monkeypatch, tmp_path
     settings = load_settings(env_file=_missing_env_file(tmp_path))
 
     assert settings.balance_provider == "vsegpt"
+
+
+def test_avatar_settings_have_measured_defaults(monkeypatch):
+    for key in (
+        "AVATAR_PROVIDER",
+        "AVATAR_MODEL",
+        "AVATAR_LOOK_MODEL",
+        "AVATAR_TARGET_SECONDS",
+        "AVATAR_MAX_SECONDS",
+        "AVATAR_MONTHLY_SECONDS_LIMIT",
+        "AVATAR_VOICE_SYNTHESIS_ENABLED",
+        "AVATAR_POLL_INTERVAL_SECONDS",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    settings = load_settings()
+
+    assert settings.avatar_provider == "runware"
+    assert settings.avatar_model == "klingai:avatar@2.0-standard"
+    assert settings.avatar_look_model == "google:4@1"
+    assert settings.avatar_target_seconds == 30
+    assert settings.avatar_max_seconds == 60
+    assert settings.avatar_monthly_seconds_limit == 300
+    assert settings.avatar_voice_synthesis_enabled is False
+    assert settings.avatar_poll_interval_seconds == 20
+
+
+def test_avatar_voice_synthesis_flag_reads_truthy_words(monkeypatch):
+    monkeypatch.setenv("AVATAR_VOICE_SYNTHESIS_ENABLED", "true")
+    assert load_settings().avatar_voice_synthesis_enabled is True
+
+    monkeypatch.setenv("AVATAR_VOICE_SYNTHESIS_ENABLED", "0")
+    assert load_settings().avatar_voice_synthesis_enabled is False
+
+
+def test_avatar_seconds_must_be_integers(monkeypatch):
+    monkeypatch.setenv("AVATAR_MAX_SECONDS", "минута")
+
+    with pytest.raises(ConfigError):
+        load_settings()

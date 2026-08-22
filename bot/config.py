@@ -89,6 +89,27 @@ DEFAULT_SITE_API_PORT = 8080
 DEFAULT_SITE_MEDIA_DIR = "site_media"
 DEFAULT_ELEVENLABS_BASE_URL = "https://api.elevenlabs.io/v1"
 DEFAULT_TMP_MEDIA_DIR = "tmp_media"
+# Движок говорящего видео. Выбран замерами 2026-08-06 на десяти движках:
+# 270 ₽ за минуту при качестве, которое владелец утвердила. Соседи по цене
+# и форма их входа — в docs/reference-video-avatar-engines.md; смена движка
+# делается этой настройкой, без правки кода.
+DEFAULT_AVATAR_PROVIDER = "runware"
+DEFAULT_AVATAR_MODEL = "klingai:avatar@2.0-standard"
+DEFAULT_AVATAR_LOOK_MODEL = "google:4@1"
+
+# 30 секунд вдвое дешевле шестидесяти и лучше досматриваются; 60 — жёсткий
+# предел формата video note, а не предпочтение.
+DEFAULT_AVATAR_TARGET_SECONDS = 30
+DEFAULT_AVATAR_MAX_SECONDS = 60
+
+# 300 секунд рендера в месяц на пользователя — 10 кружков по 30 секунд,
+# около 1350 ₽. Потолок в секундах, а не в запросах: RateLimitMiddleware
+# считает обращения, здесь важны деньги.
+DEFAULT_AVATAR_MONTHLY_SECONDS_LIMIT = 300
+
+# Рендер пяти секунд занимал 213–520 с. Опрос раз в 20 секунд не нагружает
+# провайдера и не заставляет пользователя ждать лишнюю минуту после готовности.
+DEFAULT_AVATAR_POLL_INTERVAL_SECONDS = 20
 
 
 class ConfigError(Exception):
@@ -138,6 +159,14 @@ class Settings:
     elevenlabs_api_key: str
     elevenlabs_base_url: str
     tmp_media_dir: str
+    avatar_provider: str
+    avatar_model: str
+    avatar_look_model: str
+    avatar_target_seconds: int
+    avatar_max_seconds: int
+    avatar_monthly_seconds_limit: int
+    avatar_voice_synthesis_enabled: bool
+    avatar_poll_interval_seconds: int
 
 
 def _optional(key: str, default: str) -> str:
@@ -149,6 +178,18 @@ def _optional(key: str, default: str) -> str:
     рабочего.
     """
     return os.environ.get(key) or default
+
+
+def _flag(key: str, default: bool) -> bool:
+    """Булева переменная окружения.
+
+    Пустая строка означает «не задано» — по той же причине, что в `_optional`:
+    `.env.example` предлагает оставлять необязательные строки пустыми.
+    """
+    raw = os.environ.get(key)
+    if not raw:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on", "да"}
 
 
 def _require(key: str) -> str:
@@ -287,6 +328,35 @@ def load_settings(env_file: str | None = None) -> Settings:
     except ValueError as exc:
         raise ConfigError("SITE_API_PORT должен быть целым числом.") from exc
 
+    avatar_provider = _optional("AVATAR_PROVIDER", DEFAULT_AVATAR_PROVIDER)
+    avatar_model = _optional("AVATAR_MODEL", DEFAULT_AVATAR_MODEL)
+    avatar_look_model = _optional("AVATAR_LOOK_MODEL", DEFAULT_AVATAR_LOOK_MODEL)
+    avatar_voice_synthesis_enabled = _flag("AVATAR_VOICE_SYNTHESIS_ENABLED", False)
+
+    try:
+        avatar_target_seconds = int(
+            os.environ.get("AVATAR_TARGET_SECONDS", DEFAULT_AVATAR_TARGET_SECONDS)
+        )
+        avatar_max_seconds = int(
+            os.environ.get("AVATAR_MAX_SECONDS", DEFAULT_AVATAR_MAX_SECONDS)
+        )
+        avatar_monthly_seconds_limit = int(
+            os.environ.get(
+                "AVATAR_MONTHLY_SECONDS_LIMIT", DEFAULT_AVATAR_MONTHLY_SECONDS_LIMIT
+            )
+        )
+        avatar_poll_interval_seconds = int(
+            os.environ.get(
+                "AVATAR_POLL_INTERVAL_SECONDS", DEFAULT_AVATAR_POLL_INTERVAL_SECONDS
+            )
+        )
+    except ValueError as exc:
+        raise ConfigError(
+            "AVATAR_TARGET_SECONDS, AVATAR_MAX_SECONDS, "
+            "AVATAR_MONTHLY_SECONDS_LIMIT и AVATAR_POLL_INTERVAL_SECONDS "
+            "должны быть целыми числами."
+        ) from exc
+
     return Settings(
         bot_token=bot_token,
         ai_proxy_api_key=ai_proxy_api_key,
@@ -329,4 +399,12 @@ def load_settings(env_file: str | None = None) -> Settings:
         elevenlabs_api_key=elevenlabs_api_key,
         elevenlabs_base_url=elevenlabs_base_url,
         tmp_media_dir=tmp_media_dir,
+        avatar_provider=avatar_provider,
+        avatar_model=avatar_model,
+        avatar_look_model=avatar_look_model,
+        avatar_target_seconds=avatar_target_seconds,
+        avatar_max_seconds=avatar_max_seconds,
+        avatar_monthly_seconds_limit=avatar_monthly_seconds_limit,
+        avatar_voice_synthesis_enabled=avatar_voice_synthesis_enabled,
+        avatar_poll_interval_seconds=avatar_poll_interval_seconds,
     )
