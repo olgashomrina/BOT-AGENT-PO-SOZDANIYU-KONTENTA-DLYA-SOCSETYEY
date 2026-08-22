@@ -9,7 +9,13 @@
 
 from __future__ import annotations
 
+import re
+
 # Тянут модель к обобщённому модельному лицу вместо лица пользователя.
+# Порядок важен: более длинные фразы должны идти раньше своих же подстрок
+# ("editorial fashion photography" содержит и "editorial fashion", и
+# "fashion photography"), иначе после удаления длинной фразы короткая
+# уже не найдётся, а от неё сначала оторвётся кусок текста.
 BANNED_PHRASES = (
     "editorial fashion photography",
     "editorial fashion",
@@ -22,6 +28,10 @@ _HAIR_WORDS = (
     "причес",
     "причёс",
     "волос",
+    # «каре» совпадает и с причёской, и с вырезом «каре» на одежде: цена
+    # ложного срабатывания — одна лишняя фраза в предупреждении, а цена
+    # пропуска реальной просьбы подстричься — необъявленное изменение
+    # причёски. Поэтому оставляем как есть.
     "каре",
     "стрижк",
     "чёлк",
@@ -30,6 +40,14 @@ _HAIR_WORDS = (
     "haircut",
     "bangs",
     "ponytail",
+)
+
+# Русские основы ищем по префиксу слова (без \b на конце — чтобы
+# "волос" находил "волосы"); английские слова — целиком, с \b с обеих сторон,
+# иначе "hair" находился бы внутри "chair"/"armchair"/"wheelchair".
+_HAIR_PATTERNS = tuple(
+    re.compile(rf"\b{re.escape(word)}" if not word.isascii() else rf"\b{re.escape(word)}\b")
+    for word in _HAIR_WORDS
 )
 
 # Композиция, поза и опора на одно лицо — то, что модель обязана сохранить.
@@ -49,19 +67,20 @@ def mentions_hair(description: str) -> bool:
     предупреждение — а для этого сначала надо распознать сам случай.
     """
     lowered = description.lower()
-    return any(word in lowered for word in _HAIR_WORDS)
+    return any(pattern.search(lowered) for pattern in _HAIR_PATTERNS)
 
 
 def build_look_prompt(description: str) -> str:
     cleaned = description.strip()
-    lowered = cleaned.lower()
     for phrase in BANNED_PHRASES:
-        while phrase in lowered:
-            start = lowered.index(phrase)
-            cleaned = cleaned[:start] + cleaned[start + len(phrase) :]
-            lowered = cleaned.lower()
+        pattern = re.compile(rf"\b{re.escape(phrase)}\b", re.IGNORECASE)
+        cleaned = pattern.sub("", cleaned)
 
     # Пустое описание — это «оставь как есть, только приведи кадр к портрету»,
     # и правил для такого запроса достаточно.
-    cleaned = " ".join(cleaned.replace(" ,", ",").split()).strip(" ,")
+    # Сначала схлопываем цепочки запятых, оставшиеся после вырезания фразы
+    # (", ," → ", "), затем схлопываем пробелы и обрезаем края от пробелов
+    # и запятых — иначе после вырезания фразы в середине останется ",,".
+    cleaned = re.sub(r"(?:\s*,\s*)+", ", ", cleaned)
+    cleaned = " ".join(cleaned.split()).strip(" ,")
     return f"{_RULES} {cleaned}".strip() if cleaned else _RULES

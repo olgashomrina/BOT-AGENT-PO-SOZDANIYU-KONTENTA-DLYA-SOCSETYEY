@@ -54,3 +54,31 @@ def test_hair_changes_are_detected(description):
 @pytest.mark.parametrize("description", ["белая рубашка", "тёмный фон", "мягкий свет"])
 def test_plain_wardrobe_descriptions_are_not_hair(description):
     assert mentions_hair(description) is False
+
+
+def test_banned_phrase_removal_leaves_clean_punctuation_between_fragments():
+    # Вырезание фразы из середины строки не должно оставлять ",," или двойной
+    # пробел — соседние фрагменты должны остаться читаемыми.
+    prompt = build_look_prompt("студия, beauty retouch, мягкий свет")
+
+    assert ",," not in prompt
+    assert "  " not in prompt
+    assert "студия" in prompt
+    assert "мягкий свет" in prompt
+
+
+def test_banned_phrase_removal_does_not_mangle_longer_words():
+    # "beauty retouch" не должен вырезаться из середины "retouching".
+    prompt = build_look_prompt("no beauty retouching please")
+
+    assert "retouching" in prompt
+
+
+def test_mentions_hair_does_not_match_furniture_words():
+    assert mentions_hair("leather chair in the background") is False
+    assert mentions_hair("кресло у стены") is False
+
+
+def test_mentions_hair_still_matches_real_hair_words():
+    assert mentions_hair("haircut") is True
+    assert mentions_hair("волосы убраны") is True
