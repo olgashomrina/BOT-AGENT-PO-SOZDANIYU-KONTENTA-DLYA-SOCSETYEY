@@ -11,6 +11,9 @@ from bot.logging_config import LOGGER_NAME
 logger = logging.getLogger(LOGGER_NAME)
 
 PROVIDER_NAME = "elevenlabs"
+# Одноязычные модели читают русский с акцентом. Мультиязычная — единственная,
+# на которой клон звучит как оригинал.
+SYNTHESIS_MODEL = "eleven_multilingual_v2"
 
 _TIMEOUT_SECONDS = 120.0
 
@@ -106,3 +109,41 @@ async def delete_voice(voice_id: str) -> None:
 
     _check_status(response, operation)
     logger.info("Voice deleted: provider=%s operation=%s", PROVIDER_NAME, operation)
+
+
+async def synthesize(text: str, voice_id: str) -> bytes:
+    """Озвучка текста готовым клонированным голосом.
+
+    Голос уже создан этапом 1 и живёт у провайдера под своим идентификатором —
+    сюда он приходит параметром. Пересоздавать голос ради каждой речи не нужно
+    и нельзя: это главное требование сценария.
+    """
+    operation = "synthesize"
+    client = _client()
+    async with client:
+        try:
+            response = await client.post(
+                f"/text-to-speech/{voice_id}",
+                json={"text": text, "model_id": SYNTHESIS_MODEL},
+            )
+        except httpx.HTTPError as exc:
+            logger.error(
+                "Voice gateway transport failure: operation=%s error=%s",
+                operation,
+                exc,
+                exc_info=True,
+            )
+            raise VoiceGatewayUnavailableError(
+                "Не удалось связаться с провайдером голоса"
+            ) from exc
+
+    _check_status(response, operation)
+
+    audio = response.content
+    if not audio:
+        raise VoiceGatewayInvalidResponseError("Провайдер вернул пустую озвучку")
+
+    logger.info(
+        "Voice synthesized: provider=%s operation=%s", PROVIDER_NAME, operation
+    )
+    return audio
