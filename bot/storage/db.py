@@ -115,6 +115,61 @@ CREATE TABLE IF NOT EXISTS style_profiles (
     summary TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+
+-- Лицо ровно одно на пользователя: замена перезаписывает строку, поэтому
+-- ключ — telegram_id, а не автоинкремент.
+CREATE TABLE IF NOT EXISTS avatar_faces (
+    telegram_id INTEGER PRIMARY KEY,
+    file_id TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+-- Образов много, активный один. Флаг снимается со старого и ставится новому
+-- в одной транзакции (bot/storage/avatar_looks.py) — частичного уникального
+-- индекса тут недостаточно, он бы только запретил второй активный, а не
+-- обеспечил ровно один.
+CREATE TABLE IF NOT EXISTS avatar_looks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    telegram_id INTEGER NOT NULL,
+    file_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    source TEXT NOT NULL,
+    prompt TEXT,
+    is_active INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+
+-- Задания рендера живут в базе, а не в состоянии диалога: рестарт бота
+-- посреди оплаченного рендера — это выброшенные 135 ₽. audio_path хранит
+-- кэш озвучки, из-за которого смена образа не пересинтезирует голос.
+-- format пока всегда 'video_note'; длинное видео добавится значением.
+CREATE TABLE IF NOT EXISTS speech_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    telegram_id INTEGER NOT NULL,
+    source_text TEXT NOT NULL,
+    script TEXT,
+    look_id INTEGER,
+    audio_path TEXT,
+    audio_duration_sec REAL,
+    format TEXT NOT NULL DEFAULT 'video_note',
+    status TEXT NOT NULL,
+    provider_task_id TEXT,
+    result_file_id TEXT,
+    cost_rub REAL,
+    error TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+-- Отдельно от usage_log: тот считает обращения, а рендер меряется секундами
+-- и рублями. Один кружок стоит как несколько сотен текстовых генераций.
+CREATE TABLE IF NOT EXISTS render_usage (
+    telegram_id INTEGER NOT NULL,
+    usage_month TEXT NOT NULL,
+    seconds_rendered INTEGER NOT NULL DEFAULT 0,
+    cost_rub REAL NOT NULL DEFAULT 0,
+    PRIMARY KEY (telegram_id, usage_month)
+);
 """
 
 

@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import sqlite3
 
-from bot.storage.db import init_db
+from bot.storage.db import get_connection, init_db
 
 
 def _columns(path: str, table: str) -> set[str]:
-    connection = sqlite3.connect(path)
+    connection = get_connection(path)
     try:
         return {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
     finally:
@@ -71,3 +71,75 @@ def test_init_db_is_idempotent(db_path):
     init_db(db_path)
 
     assert "kind" in _columns(db_path, "style_examples")
+
+
+def test_avatar_faces_table_holds_one_row_per_user(db_path):
+    assert _columns(db_path, "avatar_faces") == {
+        "telegram_id",
+        "file_id",
+        "created_at",
+    }
+
+
+def test_avatar_looks_table_has_activity_flag(db_path):
+    assert _columns(db_path, "avatar_looks") == {
+        "id",
+        "telegram_id",
+        "file_id",
+        "title",
+        "source",
+        "prompt",
+        "is_active",
+        "created_at",
+    }
+
+
+def test_speech_jobs_table_carries_money_and_format(db_path):
+    assert _columns(db_path, "speech_jobs") == {
+        "id",
+        "telegram_id",
+        "source_text",
+        "script",
+        "look_id",
+        "audio_path",
+        "audio_duration_sec",
+        "format",
+        "status",
+        "provider_task_id",
+        "result_file_id",
+        "cost_rub",
+        "error",
+        "created_at",
+        "updated_at",
+    }
+
+
+def test_render_usage_is_keyed_by_user_and_month(db_path):
+    assert _columns(db_path, "render_usage") == {
+        "telegram_id",
+        "usage_month",
+        "seconds_rendered",
+        "cost_rub",
+    }
+
+
+def test_init_db_is_idempotent_on_an_existing_database(db_path):
+    # Развёрнутая база уже существует: повторный init_db не должен ни падать,
+    # ни стирать данные. Это и есть вся миграция для новых таблиц.
+    connection = get_connection(db_path)
+    try:
+        connection.execute(
+            "INSERT INTO avatar_faces (telegram_id, file_id, created_at) VALUES (1, 'f', 'now')"
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    init_db(db_path)
+
+    connection = get_connection(db_path)
+    try:
+        row = connection.execute("SELECT file_id FROM avatar_faces").fetchone()
+    finally:
+        connection.close()
+    assert row[0] == "f"
