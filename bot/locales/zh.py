@@ -272,4 +272,72 @@ STRINGS = {
     ),
     "double_deleted": "分身及其全部数据已删除。",
     "menu_my_double_button": "🎭 我的分身",
+    "double_status_full": "你的分身：面容 — {face}，造型 — {looks}，当前 — {active}。",
+    "double_face_present": "已上传",
+    "double_face_missing": "未上传",
+    "double_look_none": "暂无",
+    "double_speak_button": "🎤 发表讲话",
+    "double_looks_button": "🖼 造型",
+    "double_face_button": "📸 更换面容",
+    "double_voice_button": "🎙 声音",
+    "face_invite": (
+        "发一张清晰的正面面部照片：头肩占满画面，表情平静，目视镜头。\n\n"
+        "所有造型都以这张面容为基础，照片越清晰，圆形视频就越像你。"
+    ),
+    "face_saved": "面容已保存。现在可以做造型了。",
+    "face_expected_photo": "我需要一张照片 — 请以图片形式发送，不要用文件。",
+    "looks_title": "造型：{count} 个。当前 — {active}。",
+    "looks_add_photo_button": "发送图片",
+    "looks_add_prompt_button": "用文字描述",
+    "looks_upload_invite": (
+        "把造型图片发过来。\n\n"
+        "要点：特写，头肩占满画面。全景里面部只占五分之一，圆形视频会糊。"
+    ),
+    "looks_prompt_invite": (
+        "描述服装、场景和光线 — 例如「白衬衫，深色背景，侧面柔光」。\n\n"
+        "我会用你的面容生成造型，花费 4 ₽，并在拍摄前先给你看。"
+    ),
+    "looks_hair_warning": (
+        "提醒一句：一旦要求改发型，模型往往连面容一起改。我会照做，但请仔细看结果。"
+    ),
+    "looks_need_face": "请先发面部照片 — 造型是以它为基础生成的。",
+    "looks_building": "正在生成造型，不到一分钟…",
+    "looks_failed": "造型没能生成。再试一次，或者直接发一张现成图片。",
+    "looks_saved": "造型已保存。",
+    "looks_activated": "已更换当前造型。",
+    "look_activate_button": "设为当前",
+    "look_delete_button": "删除造型",
+    "look_deleted": "造型已删除。",
+    "speech_invite": (
+        "写下讲话内容，或者用语音消息说出来。\n\n语音消息会原样进入圆形视频 — 用你真实的声音。"
+    ),
+    "speech_text_received": "收到内容：\n\n{text}",
+    "speech_voice_as_is_button": "按原文配音",
+    "speech_script_button": "改写成讲稿",
+    "speech_rewrite_button": "重写",
+    "speech_cancel_button": "取消",
+    "speech_cancelled": "已取消，没有产生任何花费。",
+    "speech_script_failed": "讲稿没能生成。你的原文已保留。",
+    "speech_prompter": (
+        "语音合成目前是关闭的，所以这里给你一份提词稿 — 用语音消息把它念出来，我就去拍圆形视频：\n\n{text}"
+    ),
+    "speech_voice_failed": "配音失败。原文已保留 — 再试一次，或者录一条语音消息。",
+    "speech_voiced": "这是配音，{seconds} 秒。拍摄前先听一下。",
+    "speech_render_button": "拍圆形视频",
+    "speech_revoice_button": "重新录制",
+    "speech_back_to_text_button": "回到文本",
+    "speech_too_long": "这超过了 {limit} 秒，圆形视频不能更长。请把讲话缩短。",
+    "speech_look_screen": "将用这个造型拍摄：{title}",
+    "speech_render_with_look_button": "用这个造型拍",
+    "speech_other_look_button": "换个造型",
+    "speech_rendering": "正在拍摄。需要几分钟 — 好了我会发给你，不用在聊天里等。",
+    "speech_ready": "圆形视频拍好了。看一下，再决定要不要发布。",
+    "speech_rewrite_text_button": "重写文本",
+    "speech_drop_button": "删除",
+    "speech_failed": "拍摄失败。文本和配音都已保留 — 重试只需再付拍摄的钱。",
+    "speech_retry_button": "重试",
+    "speech_limit_exceeded": "本月的拍摄秒数用完了：还剩 {left} 秒。额度每月一号重置。",
+    "speech_need_face": "请先上传分身的面容 — 没有它就没法拍。",
+    "speech_need_look": "请先添加至少一个造型。",
+    "speech_expected_input": "我在等文本或语音消息。",
 }

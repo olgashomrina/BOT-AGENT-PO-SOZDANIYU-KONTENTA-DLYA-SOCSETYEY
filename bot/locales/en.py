@@ -351,4 +351,94 @@ STRINGS = {
     ),
     "double_deleted": "The double and all of its data are deleted.",
     "menu_my_double_button": "🎭 My double",
+    "double_status_full": (
+        "Your double: face — {face}, looks — {looks}, active — {active}."
+    ),
+    "double_face_present": "uploaded",
+    "double_face_missing": "not uploaded",
+    "double_look_none": "none",
+    "double_speak_button": "🎤 Give a speech",
+    "double_looks_button": "🖼 Looks",
+    "double_face_button": "📸 Replace face",
+    "double_voice_button": "🎙 Voice",
+    "face_invite": (
+        "Send one sharp frontal photo of your face: head and shoulders filling "
+        "the frame, calm expression, eyes to the camera.\n\n"
+        "Every look is built from this face, so the sharper it is, the more "
+        "the circles will look like you."
+    ),
+    "face_saved": "Face saved. Now you can build looks.",
+    "face_expected_photo": "I need a photo — send it as a picture, not a file.",
+    "looks_title": "Looks: {count}. Active — {active}.",
+    "looks_add_photo_button": "Send a picture",
+    "looks_add_prompt_button": "Describe it",
+    "looks_upload_invite": (
+        "Send the look as a picture.\n\n"
+        "It matters: close-up, head and shoulders filling the frame. In a wide "
+        "shot the face takes a fifth of the frame and the circle comes out blurry."
+    ),
+    "looks_prompt_invite": (
+        "Describe the clothes, the place and the light — for example: «white "
+        "shirt, dark background, soft side light».\n\n"
+        "I'll build the look from your face for 4 ₽ and show it before any filming."
+    ),
+    "looks_hair_warning": (
+        "A warning: when you ask to change the hair, the model happily changes "
+        "the face too. I'll do it, but look at the result closely."
+    ),
+    "looks_need_face": "Send a photo of your face first — the look is built from it.",
+    "looks_building": "Building the look, under a minute…",
+    "looks_failed": "Couldn't build the look. Try again or send a ready picture.",
+    "looks_saved": "Look saved.",
+    "looks_activated": "Active look changed.",
+    "look_activate_button": "Make active",
+    "look_delete_button": "Delete look",
+    "look_deleted": "Look deleted.",
+    "speech_invite": (
+        "Write the text of your speech or record it as a voice message.\n\n"
+        "A voice message goes into the circle as is — in your real voice."
+    ),
+    "speech_text_received": "Got the text:\n\n{text}",
+    "speech_voice_as_is_button": "Voice it as is",
+    "speech_script_button": "Make it a script",
+    "speech_rewrite_button": "Rewrite",
+    "speech_cancel_button": "Cancel",
+    "speech_cancelled": "Cancelled. Nothing was spent.",
+    "speech_script_failed": "Couldn't write the script. Your text is saved.",
+    "speech_prompter": (
+        "Voice synthesis is off for now, so here's a prompter — read this out "
+        "as a voice message and I'll film the circle:\n\n{text}"
+    ),
+    "speech_voice_failed": (
+        "Couldn't voice it. The text is saved — try again or record a voice message."
+    ),
+    "speech_voiced": "Here's the audio, {seconds} seconds. Listen before filming.",
+    "speech_render_button": "Film the circle",
+    "speech_revoice_button": "Record again",
+    "speech_back_to_text_button": "Back to the text",
+    "speech_too_long": (
+        "That's longer than {limit} seconds, and a circle can't be. Shorten the speech."
+    ),
+    "speech_look_screen": "I'll film with this look: {title}",
+    "speech_render_with_look_button": "Film with this look",
+    "speech_other_look_button": "Another look",
+    "speech_rendering": (
+        "Filming. It takes a few minutes — I'll send it when it's ready, "
+        "no need to wait in the chat."
+    ),
+    "speech_ready": "The circle is ready. Take a look and decide about publishing.",
+    "speech_rewrite_text_button": "Rewrite the text",
+    "speech_drop_button": "Delete",
+    "speech_failed": (
+        "Filming failed. The text and the audio are saved — a retry costs "
+        "only the filming."
+    ),
+    "speech_retry_button": "Retry",
+    "speech_limit_exceeded": (
+        "You're out of filming seconds this month: {left} left. "
+        "The limit resets on the first."
+    ),
+    "speech_need_face": "Upload the double's face first — there's nothing to film without it.",
+    "speech_need_look": "Add at least one look first.",
+    "speech_expected_input": "I'm waiting for text or a voice message.",
 }

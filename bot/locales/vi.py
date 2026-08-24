@@ -362,4 +362,92 @@ STRINGS = {
     ),
     "double_deleted": "Bản sao và toàn bộ dữ liệu của nó đã bị xoá.",
     "menu_my_double_button": "🎭 Bản sao của tôi",
+    "double_status_full": (
+        "Bản sao của bạn: khuôn mặt — {face}, tạo hình — {looks}, đang dùng — {active}."
+    ),
+    "double_face_present": "đã tải lên",
+    "double_face_missing": "chưa tải lên",
+    "double_look_none": "chưa có",
+    "double_speak_button": "🎤 Nói một bài",
+    "double_looks_button": "🖼 Tạo hình",
+    "double_face_button": "📸 Đổi khuôn mặt",
+    "double_voice_button": "🎙 Giọng nói",
+    "face_invite": (
+        "Gửi một ảnh chân dung rõ nét, chính diện: đầu và vai chiếm trọn khung "
+        "hình, biểu cảm bình thản, nhìn thẳng vào máy ảnh.\n\n"
+        "Mọi tạo hình đều dựng từ khuôn mặt này, ảnh càng nét thì video tròn "
+        "càng giống bạn."
+    ),
+    "face_saved": "Đã lưu khuôn mặt. Giờ có thể tạo hình.",
+    "face_expected_photo": "Tôi cần một bức ảnh — gửi dạng ảnh, không phải tệp.",
+    "looks_title": "Tạo hình: {count}. Đang dùng — {active}.",
+    "looks_add_photo_button": "Gửi ảnh",
+    "looks_add_prompt_button": "Mô tả bằng lời",
+    "looks_upload_invite": (
+        "Gửi ảnh tạo hình.\n\n"
+        "Lưu ý: cận cảnh, đầu và vai chiếm trọn khung hình. Ảnh toàn cảnh khiến "
+        "khuôn mặt chỉ chiếm một phần năm và video tròn sẽ bị mờ."
+    ),
+    "looks_prompt_invite": (
+        "Mô tả trang phục, bối cảnh và ánh sáng — ví dụ: «áo sơ mi trắng, nền "
+        "tối, ánh sáng dịu từ bên».\n\n"
+        "Tôi sẽ dựng tạo hình từ khuôn mặt của bạn với giá 4 ₽ và cho xem trước khi quay."
+    ),
+    "looks_hair_warning": (
+        "Lưu ý: khi bạn yêu cầu đổi kiểu tóc, mô hình cũng đổi luôn khuôn mặt. "
+        "Tôi sẽ làm, nhưng hãy xem kỹ kết quả."
+    ),
+    "looks_need_face": "Hãy gửi ảnh khuôn mặt trước — tạo hình được dựng từ đó.",
+    "looks_building": "Đang dựng tạo hình, chưa tới một phút…",
+    "looks_failed": "Không dựng được tạo hình. Thử lại hoặc gửi ảnh có sẵn.",
+    "looks_saved": "Đã lưu tạo hình.",
+    "looks_activated": "Đã đổi tạo hình đang dùng.",
+    "look_activate_button": "Chọn dùng",
+    "look_delete_button": "Xoá tạo hình",
+    "look_deleted": "Đã xoá tạo hình.",
+    "speech_invite": (
+        "Viết nội dung bài nói hoặc thu bằng tin nhắn thoại.\n\n"
+        "Tin nhắn thoại sẽ vào video tròn nguyên bản — bằng giọng thật của bạn."
+    ),
+    "speech_text_received": "Đã nhận nội dung:\n\n{text}",
+    "speech_voice_as_is_button": "Lồng tiếng nguyên văn",
+    "speech_script_button": "Viết thành kịch bản",
+    "speech_rewrite_button": "Viết lại",
+    "speech_cancel_button": "Huỷ",
+    "speech_cancelled": "Đã huỷ. Không tốn gì cả.",
+    "speech_script_failed": "Không viết được kịch bản. Nội dung của bạn vẫn được giữ.",
+    "speech_prompter": (
+        "Tổng hợp giọng nói đang tắt, nên đây là bản nhắc thoại — hãy đọc nội "
+        "dung này bằng tin nhắn thoại và tôi sẽ quay video tròn:\n\n{text}"
+    ),
+    "speech_voice_failed": (
+        "Không lồng tiếng được. Nội dung vẫn được giữ — thử lại hoặc thu tin nhắn thoại."
+    ),
+    "speech_voiced": "Đây là bản tiếng, {seconds} giây. Nghe thử trước khi quay.",
+    "speech_render_button": "Quay video tròn",
+    "speech_revoice_button": "Thu lại",
+    "speech_back_to_text_button": "Quay lại nội dung",
+    "speech_too_long": (
+        "Dài hơn {limit} giây rồi, video tròn không dài hơn được. Hãy rút ngắn bài nói."
+    ),
+    "speech_look_screen": "Sẽ quay với tạo hình này: {title}",
+    "speech_render_with_look_button": "Quay với tạo hình này",
+    "speech_other_look_button": "Tạo hình khác",
+    "speech_rendering": (
+        "Đang quay. Mất vài phút — xong tôi sẽ gửi, bạn không cần chờ trong khung chat."
+    ),
+    "speech_ready": "Video tròn đã xong. Xem thử rồi quyết định có đăng không.",
+    "speech_rewrite_text_button": "Viết lại nội dung",
+    "speech_drop_button": "Xoá",
+    "speech_failed": (
+        "Quay không thành. Nội dung và bản tiếng vẫn được giữ — làm lại chỉ "
+        "tốn tiền quay."
+    ),
+    "speech_retry_button": "Thử lại",
+    "speech_limit_exceeded": (
+        "Tháng này bạn đã hết số giây quay: còn {left}. Hạn mức đặt lại vào ngày mùng một."
+    ),
+    "speech_need_face": "Hãy tải khuôn mặt của bản sao lên trước — không có thì không quay được.",
+    "speech_need_look": "Hãy thêm ít nhất một tạo hình trước.",
+    "speech_expected_input": "Tôi đang chờ nội dung hoặc tin nhắn thoại.",
 }
