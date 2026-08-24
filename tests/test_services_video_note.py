@@ -36,8 +36,22 @@ async def test_ensure_min_side_upscales_a_small_square(calls, monkeypatch):
     await video_note.ensure_min_side("in.jpg", "out.jpg")
 
     args = " ".join(calls[-1])
-    assert "scale=512:512" in args
+    assert "512" in args
     assert "out.jpg" in args
+
+
+@pytest.mark.asyncio
+async def test_ensure_min_side_preserves_aspect_ratio_of_a_portrait(calls, monkeypatch):
+    # Портретное селфи или загруженный образ не квадратные. Два литеральных
+    # размера в scale растягивают картинку без учёта исходных пропорций —
+    # апскейл обязан тянуть только меньшую сторону, а не деформировать лицо.
+    monkeypatch.setattr(video_note, "_probe_side", _fake_side(400))
+
+    await video_note.ensure_min_side("in.jpg", "out.jpg")
+
+    args = " ".join(calls[-1])
+    assert "scale=512:512" not in args
+    assert "if(lt(iw,ih)" in args
 
 
 @pytest.mark.asyncio
@@ -75,6 +89,32 @@ async def test_ffmpeg_failure_surfaces_as_ffmpeg_error(monkeypatch):
 
     with pytest.raises(FfmpegError):
         await video_note.to_video_note("in.mp4", "out.mp4")
+
+
+class _FakeProcessWithStdout:
+    def __init__(self, stdout: bytes, returncode: int = 0) -> None:
+        self.returncode = returncode
+        self._stdout = stdout
+
+    async def communicate(self):
+        return self._stdout, b""
+
+
+@pytest.mark.asyncio
+async def test_probe_side_rejects_unparseable_ffprobe_output(monkeypatch):
+    # ffprobe иногда отвечает не WxH (битый файл, урезанный поток и т.п.).
+    # Это должно всплывать как FfmpegError, а не как ValueError из середины
+    # разбора строки. Здесь `_probe_side` вызывается по-настоящему, а не
+    # подменяется целиком, — иначе ветка разбора никогда не выполняется.
+    async def fake_run(*args, **kwargs):
+        return _FakeProcessWithStdout(b"N/A")
+
+    monkeypatch.setattr("bot.services.ffmpeg_tools._run", fake_run)
+
+    from bot.services.ffmpeg_tools import FfmpegError
+
+    with pytest.raises(FfmpegError):
+        await video_note._probe_side("broken.jpg")
 
 
 def _fake_side(value: int):

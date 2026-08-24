@@ -2,8 +2,8 @@
 
 Два ограничения, оба куплены ошибками (docs/reference-video-avatar-engines.md):
 Kling отвечает `invalidWidth` на телеграмных кружках 400×400 и требует сторону
-512–2160; Telegram принимает video note только квадратом, H.264 + AAC,
-с `+faststart` и не длиннее 60 секунд.
+512–2160; Telegram принимает video note только квадратом, H.264 + AAC
+и с `+faststart`.
 """
 
 from __future__ import annotations
@@ -51,13 +51,17 @@ async def ensure_min_side(
     if await _probe_side(src_path) >= min_side:
         return src_path
 
+    # Апскейлим только меньшую сторону до min_side, большая тянется следом
+    # с сохранением пропорций — здесь не требуется квадрат, это работа
+    # to_video_note, а тут распрямление лица было бы искажением.
     await run_ffmpeg(
         "ffmpeg",
         "-y",
         "-i",
         src_path,
         "-vf",
-        f"scale={min_side}:{min_side}:flags=lanczos",
+        f"scale=w='if(lt(iw,ih),{min_side},-1)':"
+        f"h='if(lt(iw,ih),-1,{min_side})':flags=lanczos",
         out_path,
     )
     return out_path
