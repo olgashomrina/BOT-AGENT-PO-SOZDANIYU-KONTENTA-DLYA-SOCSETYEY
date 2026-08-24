@@ -94,3 +94,30 @@ def test_transcription_model_label_names_the_local_model():
     assert cost_tracker.transcription_model_label("vsegpt", "small", "stt-openai/x") == (
         "stt-openai/x"
     )
+
+
+def test_video_cost_is_linear_in_seconds():
+    thirty = cost_tracker.video_cost("klingai:avatar@2.0-standard", 30)
+    sixty = cost_tracker.video_cost("klingai:avatar@2.0-standard", 60)
+
+    assert sixty == pytest.approx(thirty * 2)
+
+
+def test_video_cost_of_the_chosen_engine_matches_the_measurement():
+    # Замер 2026-08-06: $0.0446 за секунду. Тридцать секунд — около 135 ₽
+    # по курсу, которым живёт весь отчёт.
+    assert cost_tracker.video_cost("klingai:avatar@2.0-standard", 30) == pytest.approx(
+        0.0446 * 30 * 92.0
+    )
+
+
+def test_unknown_video_model_falls_back_to_the_dearest_measured_rate():
+    # Новая модель не должна молча отчитаться как бесплатная — иначе отчёт
+    # покажет ноль там, где ушли реальные деньги.
+    assert cost_tracker.video_cost("some:new@1", 30) > cost_tracker.video_cost(
+        "klingai:avatar@2.0-standard", 30
+    )
+
+
+def test_look_model_is_priced_from_the_live_measurement():
+    assert cost_tracker.image_cost("google:4@1") == pytest.approx(4.0)

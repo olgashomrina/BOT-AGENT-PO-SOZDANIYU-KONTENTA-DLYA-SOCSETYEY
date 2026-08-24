@@ -67,6 +67,9 @@ _IMAGE_RUB_PER_IMAGE = {
     # rather than list prices. Two orders of magnitude below vsegpt.ru.
     "runware:100@1": 0.0006 * _USD_RUB,  # FLUX.1 Schnell — 0.06 ₽
     "runware:101@1": 0.0013 * _USD_RUB,  # FLUX.1 Dev — 0.12 ₽
+    # runware.ai, Nano Banana — правка образа по фотографии лица. Замер
+    # 2026-08-06 живым прогоном: 4 ₽ за картинку.
+    "google:4@1": 4.0,
 }
 _IMAGE_FALLBACK_RUB_PER_IMAGE = 15.00
 
@@ -118,3 +121,31 @@ def voice_minutes_affordable(balance_rub: float, model: str) -> int:
         return 0
     cost_per_minute = transcription_cost(model, 60)
     return int(balance_rub // cost_per_minute)
+
+
+# ₽ за секунду готового видео. Замерено живыми оплаченными прогонами
+# 2026-08-06 (docs/reference-video-avatar-engines.md), а не взято из прайса:
+# у klingai:7@1 документация разошлась с фактом в 7,4 раза.
+_VIDEO_RUB_PER_SECOND = {
+    "pixverse:lipsync@1": 0.0136 * _USD_RUB,
+    "prunaai:p-video@avatar": 0.0245 * _USD_RUB,
+    "sync:lipsync-2@1": 0.0443 * _USD_RUB,
+    "klingai:avatar@2.0-standard": 0.0446 * _USD_RUB,
+    "klingai:7@1": 0.0684 * _USD_RUB,
+    "klingai:avatar@2.0-pro": 0.0881 * _USD_RUB,
+    "heygen:avatar@4": 0.0977 * _USD_RUB,
+    "bytedance:5@2": 0.1200 * _USD_RUB,
+}
+# Незнакомая модель считается по самому дорогому из замеренных движков:
+# отчёт должен пугать, а не убаюкивать.
+_VIDEO_FALLBACK_RUB_PER_SECOND = 0.1200 * _USD_RUB
+
+
+def video_cost(model: str, seconds: float) -> float:
+    """Оценка стоимости `seconds` секунд готового видео у `model`.
+
+    Это оценка «до факта»: показать цену и проверить лимит. Списывается
+    всегда фактическая цена из ответа провайдера, если он её вернул.
+    """
+    rate = _VIDEO_RUB_PER_SECOND.get(model, _VIDEO_FALLBACK_RUB_PER_SECOND)
+    return rate * seconds
