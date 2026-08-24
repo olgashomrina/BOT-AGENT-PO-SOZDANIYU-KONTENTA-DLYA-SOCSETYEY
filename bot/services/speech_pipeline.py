@@ -30,6 +30,7 @@ from bot.services.ffmpeg_tools import probe_duration
 from bot.storage.costs import record_cost
 from bot.storage.render_usage import add_usage, seconds_left
 from bot.storage.speech_jobs import (
+    STATUS_DRAFT,
     STATUS_FAILED,
     STATUS_READY,
     STATUS_RENDERING,
@@ -43,8 +44,21 @@ logger = logging.getLogger(LOGGER_NAME)
 REASON_TOO_LONG = "too_long"
 REASON_LIMIT = "limit"
 REASON_NO_AUDIO = "no_audio"
+# Задание уже ушло дальше по статусам: рендер запущен или ролик готов.
+# Переделывать его нечем — за него либо платят прямо сейчас, либо заплатили.
+REASON_BUSY = "busy"
 
 OPERATION_RENDER = "avatar_render"
+
+# Озвучку можно менять, пока задание не ушло в оплату: черновик и уже
+# озвученное. Дальше `audio_duration_sec` — это величина, по которой
+# сверяется бронь, и переписывать её нельзя.
+_ATTACHABLE_STATUSES = (STATUS_DRAFT, STATUS_VOICED)
+
+# Рендер запускается один раз. Повторный запуск забронировал бы секунды
+# второй раз и затёр бы `provider_task_id`: первый оплаченный рендер стал
+# бы сиротой — его никто не заберёт и его бронь никто не вернёт.
+_RENDER_BLOCKING_STATUSES = (STATUS_RENDERING, STATUS_READY)
 
 
 class RenderRefused(Exception):
@@ -76,6 +90,16 @@ def _video_path(job_id: int) -> pathlib.Path:
 
     Случайное имя пришлось бы хранить в базе, а колонки под него нет. Имя по
     номеру задания — то же самое знание, но без правки схемы.
+
+    Допущение, на котором это держится: номера заданий не переиспользуются.
+    Файл ничем не связан с заданием, кроме имени, и проверить принадлежность
+    нечем. Пересобранная с нуля база рядом с уцелевшей папкой медиа выдала бы
+    новому заданию номер старого — и пользователь получил бы чужой ролик.
+    Значит, папку медиа надо чистить вместе с базой, а не по отдельности.
+
+    Удаление после отправки — не наша забота: файл живёт до тех пор, пока
+    воркер (задача 14) не отдаст ролик пользователю и не уберёт его сам.
+    Оркестратор о доставке не знает и удалять раньше неё не вправе.
     """
     return _media_dir() / f"speech-{job_id}.mp4"
 
@@ -100,10 +124,22 @@ async def attach_audio(db_path: str, job_id: int, audio_bytes: bytes) -> float:
     Порядок именно такой: сначала звук и его фактическая длительность, потом
     всё остальное. Длительность синтеза по числу символов заранее точно не
     предсказывается, а от неё зависят и допустимость, и цена.
+
+    Задание дальше `voiced` переозвучке не подлежит. Новая дорожка переписала
+    бы `audio_duration_sec` — величину, по которой сверяется бронь, — и вернула
+    бы задание в `voiced`, то есть убрала бы его из выборки воркера по статусу
+    `rendering`. Оплаченный рендер после этого не заберёт никто.
     """
     from bot.storage.speech_jobs import get_job
 
     settings = load_settings()
+
+    # Статус проверяется до записи файла: отказ не должен оставлять на диске
+    # дорожку, которая никому уже не принадлежит.
+    previous = get_job(db_path, job_id)
+    if previous is not None and previous.status not in _ATTACHABLE_STATUSES:
+        raise RenderRefused(REASON_BUSY, 0)
+
     audio_path = _tmp_path(".mp3")
     pathlib.Path(audio_path).write_bytes(audio_bytes)
 
@@ -118,7 +154,6 @@ async def attach_audio(db_path: str, job_id: int, audio_bytes: bytes) -> float:
         pathlib.Path(audio_path).unlink(missing_ok=True)
         raise RenderRefused(REASON_TOO_LONG, settings.avatar_max_seconds)
 
-    previous = get_job(db_path, job_id)
     update_job(
         db_path,
         job_id,
@@ -137,7 +172,13 @@ async def attach_audio(db_path: str, job_id: int, audio_bytes: bytes) -> float:
 async def request_render(
     db_path: str, job_id: int, image_bytes: bytes, look_id: int
 ) -> None:
-    """Запустить платный рендер, проверив лимит до обращения к провайдеру."""
+    """Запустить платный рендер, проверив лимит до обращения к провайдеру.
+
+    От проверки лимита до брони секунд нет ни одного `await`: два хендлера
+    одного пользователя живут в одном цикле событий, и точка передачи
+    управления внутри этого промежутка означала бы, что оба увидели полный
+    остаток и оба будут оплачены.
+    """
     settings = load_settings()
     from bot.storage.speech_jobs import get_job
 
@@ -146,6 +187,9 @@ async def request_render(
         # Не «слишком длинно» и не «кончился лимит»: пропало само задание
         # или его звук. Назвать пользователю предел формата было бы враньём.
         raise RenderRefused(REASON_NO_AUDIO, 0)
+
+    if job.status in _RENDER_BLOCKING_STATUSES:
+        raise RenderRefused(REASON_BUSY, 0)
 
     needed = int(round(job.audio_duration_sec))
     left = seconds_left(
@@ -164,11 +208,17 @@ async def request_render(
         # мимо обработчиков вызывающего.
         raise RenderRefused(REASON_NO_AUDIO, 0) from error
 
-    task_uuid = await start_render(image_bytes, audio_bytes)
-
-    # Бронь только после того, как провайдер принял рендер: несостоявшийся
-    # старт денег не стоит и лимит съедать не должен.
+    # Бронь до обращения к провайдеру, а не после. `await` ниже отдаёт цикл
+    # событий, и второй запрос того же пользователя успел бы пройти проверку
+    # остатка, пока первый ждёт ответа: оплачены были бы оба.
     add_usage(db_path, job.telegram_id, needed, 0.0)
+
+    try:
+        task_uuid = await start_render(image_bytes, audio_bytes)
+    except BaseException:
+        # Старт не состоялся — денег он не стоил и лимит съедать не должен.
+        add_usage(db_path, job.telegram_id, -needed, 0.0)
+        raise
 
     update_job(
         db_path,
@@ -221,26 +271,34 @@ async def collect_ready(db_path: str, job: SpeechJob) -> bytes | None:
     _video_path(job.id).write_bytes(status.video_bytes)
 
     settings = load_settings()
-    seconds = reserved
     if status.cost_usd is not None:
         cost_rub = status.cost_usd * settings.usd_rub_rate
     else:
         # Провайдер не вернул фактическую цену — считаем по замерам тем же
         # курсом, что и фактическую, иначе строки отчёта несравнимы. Ноль
-        # писать нельзя: отчёт показал бы бесплатный рендер, поэтому
-        # неизвестная длительность — это громкая ошибка, а не цена 0 ₽.
-        if seconds <= 0:
-            raise ValueError(
+        # писать нельзя: отчёт показал бы бесплатный рендер.
+        if reserved <= 0:
+            # Считать нечем, и повторять попытку бессмысленно: длительность
+            # озвучки в базе не появится сама. Оставить задание в `rendering`
+            # значило бы отдать его воркеру навсегда — каждый тик тот же
+            # опрос, та же запись тех же байтов и та же ошибка, а
+            # пользователь не получит ничего. Задание встаёт с диагнозом.
+            message = (
                 f"Длительность озвучки задания {job.id} неизвестна: "
                 "оценить стоимость рендера нечем."
             )
-        cost_rub = video_cost(settings.avatar_model, seconds, settings.usd_rub_rate)
+            logger.error(
+                "Avatar render has no duration to price",
+                extra={"user_id": job.telegram_id, "operation": "speech_pipeline"},
+            )
+            update_job(db_path, job.id, status=STATUS_FAILED, error=message)
+            return None
+        cost_rub = video_cost(settings.avatar_model, reserved, settings.usd_rub_rate)
 
-    # Не вся длительность, а разница: секунды забронированы при запуске.
-    # Провайдер длину готового ролика не сообщает, так что фактической
-    # считается длительность озвучки; разница обычно нулевая и нужна затем,
-    # чтобы сверка не удваивала бронь.
-    add_usage(db_path, job.telegram_id, seconds - reserved, cost_rub)
+    # Секунды уже забронированы при запуске, и добавлять их второй раз нельзя;
+    # длину готового ролика провайдер не сообщает, сверять её не с чем. Так
+    # что здесь к счётчику месяца прибавляются только рубли.
+    add_usage(db_path, job.telegram_id, 0, cost_rub)
     record_cost(
         db_path,
         job.telegram_id,
@@ -248,5 +306,11 @@ async def collect_ready(db_path: str, job: SpeechJob) -> bytes | None:
         settings.avatar_model,
         cost_rub,
     )
+    # Известное и принятое окно: падение между `record_cost` и переводом в
+    # `ready` оставит задание в `rendering`, и следующий тик воркера спишет
+    # деньги второй раз. Дёшево это не чинится — счётчик расходов и задания
+    # лежат в разных хранилищах, одной транзакцией их не накрыть. Окно узкое
+    # (два соседних запроса к SQLite), а цена ошибки — одна лишняя строка
+    # в отчёте, поэтому оно оставлено осознанно.
     update_job(db_path, job.id, status=STATUS_READY, cost_rub=cost_rub)
     return status.video_bytes

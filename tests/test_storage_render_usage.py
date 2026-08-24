@@ -37,6 +37,18 @@ def test_usage_is_per_user(db_path):
     assert get_month_seconds(db_path, TELEGRAM_ID, now=AUGUST) == 0
 
 
+def test_a_release_into_a_fresh_month_does_not_eat_real_usage(db_path):
+    # Рендер забронировал секунды в августе, а сорвался уже в сентябре: возврат
+    # брони создаёт сентябрьскую строку. Родиться отрицательной она не имеет
+    # права — иначе первые же настоящие секунды пользователя уйдут в её минус
+    # и пропадут из счётчика, хотя за них заплачено.
+    add_usage(db_path, TELEGRAM_ID, -30, 0.0, now=SEPTEMBER)
+    add_usage(db_path, TELEGRAM_ID, 30, 135.0, now=SEPTEMBER)
+
+    assert get_month_seconds(db_path, TELEGRAM_ID, now=SEPTEMBER) == 30
+    assert seconds_left(db_path, TELEGRAM_ID, 300, now=SEPTEMBER) == 270
+
+
 def test_seconds_left_never_goes_negative(db_path):
     # Провайдер может отрендерить чуть длиннее заказанного; отрицательный
     # остаток превратил бы отказ по лимиту в странное «осталось -4 секунды».

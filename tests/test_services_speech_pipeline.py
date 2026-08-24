@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import pathlib
-import sqlite3
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 
 from bot.services import speech_pipeline
 from bot.services.avatar_gateway import AvatarGatewayError, RenderStatus
+from bot.storage.db import get_connection
 from bot.storage.render_usage import add_usage, get_month_seconds
 from bot.storage.speech_jobs import (
     STATUS_DRAFT,
@@ -104,6 +105,31 @@ async def test_reattaching_audio_removes_the_previous_file(
     assert second_path != first_path
     assert not pathlib.Path(first_path).exists()
     assert pathlib.Path(second_path).read_bytes() == b"second"
+
+
+@pytest.mark.asyncio
+async def test_attach_audio_refuses_a_job_that_is_already_rendering(
+    db_path, _probe, tmp_path
+):
+    # Переозвучка задания, за которое уже платят: она переписала бы
+    # `audio_duration_sec` (по нему сверяется бронь) и увела бы задание из
+    # статуса `rendering`, по которому воркер его и находит. Оплаченный
+    # рендер после этого никто никогда не заберёт.
+    _probe(30.0)
+    job_id = create_job(db_path, TELEGRAM_ID, "текст")
+    await attach(db_path, job_id, b"mp3")
+    update_job(db_path, job_id, status=STATUS_RENDERING, provider_task_id="task-1")
+
+    _probe(12.0)
+    with pytest.raises(speech_pipeline.RenderRefused) as refusal:
+        await attach(db_path, job_id, b"other")
+
+    assert refusal.value.reason == speech_pipeline.REASON_BUSY
+    job = get_job(db_path, job_id)
+    assert job.status == STATUS_RENDERING
+    assert job.audio_duration_sec == pytest.approx(30.0)
+    # Отказ случается до записи файла: лишней дорожки на диске не остаётся.
+    assert len(list(tmp_path.glob("*.mp3"))) == 1
 
 
 @pytest.mark.asyncio
@@ -238,6 +264,98 @@ async def test_back_to_back_renders_cannot_outspend_the_limit(
 
     assert refusal.value.reason == speech_pipeline.REASON_LIMIT
     start.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_a_second_request_for_a_rendering_job_is_refused(
+    db_path, _probe, monkeypatch
+):
+    # Второй запуск того же задания забронировал бы секунды повторно и затёр
+    # бы `provider_task_id`: первый оплаченный рендер стал бы сиротой — его
+    # никто не заберёт и его бронь никто не вернёт.
+    _probe(30.0)
+    start = AsyncMock(side_effect=["task-1", "task-2"])
+    monkeypatch.setattr(speech_pipeline, "start_render", start)
+    job_id = create_job(db_path, TELEGRAM_ID, "текст")
+    await attach(db_path, job_id, b"mp3")
+    await speech_pipeline.request_render(db_path, job_id, b"image", look_id=7)
+
+    with pytest.raises(speech_pipeline.RenderRefused) as refusal:
+        await speech_pipeline.request_render(db_path, job_id, b"image", look_id=7)
+
+    assert refusal.value.reason == speech_pipeline.REASON_BUSY
+    start.assert_awaited_once()
+    assert get_job(db_path, job_id).provider_task_id == "task-1"
+    assert get_month_seconds(db_path, TELEGRAM_ID) == 30
+
+
+@pytest.mark.asyncio
+async def test_a_ready_job_is_not_rendered_a_second_time(
+    db_path, _probe, monkeypatch
+):
+    # За готовое задание уже заплачено; повторный рендер — это второй платёж
+    # за тот же ролик.
+    _probe(30.0)
+    start = AsyncMock(return_value="task-2")
+    monkeypatch.setattr(speech_pipeline, "start_render", start)
+    job_id = create_job(db_path, TELEGRAM_ID, "текст")
+    await attach(db_path, job_id, b"mp3")
+    update_job(db_path, job_id, status=STATUS_READY, provider_task_id="task-1")
+
+    with pytest.raises(speech_pipeline.RenderRefused) as refusal:
+        await speech_pipeline.request_render(db_path, job_id, b"image", look_id=7)
+
+    assert refusal.value.reason == speech_pipeline.REASON_BUSY
+    start.assert_not_awaited()
+    assert get_month_seconds(db_path, TELEGRAM_ID) == 0
+
+
+@pytest.mark.asyncio
+async def test_concurrent_renders_cannot_outspend_the_limit(
+    db_path, _probe, monkeypatch
+):
+    # Два хендлера одного пользователя работают в одном цикле событий. Если
+    # между проверкой лимита и бронью есть точка передачи управления, оба
+    # запроса увидят полный остаток и оба будут оплачены.
+    monkeypatch.setenv("AVATAR_MONTHLY_SECONDS_LIMIT", "45")
+    _probe(30.0)
+    reached_provider = asyncio.Event()
+    may_finish = asyncio.Event()
+    started: list[str] = []
+
+    async def _start(image_bytes: bytes, audio_bytes: bytes) -> str:
+        started.append("call")
+        reached_provider.set()
+        # Провайдер отвечает не мгновенно: пока первый запрос ждёт ответа,
+        # второй успевает пройти по всему коду проверки лимита.
+        await may_finish.wait()
+        return "task-1"
+
+    monkeypatch.setattr(speech_pipeline, "start_render", _start)
+
+    first = create_job(db_path, TELEGRAM_ID, "текст")
+    await attach(db_path, first, b"mp3")
+    second = create_job(db_path, TELEGRAM_ID, "текст")
+    await attach(db_path, second, b"mp3")
+
+    async def _let_the_provider_answer() -> None:
+        await reached_provider.wait()
+        for _ in range(100):
+            await asyncio.sleep(0)
+        may_finish.set()
+
+    results = await asyncio.gather(
+        speech_pipeline.request_render(db_path, first, b"image", look_id=7),
+        speech_pipeline.request_render(db_path, second, b"image", look_id=7),
+        _let_the_provider_answer(),
+        return_exceptions=True,
+    )
+
+    refusals = [r for r in results if isinstance(r, speech_pipeline.RenderRefused)]
+    assert len(started) == 1
+    assert len(refusals) == 1
+    assert refusals[0].reason == speech_pipeline.REASON_LIMIT
+    assert get_month_seconds(db_path, TELEGRAM_ID) == 30
 
 
 @pytest.mark.asyncio
@@ -423,20 +541,28 @@ async def test_a_job_that_is_not_rendering_is_never_polled(db_path, monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_a_render_without_a_known_duration_is_not_priced_at_zero(
+async def test_a_render_without_a_known_duration_fails_the_job_once(
     db_path, monkeypatch
 ):
     # Оценка от нулевой длительности — это бесплатный рендер в отчёте, ровно
-    # то, чего код обещает не допускать. Лучше громкая ошибка.
+    # то, чего код обещает не допускать. Но и вечно падать нельзя: задание,
+    # оставленное в `rendering`, воркер перебирает каждый тик, каждый раз
+    # переписывая те же байты и роняя тот же разбор. Задание обязано встать.
     _poll(monkeypatch, cost_usd=None)
     job_id = create_job(db_path, TELEGRAM_ID, "текст")
     update_job(db_path, job_id, status=STATUS_RENDERING, provider_task_id="task-1")
 
-    with pytest.raises(ValueError):
-        await speech_pipeline.collect_ready(db_path, get_job(db_path, job_id))
+    assert await speech_pipeline.collect_ready(db_path, get_job(db_path, job_id)) is None
 
+    job = get_job(db_path, job_id)
+    assert job.status == STATUS_FAILED
+    assert job.error
     assert _ledger_rows(db_path) == 0
-    assert get_job(db_path, job_id).cost_rub is None
+    assert job.cost_rub is None
+
+    # Второй тик воркера это задание уже не выберет и денег за него не спишет.
+    assert await speech_pipeline.collect_ready(db_path, get_job(db_path, job_id)) is None
+    assert _ledger_rows(db_path) == 0
 
 
 async def attach(db_path: str, job_id: int, audio: bytes) -> float:
@@ -475,7 +601,7 @@ def _video_file(tmp_path, job_id: int) -> pathlib.Path:
 
 
 def _ledger_rows(db_path: str) -> int:
-    connection = sqlite3.connect(db_path)
+    connection = get_connection(db_path)
     try:
         return int(connection.execute("SELECT COUNT(*) FROM cost_log").fetchone()[0])
     finally:

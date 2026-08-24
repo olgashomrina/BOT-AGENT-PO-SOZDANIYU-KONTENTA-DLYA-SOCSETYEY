@@ -32,17 +32,25 @@ def add_usage(
     и возвращаются, если рендер не состоялся. Счётчик при этом не должен
     уходить ниже нуля — отрицательный расход выдал бы пользователю лимит
     больше положенного.
+
+    Ноль стережётся в обеих ветках, и в новой строке тоже. Бронь месяца N
+    возвращается иногда уже в месяце N+1 (рендер шёл через полночь первого
+    числа): такой возврат создаёт строку следующего месяца, и родись она
+    отрицательной, первые же настоящие секунды пользователя ушли бы в её
+    минус — оплаченные и не посчитанные. Отдельная `MAX(0, ?)` в `VALUES`
+    нужна потому, что вычитать из уже существующей строки по-прежнему надо
+    полной величиной: `excluded` для этого не годится.
     """
     connection = get_connection(db_path)
     try:
         connection.execute(
             "INSERT INTO render_usage "
             "(telegram_id, usage_month, seconds_rendered, cost_rub) "
-            "VALUES (?, ?, ?, ?) "
+            "VALUES (?, ?, MAX(0, ?), ?) "
             "ON CONFLICT(telegram_id, usage_month) DO UPDATE SET "
-            "seconds_rendered = MAX(0, seconds_rendered + excluded.seconds_rendered), "
+            "seconds_rendered = MAX(0, seconds_rendered + ?), "
             "cost_rub = cost_rub + excluded.cost_rub",
-            (telegram_id, _resolve_month(now), seconds, cost_rub),
+            (telegram_id, _resolve_month(now), seconds, cost_rub, seconds),
         )
         connection.commit()
     finally:
@@ -59,8 +67,8 @@ def get_month_seconds(
             "WHERE telegram_id = ? AND usage_month = ?",
             (telegram_id, _resolve_month(now)),
         ).fetchone()
-        # Строка могла быть создана сразу возвратом брони (рендер сорвался
-        # раньше, чем счётчик появился) — наружу такой счётчик уходит нулём.
+        # Запись минус уже не пропускает, но в базе могли остаться строки,
+        # созданные возвратом брони до этого; наружу они уходят нулём.
         return max(0, int(row[0])) if row else 0
     finally:
         connection.close()
