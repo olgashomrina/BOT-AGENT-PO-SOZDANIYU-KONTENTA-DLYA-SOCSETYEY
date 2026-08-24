@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Literal
 
 from bot.services import ai_gateway, post_length
-from bot.services.ai_gateway import AIGatewayError
+from bot.services.ai_gateway import AIGatewayError, generate_text
 
 Platform = Literal["telegram", "vk"]
 
@@ -282,3 +282,43 @@ async def generate_variants(
             variant = await _fit_to_budget(variant, retry_prompt, length_preset)
         variants.append(variant)
     return variants
+
+
+# Разговорный темп русской речи — около 140 слов в минуту. Считать бюджет
+# в словах, а не в символах: длительность озвучки зависит от слов.
+SPOKEN_WORDS_PER_SECOND = 2.3
+
+_SPOKEN_PROMPT = (
+    "Перепиши материал как текст для устного выступления на камеру.\n\n"
+    "Требования:\n"
+    "- ровно столько, сколько произносится за {seconds} секунд, "
+    "это примерно {words} слов;\n"
+    "- живая устная речь: короткие фразы, обращение к зрителю на «ты»;\n"
+    "- без хэштегов, без эмодзи, без разметки, без заголовка и без "
+    "пояснений — только то, что будет произнесено вслух;\n"
+    "- начни сразу с сути, без «здравствуйте, сегодня мы поговорим».\n\n"
+    "Материал:\n{source}\n"
+)
+
+_SPOKEN_STYLE_BLOCK = (
+    "\nВот как этот человек говорит на самом деле — держись этой манеры:\n{examples}\n"
+)
+
+
+async def generate_spoken_script(
+    source_text: str, target_seconds: int, spoken_examples: list[str]
+) -> str:
+    """Текст выступления из материала пользователя.
+
+    Опирается на расшифровки его же кружков (`style_examples.kind='spoken'`),
+    собранные этапом 1: письменный стиль постов для речи не годится — вслух
+    он звучит как зачитанная статья.
+    """
+    words = int(round(target_seconds * SPOKEN_WORDS_PER_SECOND))
+    prompt = _SPOKEN_PROMPT.format(
+        seconds=target_seconds, words=words, source=source_text
+    )
+    if spoken_examples:
+        prompt += _SPOKEN_STYLE_BLOCK.format(examples="\n---\n".join(spoken_examples))
+
+    return (await generate_text(prompt)).strip()

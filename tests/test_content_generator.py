@@ -496,3 +496,74 @@ async def test_generate_variants_without_a_preset_never_retries(monkeypatch):
 
     assert mock.await_count == 2
     assert variants == [too_long, too_long]
+
+
+@pytest.mark.asyncio
+async def test_spoken_script_asks_for_the_measured_word_budget(monkeypatch):
+    captured: dict[str, str] = {}
+
+    async def fake_generate_text(prompt: str, **kwargs) -> str:
+        captured["prompt"] = prompt
+        return "Привет, коротко о главном."
+
+    monkeypatch.setattr(content_generator, "generate_text", fake_generate_text)
+
+    await content_generator.generate_spoken_script(
+        "запуск нового курса", target_seconds=30, spoken_examples=[]
+    )
+
+    # 30 секунд разговорной речи — около 69 слов. Без бюджета модель пишет
+    # текст на две минуты, и озвучка не влезает в формат.
+    assert "69" in captured["prompt"]
+
+
+@pytest.mark.asyncio
+async def test_spoken_script_leans_on_the_users_own_speech(monkeypatch):
+    captured: dict[str, str] = {}
+
+    async def fake_generate_text(prompt: str, **kwargs) -> str:
+        captured["prompt"] = prompt
+        return "текст"
+
+    monkeypatch.setattr(content_generator, "generate_text", fake_generate_text)
+
+    await content_generator.generate_spoken_script(
+        "запуск",
+        target_seconds=30,
+        spoken_examples=["Ну смотрите, я вам сейчас расскажу"],
+    )
+
+    assert "Ну смотрите, я вам сейчас расскажу" in captured["prompt"]
+
+
+@pytest.mark.asyncio
+async def test_spoken_script_forbids_hashtags_and_markup(monkeypatch):
+    captured: dict[str, str] = {}
+
+    async def fake_generate_text(prompt: str, **kwargs) -> str:
+        captured["prompt"] = prompt
+        return "текст"
+
+    monkeypatch.setattr(content_generator, "generate_text", fake_generate_text)
+
+    await content_generator.generate_spoken_script(
+        "запуск", target_seconds=30, spoken_examples=[]
+    )
+
+    lowered = captured["prompt"].lower()
+    assert "хэштег" in lowered or "hashtag" in lowered
+    assert "разметк" in lowered or "markup" in lowered
+
+
+@pytest.mark.asyncio
+async def test_spoken_script_returns_the_model_text_trimmed(monkeypatch):
+    async def fake_generate_text(prompt: str, **kwargs) -> str:
+        return "  Готовый сценарий.  \n"
+
+    monkeypatch.setattr(content_generator, "generate_text", fake_generate_text)
+
+    result = await content_generator.generate_spoken_script(
+        "запуск", target_seconds=30, spoken_examples=[]
+    )
+
+    assert result == "Готовый сценарий."
