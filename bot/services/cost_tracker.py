@@ -123,29 +123,36 @@ def voice_minutes_affordable(balance_rub: float, model: str) -> int:
     return int(balance_rub // cost_per_minute)
 
 
-# ₽ за секунду готового видео. Замерено живыми оплаченными прогонами
+# $ за секунду готового видео. Замерено живыми оплаченными прогонами
 # 2026-08-06 (docs/reference-video-avatar-engines.md), а не взято из прайса:
-# у klingai:7@1 документация разошлась с фактом в 7,4 раза.
-_VIDEO_RUB_PER_SECOND = {
-    "pixverse:lipsync@1": 0.0136 * _USD_RUB,
-    "prunaai:p-video@avatar": 0.0245 * _USD_RUB,
-    "sync:lipsync-2@1": 0.0443 * _USD_RUB,
-    "klingai:avatar@2.0-standard": 0.0446 * _USD_RUB,
-    "klingai:7@1": 0.0684 * _USD_RUB,
-    "klingai:avatar@2.0-pro": 0.0881 * _USD_RUB,
-    "heygen:avatar@4": 0.0977 * _USD_RUB,
-    "bytedance:5@2": 0.1200 * _USD_RUB,
+# у klingai:7@1 документация разошлась с фактом в 7,4 раза. Хранится в
+# долларах, потому что в долларах и замерено: курс — отдельный множитель,
+# и вызывающий вправе передать тот, которым живёт его отчёт.
+_VIDEO_USD_PER_SECOND = {
+    "pixverse:lipsync@1": 0.0136,
+    "prunaai:p-video@avatar": 0.0245,
+    "sync:lipsync-2@1": 0.0443,
+    "klingai:avatar@2.0-standard": 0.0446,
+    "klingai:7@1": 0.0684,
+    "klingai:avatar@2.0-pro": 0.0881,
+    "heygen:avatar@4": 0.0977,
+    "bytedance:5@2": 0.1200,
 }
 # Незнакомая модель считается по самому дорогому из замеренных движков:
 # отчёт должен пугать, а не убаюкивать.
-_VIDEO_FALLBACK_RUB_PER_SECOND = 0.1200 * _USD_RUB
+_VIDEO_FALLBACK_USD_PER_SECOND = 0.1200
 
 
-def video_cost(model: str, seconds: float) -> float:
+def video_cost(model: str, seconds: float, usd_rub_rate: float = _USD_RUB) -> float:
     """Оценка стоимости `seconds` секунд готового видео у `model`.
 
     Это оценка «до факта»: показать цену и проверить лимит. Списывается
     всегда фактическая цена из ответа провайдера, если он её вернул.
+
+    `usd_rub_rate` — курс, которым считается фактическая цена в том же
+    отчёте. По умолчанию тот же грубый курс, что и у всей таблицы выше;
+    вызывающий с настроенным `USD_RUB_RATE` передаёт свой, иначе строки
+    отчёта, посчитанные оценкой и фактом, окажутся несравнимыми.
     """
-    rate = _VIDEO_RUB_PER_SECOND.get(model, _VIDEO_FALLBACK_RUB_PER_SECOND)
-    return rate * seconds
+    rate = _VIDEO_USD_PER_SECOND.get(model, _VIDEO_FALLBACK_USD_PER_SECOND)
+    return rate * seconds * usd_rub_rate

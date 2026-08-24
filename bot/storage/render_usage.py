@@ -26,6 +26,13 @@ def add_usage(
     cost_rub: float,
     now: datetime | None = None,
 ) -> None:
+    """Прибавить секунды и рубли к счётчику месяца.
+
+    `seconds` бывает и отрицательным: секунды бронируются при запуске рендера
+    и возвращаются, если рендер не состоялся. Счётчик при этом не должен
+    уходить ниже нуля — отрицательный расход выдал бы пользователю лимит
+    больше положенного.
+    """
     connection = get_connection(db_path)
     try:
         connection.execute(
@@ -33,7 +40,7 @@ def add_usage(
             "(telegram_id, usage_month, seconds_rendered, cost_rub) "
             "VALUES (?, ?, ?, ?) "
             "ON CONFLICT(telegram_id, usage_month) DO UPDATE SET "
-            "seconds_rendered = seconds_rendered + excluded.seconds_rendered, "
+            "seconds_rendered = MAX(0, seconds_rendered + excluded.seconds_rendered), "
             "cost_rub = cost_rub + excluded.cost_rub",
             (telegram_id, _resolve_month(now), seconds, cost_rub),
         )
@@ -52,7 +59,9 @@ def get_month_seconds(
             "WHERE telegram_id = ? AND usage_month = ?",
             (telegram_id, _resolve_month(now)),
         ).fetchone()
-        return int(row[0]) if row else 0
+        # Строка могла быть создана сразу возвратом брони (рендер сорвался
+        # раньше, чем счётчик появился) — наружу такой счётчик уходит нулём.
+        return max(0, int(row[0])) if row else 0
     finally:
         connection.close()
 

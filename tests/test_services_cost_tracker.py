@@ -121,3 +121,11 @@ def test_unknown_video_model_falls_back_to_the_dearest_measured_rate():
 
 def test_look_model_is_priced_from_the_live_measurement():
     assert cost_tracker.image_cost("google:4@1") == pytest.approx(4.0)
+
+
+def test_video_cost_can_be_converted_at_the_configured_rate():
+    # Оценка и фактическая цена провайдера попадают в один отчёт, а курс
+    # задаётся переменной окружения: считать их по разным курсам нельзя.
+    assert cost_tracker.video_cost(
+        "klingai:avatar@2.0-standard", 30, usd_rub_rate=100.0
+    ) == pytest.approx(0.0446 * 30 * 100.0)
