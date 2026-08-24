@@ -32,6 +32,7 @@ from bot.storage.render_usage import add_usage, seconds_left
 from bot.storage.speech_jobs import (
     STATUS_DRAFT,
     STATUS_FAILED,
+    STATUS_PUBLISHED,
     STATUS_READY,
     STATUS_RENDERING,
     STATUS_VOICED,
@@ -50,15 +51,18 @@ REASON_BUSY = "busy"
 
 OPERATION_RENDER = "avatar_render"
 
-# Озвучку можно менять, пока задание не ушло в оплату: черновик и уже
-# озвученное. Дальше `audio_duration_sec` — это величина, по которой
+# Озвучку можно менять, пока задание не ушло в оплату: черновик, уже
+# озвученное и сорвавшийся рендер. У `failed` бронь уже возвращена и платить
+# не за что, так что переозвучка — естественный повтор, а не переписывание
+# оплаченного. Дальше `audio_duration_sec` — это величина, по которой
 # сверяется бронь, и переписывать её нельзя.
-_ATTACHABLE_STATUSES = (STATUS_DRAFT, STATUS_VOICED)
+_ATTACHABLE_STATUSES = (STATUS_DRAFT, STATUS_VOICED, STATUS_FAILED)
 
-# Рендер запускается один раз. Повторный запуск забронировал бы секунды
-# второй раз и затёр бы `provider_task_id`: первый оплаченный рендер стал
-# бы сиротой — его никто не заберёт и его бронь никто не вернёт.
-_RENDER_BLOCKING_STATUSES = (STATUS_RENDERING, STATUS_READY)
+# Блокируется всё, что достигло рендера или прошло дальше него: секунды уже
+# забронированы, а на `ready` и `published` ещё и деньги уже списаны.
+# Исключение — `failed`: его бронь уже возвращена, и с него начинается
+# легитимный повтор.
+_RENDER_BLOCKING_STATUSES = (STATUS_RENDERING, STATUS_READY, STATUS_PUBLISHED)
 
 
 class RenderRefused(Exception):
@@ -137,7 +141,13 @@ async def attach_audio(db_path: str, job_id: int, audio_bytes: bytes) -> float:
     # Статус проверяется до записи файла: отказ не должен оставлять на диске
     # дорожку, которая никому уже не принадлежит.
     previous = get_job(db_path, job_id)
-    if previous is not None and previous.status not in _ATTACHABLE_STATUSES:
+    if previous is None:
+        # Задания нет вовсе — писать для него файл и мерить длительность
+        # некому. Тихий проход дал бы вызывающему длительность несуществующего
+        # задания и оставил бы дорожку на диске навсегда: `update_job` ниже
+        # обновил бы ноль строк, не пожаловавшись.
+        raise RenderRefused(REASON_NO_AUDIO, 0)
+    if previous.status not in _ATTACHABLE_STATUSES:
         raise RenderRefused(REASON_BUSY, 0)
 
     audio_path = _tmp_path(".mp3")
@@ -256,11 +266,17 @@ async def collect_ready(db_path: str, job: SpeechJob) -> bytes | None:
             "Avatar render failed",
             extra={"user_id": job.telegram_id, "operation": "speech_pipeline"},
         )
+        # Сначала статус, потом возврат брони. Крах между двумя операциями
+        # ничего не закрывает целиком при любом порядке, но у этого порядка
+        # ошибка дешевле: задание останется в `rendering` с брони, которую
+        # больше некому вернуть (пользователь недосчитается секунд), а не в
+        # `failed` с уже освобождённой бронью, которую следующий тик
+        # освободит второй раз (лимит вырос бы бесплатно, за счёт бизнеса).
+        update_job(db_path, job.id, status=STATUS_FAILED, error=status.error)
         if reserved:
             # Рендер не состоялся — бронь возвращается пользователю, иначе
             # чужая неудача навсегда съест его месячный лимит.
             add_usage(db_path, job.telegram_id, -reserved, 0.0)
-        update_job(db_path, job.id, status=STATUS_FAILED, error=status.error)
         return None
 
     if not status.done or status.video_bytes is None:
@@ -308,9 +324,12 @@ async def collect_ready(db_path: str, job: SpeechJob) -> bytes | None:
     )
     # Известное и принятое окно: падение между `record_cost` и переводом в
     # `ready` оставит задание в `rendering`, и следующий тик воркера спишет
-    # деньги второй раз. Дёшево это не чинится — счётчик расходов и задания
-    # лежат в разных хранилищах, одной транзакцией их не накрыть. Окно узкое
-    # (два соседних запроса к SQLite), а цена ошибки — одна лишняя строка
-    # в отчёте, поэтому оно оставлено осознанно.
+    # деньги второй раз. Дёшево это не чинится — не потому, что счётчик
+    # расходов и задания физически лежат в разных базах (это одна и та же
+    # SQLite по одному `db_path`), а потому, что каждый модуль хранения сам
+    # открывает и закрывает своё соединение: одной транзакцией на двух чужих
+    # друг другу соединениях не накрыть. Окно узкое (два соседних запроса
+    # к SQLite), а цена ошибки — одна лишняя строка в отчёте, поэтому оно
+    # оставлено осознанно.
     update_job(db_path, job.id, status=STATUS_READY, cost_rub=cost_rub)
     return status.video_bytes

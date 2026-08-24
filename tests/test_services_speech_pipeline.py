@@ -133,6 +133,46 @@ async def test_attach_audio_refuses_a_job_that_is_already_rendering(
 
 
 @pytest.mark.asyncio
+async def test_attach_audio_allows_a_retry_on_a_failed_job(
+    db_path, _probe, tmp_path
+):
+    # `failed` — терминальный статус с уже возвращённой бронью: платить не за
+    # что, и переозвучка — естественный способ попробовать снова. Сегодня
+    # `request_render` уже разрешает повтор с этого статуса; `attach_audio`
+    # обязан соглашаться с ним, а не звать это занятостью.
+    _probe(30.0)
+    job_id = create_job(db_path, TELEGRAM_ID, "текст")
+    await attach(db_path, job_id, b"mp3")
+    update_job(db_path, job_id, status=STATUS_FAILED, provider_task_id="task-1")
+
+    _probe(12.0)
+    duration = await attach(db_path, job_id, b"retry")
+
+    assert duration == pytest.approx(12.0)
+    job = get_job(db_path, job_id)
+    assert job.status == STATUS_VOICED
+    assert pathlib.Path(job.audio_path).read_bytes() == b"retry"
+
+
+@pytest.mark.asyncio
+async def test_attach_audio_refuses_a_missing_job_without_writing_a_file(
+    db_path, _probe, tmp_path
+):
+    # Задания нет вовсе: тихий проход записал бы дорожку на диск навсегда и
+    # вернул бы длительность для несуществующего задания. `request_render`
+    # уже отказывает такому случаю через `REASON_NO_AUDIO`; `attach_audio`
+    # обязан отказывать так же, а не молчать.
+    _probe(30.0)
+    missing_job_id = 999_999
+
+    with pytest.raises(speech_pipeline.RenderRefused) as refusal:
+        await attach(db_path, missing_job_id, b"mp3")
+
+    assert refusal.value.reason == speech_pipeline.REASON_NO_AUDIO
+    assert list(tmp_path.glob("*.mp3")) == []
+
+
+@pytest.mark.asyncio
 async def test_request_render_starts_the_provider_and_marks_rendering(
     db_path, _probe, monkeypatch
 ):
@@ -301,6 +341,30 @@ async def test_a_ready_job_is_not_rendered_a_second_time(
     job_id = create_job(db_path, TELEGRAM_ID, "текст")
     await attach(db_path, job_id, b"mp3")
     update_job(db_path, job_id, status=STATUS_READY, provider_task_id="task-1")
+
+    with pytest.raises(speech_pipeline.RenderRefused) as refusal:
+        await speech_pipeline.request_render(db_path, job_id, b"image", look_id=7)
+
+    assert refusal.value.reason == speech_pipeline.REASON_BUSY
+    start.assert_not_awaited()
+    assert get_month_seconds(db_path, TELEGRAM_ID) == 0
+
+
+@pytest.mark.asyncio
+async def test_a_published_job_is_not_rendered_a_second_time(
+    db_path, _probe, monkeypatch
+):
+    # Задание уже доставлено пользователю (задача 14 отметила его
+    # `published`); повторный рендер — это второй платёж за тот же ролик,
+    # который пользователь уже получил.
+    _probe(30.0)
+    start = AsyncMock(return_value="task-2")
+    monkeypatch.setattr(speech_pipeline, "start_render", start)
+    job_id = create_job(db_path, TELEGRAM_ID, "текст")
+    await attach(db_path, job_id, b"mp3")
+    update_job(
+        db_path, job_id, status=speech_pipeline.STATUS_PUBLISHED, provider_task_id="task-1"
+    )
 
     with pytest.raises(speech_pipeline.RenderRefused) as refusal:
         await speech_pipeline.request_render(db_path, job_id, b"image", look_id=7)
