@@ -38,6 +38,16 @@ async def _execute(*args: str) -> bytes:
     return stdout
 
 
+async def run_ffmpeg(*args: str) -> bytes:
+    """Запуск ffmpeg/ffprobe для соседних модулей.
+
+    `video_note.py` держит свои команды у себя, но запуск процесса, разбор
+    кода возврата и логирование одни на всех — дублировать их значит завести
+    второе место, где эти ошибки обрабатываются по-своему.
+    """
+    return await _execute(*args)
+
+
 async def probe_duration(path: str) -> float:
     stdout = await _execute(
         "ffprobe",
