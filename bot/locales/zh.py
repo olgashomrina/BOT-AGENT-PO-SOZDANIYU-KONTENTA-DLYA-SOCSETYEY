@@ -335,6 +335,10 @@ STRINGS = {
     "speech_rewrite_text_button": "重写文本",
     "speech_drop_button": "删除",
     "speech_failed": "拍摄失败。文本和配音都已保留 — 重试只需再付拍摄的钱。",
+    "speech_delivered_not_recorded": (
+        "圆形视频已发送，但没能保存下来，没法再通过机器人发布了。"
+        "文本和配音都已保留 — 重试只需再付拍摄的钱。"
+    ),
     "speech_retry_button": "重试",
     "speech_limit_exceeded": "本月的拍摄秒数用完了：还剩 {left} 秒。额度每月一号重置。",
     "speech_need_face": "请先上传分身的面容 — 没有它就没法拍。",

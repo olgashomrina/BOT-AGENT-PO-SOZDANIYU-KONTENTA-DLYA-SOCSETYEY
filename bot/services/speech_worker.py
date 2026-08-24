@@ -9,8 +9,11 @@
 Отсюда же главное правило модуля: сорвавшаяся доставка — это повод повторить,
 а не повод закрыть задание. Файл ролика удаляется только тогда, когда его
 уже некому читать: после успешной отправки либо вместе с терминальным
-провалом. Терминальный провал возможен ровно в двух случаях — ошибка, которая
-не пройдёт ни на какой попытке, и исчерпанный предел времени на повторы.
+провалом. Терминальный провал — это ошибка, которая не пройдёт ни на какой
+попытке (`_PERMANENT_DELIVERY_ERRORS`), исчерпанный предел времени на
+повторы, пропавший с диска ролик или дважды подряд не зафиксированный
+после отправки `file_id`. Во всех остальных случаях — повтор на следующем
+тике.
 """
 
 from __future__ import annotations
@@ -66,6 +69,15 @@ DELIVERY_RETRY_LIMIT_SECONDS = 6 * 60 * 60
 # сообщения вроде «file is too big», где повтор тоже не помог бы, но и
 # ошибиться в другую сторону там дороже.
 _PERMANENT_DELIVERY_ERRORS = (TelegramForbiddenError, TelegramNotFound)
+
+# Метка «ответ уже один раз пришёл без video_note» для текущего рендера.
+# Отдельной колонки под неё нет и заводить нельзя, поэтому метка живёт в уже
+# существующем `error` — том же поле, что несёт диагноз терминального
+# провала. Это безопасно: начало нового рендера (`speech_pipeline`, запись
+# `status=rendering`) явно пишет `error=None`, так что на первый случай для
+# этого рендера поле гарантированно чисто, а спутать метку с чужим диагнозом
+# невозможно — второй такой диагноз тут же завершает задание и стирает её.
+_NO_FILE_ID_MARK = "no_file_id_once"
 
 
 def _tmp_path(suffix: str) -> str:
@@ -123,7 +135,26 @@ def _age_seconds(job: SpeechJob) -> float | None:
     return (datetime.now(timezone.utc) - stamp).total_seconds()
 
 
-async def _give_up(bot: Bot, db_path: str, job: SpeechJob, error: str) -> None:
+def _retry_limit_exceeded(job: SpeechJob) -> bool:
+    """Исчерпан ли предел повторов доставки.
+
+    Неразобранная метка времени (`_age_seconds` вернула `None`) — сегодня
+    недостижимый случай (колонка `NOT NULL`, пишется только в ISO-8601), но
+    если он всё же случится, склоняться нужно к завершению задания, а не к
+    молчаливому бесконечному повтору: это ровно та зависшая оплата, о
+    которой предупреждает соседняя проверка предела.
+    """
+    age = _age_seconds(job)
+    return age is None or age > DELIVERY_RETRY_LIMIT_SECONDS
+
+
+async def _give_up(
+    bot: Bot,
+    db_path: str,
+    job: SpeechJob,
+    error: str,
+    notify_key: str = "speech_failed",
+) -> None:
     """Закрыть задание терминально и сказать об этом пользователю.
 
     Только отсюда задание уходит в `failed` по вине доставки. Ролик здесь
@@ -134,6 +165,10 @@ async def _give_up(bot: Bot, db_path: str, job: SpeechJob, error: str) -> None:
     и озвучка сохранены, а `failed` — статус, с которого повтор рендера
     законен (`speech_pipeline._ATTACHABLE_STATUSES`). Удалить дорожку значило
     бы соврать в тексте и превратить обещанный повтор в REASON_NO_AUDIO.
+
+    `notify_key` по умолчанию — общий «съёмка не удалась», но для случая
+    «кружок дошёл, а записать его было нечем» (см. `_deliver`) правда другая:
+    ролик пользователь уже видел, врать про сорвавшуюся съёмку нельзя.
     """
     if get_job(db_path, job.id) is None:
         # Строки уже нет: писать в неё нечего, и рассказывать пользователю
@@ -145,7 +180,7 @@ async def _give_up(bot: Bot, db_path: str, job: SpeechJob, error: str) -> None:
         return
     update_job(db_path, job.id, status=STATUS_FAILED, error=error)
     _rendered_video_path(job.id).unlink(missing_ok=True)
-    await _notify(bot, db_path, job.telegram_id, "speech_failed")
+    await _notify(bot, db_path, job.telegram_id, notify_key)
 
 
 def _keep_for_retry(db_path: str, job: SpeechJob) -> None:
@@ -183,14 +218,36 @@ async def _deliver(bot: Bot, db_path: str, job: SpeechJob, video_bytes: bytes) -
 
     file_id = getattr(getattr(message, "video_note", None), "file_id", None)
     if file_id is None:
-        # Ответ без video_note. Файл оркестратора остаётся на месте, задание
-        # остаётся в выборке: следующий тик отправит кружок ещё раз и
-        # запишет file_id. Повторный кружок — плата за то, чтобы не потерять
-        # его совсем.
+        if job.error == _NO_FILE_ID_MARK:
+            # Второй раз подряд для этого же рендера — не совпадение, а
+            # свойство ответа: если сервер один раз прислал message без
+            # video_note, он и дальше будет его присылать. Кружок при этом
+            # УЖЕ доставлен (send_video_note не упал), просто зафиксировать
+            # его нечем — значит и врать про сорвавшуюся съёмку нельзя,
+            # и слать те же 720 кружков за 6 часов до истечения общего
+            # предела тоже нельзя.
+            logger.error(
+                "Video note response carries no file_id twice, giving up",
+                extra={"user_id": job.telegram_id, "operation": "speech_worker"},
+            )
+            await _give_up(
+                bot,
+                db_path,
+                job,
+                "Кружок доставлен, но идентификатор файла не получен дважды.",
+                notify_key="speech_delivered_not_recorded",
+            )
+            return
+        # Первый случай для этого рендера. Файл оркестратора остаётся на
+        # месте, задание остаётся в выборке: следующий тик попробует ещё раз
+        # и, если ответ будет прежним, второй заход выше уже не повторит
+        # кружок в третий раз. Метка — единственное свидетельство первого
+        # случая: счётчика попыток в схеме нет.
         logger.error(
             "Video note response carries no file_id",
             extra={"user_id": job.telegram_id, "operation": "speech_worker"},
         )
+        update_job(db_path, job.id, error=_NO_FILE_ID_MARK)
         return
 
     try:
@@ -240,21 +297,6 @@ def _jobs_to_poll(db_path: str) -> list[SpeechJob]:
 
 
 async def _process_job(bot: Bot, db_path: str, job: SpeechJob) -> None:
-    if job.status == STATUS_READY:
-        age = _age_seconds(job)
-        if age is not None and age > DELIVERY_RETRY_LIMIT_SECONDS:
-            # Повторы идут дольше предела. Молча крутиться дальше нельзя:
-            # пользователь всё это время заблокирован по REASON_BUSY и ничего
-            # не знает.
-            hours = DELIVERY_RETRY_LIMIT_SECONDS // 3600
-            await _give_up(
-                bot,
-                db_path,
-                job,
-                f"Кружок не удалось доставить за {hours} ч. повторов.",
-            )
-            return
-
     try:
         video_bytes = await collect_ready(db_path, job)
     except Exception:
@@ -307,14 +349,35 @@ async def _process_job(bot: Bot, db_path: str, job: SpeechJob) -> None:
         await _give_up(bot, db_path, job, f"Доставка невозможна: {error}")
     except Exception:
         # Ffmpeg, сеть, флуд-контроль — всё это проходит само. Ролик остаётся
-        # на диске, задание — в выборке следующего тика. Пользователю тут
-        # ничего не говорим: сказать нечего, кружок ещё будет.
+        # на диске, задание — в выборке следующего тика.
         logger.error(
             "Speech job delivery failed, will retry",
             extra={"user_id": job.telegram_id, "operation": "speech_worker"},
             exc_info=True,
         )
-        _keep_for_retry(db_path, job)
+        # Предел по времени проверяется ЗДЕСЬ, а не в начале обработки: он
+        # обязан идти после хотя бы одной реальной попытки доставки. Иначе
+        # задание, чей `updated_at` состарился без единой попытки (простой
+        # между рендером и первым тиком — деплой, авария хоста), сдалось бы
+        # молча, ни разу не попытавшись отправить лежащий на диске ролик.
+        #
+        # Возраст берём у `refreshed`, а не у входного `job`: для задания,
+        # только что перешедшего из `rendering` в `ready` внутри
+        # `collect_ready`, именно `refreshed.updated_at` — момент готовности
+        # ролика, а не момент запуска рендера. Долгий рендер не должен
+        # списываться на счёт ещё не начинавшихся повторов доставки.
+        if _retry_limit_exceeded(refreshed):
+            hours = DELIVERY_RETRY_LIMIT_SECONDS // 3600
+            await _give_up(
+                bot,
+                db_path,
+                refreshed,
+                f"Кружок не удалось доставить за {hours} ч. повторов.",
+            )
+            return
+        # Пользователю тут ничего не говорим: сказать нечего, кружок ещё
+        # будет.
+        _keep_for_retry(db_path, refreshed)
 
 
 async def process_rendering_jobs(bot: Bot, db_path: str) -> None:

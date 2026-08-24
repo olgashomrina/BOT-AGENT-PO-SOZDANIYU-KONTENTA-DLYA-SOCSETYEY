@@ -5,8 +5,8 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from aiogram.exceptions import TelegramForbiddenError
-from aiogram.methods import SendMessage
+from aiogram.exceptions import TelegramForbiddenError, TelegramNotFound, TelegramRetryAfter
+from aiogram.methods import SendMessage, SendVideoNote
 
 from bot.locales.loader import get_string
 from bot.services import speech_worker
@@ -15,6 +15,7 @@ from bot.storage.speech_jobs import (
     STATUS_FAILED,
     STATUS_READY,
     STATUS_RENDERING,
+    SpeechJob,
     create_job,
     get_job,
     update_job,
@@ -315,14 +316,18 @@ async def test_a_job_left_over_from_a_delivery_failure_is_retried_next_tick(
 
 
 @pytest.mark.asyncio
-async def test_a_job_retrying_for_too_long_fails_and_tells_the_user(
+async def test_a_job_retrying_for_too_long_fails_only_after_a_real_attempt(
     db_path, monkeypatch, audio_file, tmp_path
 ):
     # Повтор ограничен временем, а не числом попыток (колонки под счётчик
-    # нет). Когда предел исчерпан, пользователю обязаны сказать: молча
-    # крутиться вечно — худший из возможных исходов.
+    # нет). Но предел — это не повод сдаваться, ни разу не попробовав
+    # отправить лежащий на диске ролик: старое задание получает ровно ту же
+    # попытку доставки, что и молодое, и сдаётся только когда ЭТА попытка
+    # тоже сорвалась.
     monkeypatch.setattr(
-        speech_worker, "to_video_note", AsyncMock(side_effect=_write_note)
+        speech_worker,
+        "to_video_note",
+        AsyncMock(side_effect=RuntimeError("ffmpeg boom")),
     )
     job_id = _ready_job(db_path, audio_file)
     rendered_path = tmp_path / f"speech-{job_id}.mp4"
@@ -332,7 +337,9 @@ async def test_a_job_retrying_for_too_long_fails_and_tells_the_user(
 
     await speech_worker.process_rendering_jobs(bot, db_path)
 
-    bot.send_video_note.assert_not_awaited()
+    # Попытка была: to_video_note реально вызывался, а не был пропущен
+    # проверкой возраста в начале обработки.
+    speech_worker.to_video_note.assert_awaited_once()
     job = get_job(db_path, job_id)
     assert job.status == STATUS_FAILED
     assert job.error
@@ -340,6 +347,57 @@ async def test_a_job_retrying_for_too_long_fails_and_tells_the_user(
     bot.send_message.assert_awaited_once_with(
         TELEGRAM_ID, get_string("speech_failed", "ru")
     )
+
+
+@pytest.mark.asyncio
+async def test_an_old_job_whose_delivery_succeeds_is_not_given_up(
+    db_path, monkeypatch, audio_file, tmp_path
+):
+    # Возраст сам по себе ничего не решает: старое задание, которое СЕЙЧАС
+    # доставилось, обязано дойти до пользователя как любое другое, а не
+    # быть списанным заранее только за то, что предыдущие тики его не
+    # забирали.
+    monkeypatch.setattr(
+        speech_worker, "to_video_note", AsyncMock(side_effect=_write_note)
+    )
+    job_id = _ready_job(db_path, audio_file)
+    (tmp_path / f"speech-{job_id}.mp4").write_bytes(b"mp4")
+    _age_job(db_path, job_id, speech_worker.DELIVERY_RETRY_LIMIT_SECONDS + 60)
+    bot = _bot()
+
+    await speech_worker.process_rendering_jobs(bot, db_path)
+
+    bot.send_video_note.assert_awaited_once()
+    job = get_job(db_path, job_id)
+    assert job.status == STATUS_READY
+    assert job.result_file_id == "note-1"
+
+
+def test_retry_limit_is_treated_as_exceeded_when_updated_at_is_unparseable():
+    # `updated_at` не должна прийти неразобранной (колонка NOT NULL, пишется
+    # только ISO-8601 в bot.storage.speech_jobs), но если это всё же
+    # случится, склоняться нужно к завершению задания, а не к молчаливому
+    # бесконечному повтору — та же зависшая оплата, от которой защищает сам
+    # предел.
+    job = SpeechJob(
+        id=1,
+        telegram_id=TELEGRAM_ID,
+        source_text="текст",
+        script=None,
+        look_id=None,
+        audio_path=None,
+        audio_duration_sec=None,
+        format="video_note",
+        status=STATUS_READY,
+        provider_task_id=None,
+        result_file_id=None,
+        cost_rub=None,
+        error=None,
+        created_at="не дата",
+        updated_at="не дата",
+    )
+
+    assert speech_worker._retry_limit_exceeded(job) is True
 
 
 @pytest.mark.asyncio
@@ -364,6 +422,73 @@ async def test_a_permanently_undeliverable_circle_fails_terminally(
     job = get_job(db_path, job_id)
     assert job.status == STATUS_FAILED
     assert not rendered_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_a_missing_chat_fails_terminally(
+    db_path, monkeypatch, audio_file, tmp_path
+):
+    # TelegramNotFound (чата больше нет) пиновать явно: узость
+    # `_PERMANENT_DELIVERY_ERRORS` держится только на членстве в этом
+    # кортеже, а его случайное расширение до TelegramAPIError
+    # терминализировало бы и 429 заодно.
+    monkeypatch.setattr(
+        speech_worker, "collect_ready", AsyncMock(return_value=b"mp4")
+    )
+    monkeypatch.setattr(
+        speech_worker, "to_video_note", AsyncMock(side_effect=_write_note)
+    )
+    job_id = _rendering_job(db_path, audio_file)
+    rendered_path = tmp_path / f"speech-{job_id}.mp4"
+    rendered_path.write_bytes(b"mp4")
+    bot = _bot()
+    bot.send_video_note = AsyncMock(
+        side_effect=TelegramNotFound(
+            method=SendVideoNote(chat_id=TELEGRAM_ID, video_note="x"),
+            message="chat not found",
+        )
+    )
+
+    await speech_worker.process_rendering_jobs(bot, db_path)
+
+    job = get_job(db_path, job_id)
+    assert job.status == STATUS_FAILED
+    assert not rendered_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_a_flood_control_error_keeps_the_paid_video_for_retry(
+    db_path, monkeypatch, audio_file, tmp_path
+):
+    # Самая вероятная временная ошибка на этом пути — 429 флуд-контроль. Она
+    # обязана остаться в retry-ветке: расширение `_PERMANENT_DELIVERY_ERRORS`
+    # хотя бы до TelegramAPIError терминализировало бы и её, удаляя
+    # оплаченное видео на первом же 429.
+    monkeypatch.setattr(
+        speech_worker, "collect_ready", AsyncMock(return_value=b"mp4")
+    )
+    monkeypatch.setattr(
+        speech_worker, "to_video_note", AsyncMock(side_effect=_write_note)
+    )
+    job_id = _rendering_job(db_path, audio_file)
+    rendered_path = tmp_path / f"speech-{job_id}.mp4"
+    rendered_path.write_bytes(b"mp4")
+    bot = _bot()
+    bot.send_video_note = AsyncMock(
+        side_effect=TelegramRetryAfter(
+            method=SendVideoNote(chat_id=TELEGRAM_ID, video_note="x"),
+            message="Flood control exceeded",
+            retry_after=3,
+        )
+    )
+
+    await speech_worker.process_rendering_jobs(bot, db_path)
+
+    assert rendered_path.exists()
+    job = get_job(db_path, job_id)
+    assert job.status == STATUS_READY
+    assert job.result_file_id is None
+    bot.send_message.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -433,6 +558,51 @@ async def test_a_response_without_a_video_note_does_not_burn_the_paid_video(
 
     assert get_job(db_path, job_id).status != STATUS_FAILED
     assert rendered_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_a_second_response_without_a_video_note_fails_without_a_third_send(
+    db_path, monkeypatch, audio_file, tmp_path
+):
+    # Отсутствие video_note в ответе — не случайность, а свойство самого
+    # ответа: если он один раз пришёл без поля, он будет приходить без него
+    # и дальше. Один повтор — приемлемая цена за то, чтобы не потерять
+    # кружок совсем, но не сотни: без предела тут ушло бы ~720 одинаковых
+    # кружков за 6 часов, прежде чем общий предел закрыл бы задание.
+    # `collect_ready` не мокается: задание сразу в `ready`, и настоящий
+    # `collect_ready` в этом статусе просто читает файл с диска — как в
+    # проде, где `_jobs_to_poll` находит его тем же способом каждый тик.
+    monkeypatch.setattr(
+        speech_worker, "to_video_note", AsyncMock(side_effect=_write_note)
+    )
+    job_id = _ready_job(db_path, audio_file)
+    rendered_path = tmp_path / f"speech-{job_id}.mp4"
+    rendered_path.write_bytes(b"mp4")
+    bot = _bot()
+    bot.send_video_note = AsyncMock(return_value=MagicMock(video_note=None))
+
+    await speech_worker.process_rendering_jobs(bot, db_path)
+    # Первый тик: кружок отправлен, file_id не пришёл, задание не провалено.
+    assert bot.send_video_note.await_count == 1
+    assert get_job(db_path, job_id).status != STATUS_FAILED
+
+    await speech_worker.process_rendering_jobs(bot, db_path)
+
+    # Второй кружок ушёл (два send_video_note), но третьего тика уже не
+    # будет: задание терминально закрыто.
+    assert bot.send_video_note.await_count == 2
+    job = get_job(db_path, job_id)
+    assert job.status == STATUS_FAILED
+    assert job.error
+    assert not rendered_path.exists()
+    bot.send_message.assert_awaited_once_with(
+        TELEGRAM_ID, get_string("speech_delivered_not_recorded", "ru")
+    )
+
+    # Третий тик не находит задание вообще (терминальное), значит и третьего
+    # кружка нет.
+    await speech_worker.process_rendering_jobs(bot, db_path)
+    assert bot.send_video_note.await_count == 2
 
 
 @pytest.mark.asyncio
@@ -515,8 +685,25 @@ def test_scheduler_runs_on_the_configured_interval(db_path):
     assert job.trigger.interval.total_seconds() == 20
     # «Без наложения запусков»: второй тик не стартует поверх первого,
     # а пропущенные не копятся очередью одинаковых прогонов.
+    #
+    # На вид 1/True совпадают со значениями APScheduler по умолчанию — но
+    # здесь это не тавтология: планировщик в этом тесте ни разу не
+    # запускается (`scheduler.start()` не вызывается), а APScheduler
+    # подставляет дефолты в атрибуты `Job` только при реальном планировании
+    # («when the job is scheduled... or immediately if the scheduler is
+    # already running» — docstring `BaseScheduler.add_job`). Проверено
+    # прямым экспериментом: без явных `coalesce`/`max_instances` в
+    # `add_job` обращение к `job.max_instances` здесь падает с
+    # `AttributeError`, а не молча возвращает 1. Значит эти два ассерта
+    # пином и остаются: убрать `coalesce=True, max_instances=1` из
+    # `build_speech_scheduler` — тест упадёт с AttributeError, а не пройдёт
+    # по совпадению с дефолтом.
     assert job.max_instances == 1
     assert job.coalesce is True
+    # misfire_grace_time — не дефолт APScheduler (там 1 секунда), а
+    # осмысленное «три пропущенных тика ещё можно наверстать»: пин здесь
+    # действительно проверяет намерение, а не подстановку по умолчанию.
+    assert job.misfire_grace_time == 60
 
 
 async def _write_note(src_path: str, out_path: str, *args, **kwargs) -> str:

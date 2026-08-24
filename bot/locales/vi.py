@@ -443,6 +443,10 @@ STRINGS = {
         "Quay không thành. Nội dung và bản tiếng vẫn được giữ — làm lại chỉ "
         "tốn tiền quay."
     ),
+    "speech_delivered_not_recorded": (
+        "Video tròn đã gửi nhưng không lưu được, nên không thể đăng qua bot "
+        "nữa. Nội dung và bản tiếng vẫn được giữ — làm lại chỉ tốn tiền quay."
+    ),
     "speech_retry_button": "Thử lại",
     "speech_limit_exceeded": (
         "Tháng này bạn đã hết số giây quay: còn {left}. Hạn mức đặt lại vào ngày mùng một."

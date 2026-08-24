@@ -433,6 +433,11 @@ STRINGS = {
         "Filming failed. The text and the audio are saved — a retry costs "
         "only the filming."
     ),
+    "speech_delivered_not_recorded": (
+        "The circle was sent, but it couldn't be saved, so it can no longer "
+        "be published through the bot. The text and the audio are saved — "
+        "a retry costs only the filming."
+    ),
     "speech_retry_button": "Retry",
     "speech_limit_exceeded": (
         "You're out of filming seconds this month: {left} left. "
