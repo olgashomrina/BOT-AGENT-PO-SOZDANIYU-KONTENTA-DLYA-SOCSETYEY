@@ -47,6 +47,8 @@ from bot.storage.avatar_donors import (
     count_donors,
     get_donors,
 )
+from bot.storage.avatar_faces import get_face
+from bot.storage.avatar_looks import count_looks, get_active_look
 from bot.storage.style_examples import (
     KIND_SPOKEN,
     add_style_example,
@@ -86,25 +88,34 @@ async def on_my_double(callback: CallbackQuery, db_path: str, state: FSMContext)
 
     donors = count_donors(db_path, telegram_id)
     profile = get_voice_profile(db_path, telegram_id)
+    face = get_face(db_path, telegram_id)
+    active_look = get_active_look(db_path, telegram_id)
+    looks_count = count_looks(db_path, telegram_id)
 
-    if donors == 0 and profile is None:
+    if donors == 0 and profile is None and face is None:
         await callback.message.answer(
             get_string("double_consent_text", language),
             reply_markup=build_consent_keyboard(language),
         )
-    else:
-        await callback.message.answer(
-            get_string(
-                "double_status_text",
-                language,
-                donors=donors,
-                voice=get_string(
-                    "double_voice_ready" if profile else "double_voice_missing",
-                    language,
-                ),
+        await callback.answer()
+        return
+
+    await callback.message.answer(
+        get_string(
+            "double_status_full",
+            language,
+            face=get_string(
+                "double_face_present" if face else "double_face_missing", language
             ),
-            reply_markup=build_my_double_keyboard(language),
-        )
+            looks=looks_count,
+            active=active_look.title
+            if active_look
+            else get_string("double_look_none", language),
+        ),
+        reply_markup=build_my_double_keyboard(
+            language, has_face=face is not None, has_look=active_look is not None
+        ),
+    )
     await callback.answer()
 
 

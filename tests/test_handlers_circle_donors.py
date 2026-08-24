@@ -30,6 +30,12 @@ def _callback() -> MagicMock:
     return callback
 
 
+def _state() -> FSMContext:
+    storage = MemoryStorage()
+    key = StorageKey(bot_id=1, chat_id=TELEGRAM_ID, user_id=TELEGRAM_ID)
+    return FSMContext(storage=storage, key=key)
+
+
 def _video_note_message(duration: int = 40) -> MagicMock:
     message = MagicMock()
     message.from_user.id = TELEGRAM_ID
@@ -143,3 +149,18 @@ async def test_non_video_note_is_rejected_without_counting(db_path, state):
 
     message.answer.assert_awaited()
     assert count_donors(db_path, TELEGRAM_ID) == 0
+
+
+@pytest.mark.asyncio
+async def test_double_screen_reports_face_and_looks(db_path):
+    from bot.storage.avatar_faces import save_face
+    from bot.storage.avatar_looks import SOURCE_UPLOADED, add_look
+
+    save_face(db_path, TELEGRAM_ID, "photo-1")
+    add_look(db_path, TELEGRAM_ID, "img-1", "студия", SOURCE_UPLOADED)
+    callback = _callback()
+
+    await circle.on_my_double(callback, db_path=db_path, state=_state())
+
+    text = callback.message.answer.await_args.args[0]
+    assert "студия" in text
