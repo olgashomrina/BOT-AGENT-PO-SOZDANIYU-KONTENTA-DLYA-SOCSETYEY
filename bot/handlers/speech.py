@@ -58,7 +58,6 @@ from bot.storage.render_usage import seconds_left
 from bot.storage.speech_jobs import (
     STATUS_FAILED,
     STATUS_PUBLISHED,
-    STATUS_READY,
     create_job,
     get_active_job,
     get_job,
