@@ -8,6 +8,7 @@ import pytest
 from aiogram.exceptions import TelegramForbiddenError, TelegramNotFound, TelegramRetryAfter
 from aiogram.methods import SendMessage, SendVideoNote
 
+from bot.keyboards.circle import build_speech_ready_keyboard
 from bot.locales.loader import get_string
 from bot.services import speech_worker
 from bot.storage.db import get_connection
@@ -20,6 +21,7 @@ from bot.storage.speech_jobs import (
     get_job,
     update_job,
 )
+from bot.storage.users import set_channel_id
 
 TELEGRAM_ID = 1001
 
@@ -103,8 +105,40 @@ async def test_ready_render_is_sent_as_a_video_note(
     assert job.result_file_id == "note-1"
     # Не «какое-нибудь сообщение», а именно то: перепутанные местами
     # speech_ready и speech_failed прошли бы проверку на количество вызовов.
+    # Без подключённого канала «Опубликовать» показывать нечего — сюда
+    # приходит только remove/rewrite/other-look клавиатура.
     bot.send_message.assert_awaited_once_with(
-        TELEGRAM_ID, get_string("speech_ready", "ru")
+        TELEGRAM_ID,
+        get_string("speech_ready", "ru"),
+        reply_markup=build_speech_ready_keyboard("ru", can_publish=False),
+    )
+
+
+@pytest.mark.asyncio
+async def test_ready_render_notification_offers_publish_when_channel_is_connected(
+    db_path, monkeypatch, audio_file
+):
+    # Задача 20: без клавиатуры готовый кружок был тупиком — кнопки
+    # публикации/сброса/переснятия, построенные в Task 17, никогда не
+    # доходили до пользователя. «Опубликовать» показываем только когда
+    # канал реально подключён (bot.storage.users.get_channel_id), иначе
+    # кнопка вела бы в тупик.
+    monkeypatch.setattr(
+        speech_worker, "collect_ready", AsyncMock(return_value=b"mp4")
+    )
+    monkeypatch.setattr(
+        speech_worker, "to_video_note", AsyncMock(side_effect=_write_note)
+    )
+    set_channel_id(db_path, TELEGRAM_ID, -100200300)
+    _rendering_job(db_path, audio_file)
+    bot = _bot()
+
+    await speech_worker.process_rendering_jobs(bot, db_path)
+
+    bot.send_message.assert_awaited_once_with(
+        TELEGRAM_ID,
+        get_string("speech_ready", "ru"),
+        reply_markup=build_speech_ready_keyboard("ru", can_publish=True),
     )
 
 

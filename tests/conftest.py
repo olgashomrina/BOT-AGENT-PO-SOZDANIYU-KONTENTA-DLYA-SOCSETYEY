@@ -7,11 +7,13 @@ from bot.handlers.channel import router as channel_router
 from bot.handlers.circle import router as circle_router
 from bot.handlers.content import router as content_router
 from bot.handlers.costs import router as costs_router
+from bot.handlers.double import router as double_router
 from bot.handlers.errors import router as errors_router
 from bot.handlers.language import router as language_router
 from bot.handlers.refine import router as refine_router
 from bot.handlers.settov import router as settov_router
 from bot.handlers.site import router as site_router
+from bot.handlers.speech import router as speech_router
 from bot.handlers.start import router as start_router
 from bot.storage.db import init_db
 
@@ -35,6 +37,8 @@ _SINGLETON_ROUTERS = (
     costs_router,
     authorpost_router,
     circle_router,
+    double_router,
+    speech_router,
     content_router,
     refine_router,
     errors_router,

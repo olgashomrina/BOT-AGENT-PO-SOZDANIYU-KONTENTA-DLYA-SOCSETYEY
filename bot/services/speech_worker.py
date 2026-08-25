@@ -25,11 +25,12 @@ from datetime import datetime, timezone
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramForbiddenError, TelegramNotFound
-from aiogram.types import FSInputFile
+from aiogram.types import FSInputFile, InlineKeyboardMarkup
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
 from bot.config import load_settings
+from bot.keyboards.circle import build_speech_ready_keyboard
 from bot.locales.loader import DEFAULT_LANGUAGE, get_string
 from bot.logging_config import LOGGER_NAME
 from bot.services.speech_pipeline import collect_ready
@@ -43,7 +44,7 @@ from bot.storage.speech_jobs import (
     get_jobs_by_status,
     update_job,
 )
-from bot.storage.users import get_interface_language
+from bot.storage.users import get_channel_id, get_interface_language
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -101,15 +102,26 @@ def _rendered_video_path(job_id: int) -> pathlib.Path:
     return pathlib.Path(load_settings().tmp_media_dir) / f"speech-{job_id}.mp4"
 
 
-async def _notify(bot: Bot, db_path: str, telegram_id: int, key: str) -> None:
+async def _notify(
+    bot: Bot,
+    db_path: str,
+    telegram_id: int,
+    key: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+) -> None:
     """Сказать пользователю — и не уронить тик, если сказать не вышло.
 
     Уведомление никогда не важнее самой работы: 429 на одном задании не
     должен оставить недоставленными все остальные, уже оплаченные.
+
+    `reply_markup` передаётся только когда он есть: остальные уведомления
+    (`speech_failed` и другие терминальные диагнозы) — просто текст, и
+    незачем менять их вызов `send_message` ради необязательного параметра.
     """
     try:
+        kwargs = {"reply_markup": reply_markup} if reply_markup is not None else {}
         await bot.send_message(
-            telegram_id, get_string(key, _language(db_path, telegram_id))
+            telegram_id, get_string(key, _language(db_path, telegram_id)), **kwargs
         )
     except Exception:
         logger.warning(
@@ -276,7 +288,15 @@ async def _deliver(bot: Bot, db_path: str, job: SpeechJob, video_bytes: bytes) -
     _rendered_video_path(job.id).unlink(missing_ok=True)
     if job.audio_path:
         pathlib.Path(job.audio_path).unlink(missing_ok=True)
-    await _notify(bot, db_path, job.telegram_id, "speech_ready")
+    # Без клавиатуры готовый кружок был тупиком (Task 20): построенные в
+    # Task 17 кнопки публикации/переснятия/сброса никогда не доходили до
+    # пользователя. «Опубликовать» показываем только когда канал реально
+    # подключён — иначе кнопка вела бы в publish_no_channel_configured.
+    can_publish = get_channel_id(db_path, job.telegram_id) is not None
+    keyboard = build_speech_ready_keyboard(
+        _language(db_path, job.telegram_id), can_publish
+    )
+    await _notify(bot, db_path, job.telegram_id, "speech_ready", reply_markup=keyboard)
 
 
 def _jobs_to_poll(db_path: str) -> list[SpeechJob]:

@@ -13,11 +13,13 @@ from bot.handlers.channel import router as channel_router
 from bot.handlers.circle import router as circle_router
 from bot.handlers.content import router as content_router
 from bot.handlers.costs import router as costs_router
+from bot.handlers.double import router as double_router
 from bot.handlers.errors import router as errors_router
 from bot.handlers.language import router as language_router
 from bot.handlers.refine import router as refine_router
 from bot.handlers.settov import router as settov_router
 from bot.handlers.site import router as site_router
+from bot.handlers.speech import router as speech_router
 from bot.handlers.start import router as start_router
 from bot.locales.loader import SUPPORTED_LANGUAGES, get_string
 from bot.logging_config import setup_logging
@@ -26,6 +28,7 @@ from bot.services.balance_watcher import build_balance_scheduler
 from bot.services.digest_scheduler import build_digest_scheduler
 from bot.services.owner_notifier import notify_owner
 from bot.services.site_api import build_site_api_app
+from bot.services.speech_worker import build_speech_scheduler
 from bot.storage.db import init_db
 
 _OWNER_CRASH_NOTICE = (
@@ -62,6 +65,10 @@ def build_dispatcher() -> Dispatcher:
     # its donor-collection state is set, and content_router filters on
     # StateFilter(None), so it has to come after.
     dispatcher.include_router(circle_router)
+    # Рядом с circle_router и по той же причине: оба перехватывают сообщения
+    # в своих состояниях, а content_router ловит всё подряд по StateFilter(None).
+    dispatcher.include_router(double_router)
+    dispatcher.include_router(speech_router)
     dispatcher.include_router(content_router)
     dispatcher.include_router(refine_router)
     # Registered last: per-request errors are already handled locally inside
@@ -106,6 +113,11 @@ async def run() -> None:
     )
     balance_scheduler.start()
 
+    speech_scheduler = build_speech_scheduler(
+        bot, settings.db_path, settings.avatar_poll_interval_seconds
+    )
+    speech_scheduler.start()
+
     site_api_app = build_site_api_app(settings.db_path, settings.site_media_dir)
     runner = web.AppRunner(site_api_app)
     await runner.setup()
@@ -129,6 +141,7 @@ async def run() -> None:
     finally:
         digest_scheduler.shutdown()
         balance_scheduler.shutdown()
+        speech_scheduler.shutdown()
         await runner.cleanup()
         await bot.session.close()
 

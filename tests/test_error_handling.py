@@ -248,6 +248,8 @@ async def test_run_wrapper_notifies_owner_logs_critical_and_reraises_on_crash(mo
         balance_check_interval_seconds=3600,
         ai_gateway_image_model="test-image-model",
         ai_gateway_transcription_model="test-transcription-model",
+        # Task 20: run() now also starts the talking-double render poller.
+        avatar_poll_interval_seconds=20,
     )
     monkeypatch.setattr(main_module, "load_settings", lambda: fake_settings)
     # Real setup_logging() sets propagate=False on the "bot" logger, which
@@ -315,6 +317,8 @@ async def test_run_wrapper_still_reraises_when_notify_owner_itself_fails(monkeyp
         balance_check_interval_seconds=3600,
         ai_gateway_image_model="test-image-model",
         ai_gateway_transcription_model="test-transcription-model",
+        # Task 20: run() now also starts the talking-double render poller.
+        avatar_poll_interval_seconds=20,
     )
     monkeypatch.setattr(main_module, "load_settings", lambda: fake_settings)
     monkeypatch.setattr(main_module, "setup_logging", lambda level: logging.getLogger("bot"))

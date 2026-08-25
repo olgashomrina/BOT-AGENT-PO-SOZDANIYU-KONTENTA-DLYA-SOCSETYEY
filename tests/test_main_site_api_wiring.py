@@ -143,3 +143,17 @@ def test_dispatcher_includes_authorpost_router():
     dispatcher = build_dispatcher()
 
     assert authorpost_router in dispatcher.sub_routers
+
+
+def test_speech_routers_are_wired_before_the_catch_all():
+    # content_router ловит любое сообщение вне сценария. Если он окажется
+    # раньше, экраны лица, образов и речи просто не получат управление.
+    from bot.main import build_dispatcher
+
+    dispatcher = build_dispatcher()
+    names = [router.name for router in dispatcher.sub_routers]
+
+    assert "double" in names
+    assert "speech" in names
+    assert names.index("double") < names.index("content")
+    assert names.index("speech") < names.index("content")
