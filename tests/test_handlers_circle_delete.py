@@ -11,6 +11,13 @@ from bot.handlers import circle
 from bot.storage.avatar_donors import add_donor, count_donors
 from bot.storage.avatar_faces import get_face, save_face
 from bot.storage.avatar_looks import SOURCE_UPLOADED, add_look, get_looks
+from bot.storage.speech_jobs import (
+    STATUS_READY,
+    STATUS_RENDERING,
+    create_job,
+    get_jobs_for_user,
+    update_job,
+)
 from bot.storage.style_examples import (
     KIND_SPOKEN,
     KIND_WRITTEN,
@@ -124,3 +131,40 @@ async def test_delete_is_safe_without_a_double(db_path, state, monkeypatch):
     await circle.on_delete_confirm(_callback(), db_path=db_path, state=state)
 
     delete.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_confirm_erases_speech_jobs_and_their_files_too(
+    db_path, state, monkeypatch, tmp_path
+):
+    # Finding 5 (final whole-branch review): «Двойник и все его данные
+    # удалены» was not true — speech_jobs kept source_text/script (the
+    # user's own words) and audio_path, an on-disk MP3 of their CLONED
+    # VOICE. A render already in flight also kept going, so a user could
+    # delete their double and still receive a talking video of the face
+    # they just deleted.
+    monkeypatch.setattr(circle, "delete_voice", AsyncMock())
+    monkeypatch.setenv("TMP_MEDIA_DIR", str(tmp_path))
+    _seed_double(db_path)
+
+    audio_path = tmp_path / "voice.mp3"
+    audio_path.write_bytes(b"mp3")
+    ready_job = create_job(db_path, TELEGRAM_ID, "текст")
+    update_job(
+        db_path,
+        ready_job,
+        status=STATUS_READY,
+        audio_path=str(audio_path),
+        audio_duration_sec=30.0,
+    )
+    video_path = tmp_path / f"speech-{ready_job}.mp4"
+    video_path.write_bytes(b"mp4")
+
+    rendering_job = create_job(db_path, TELEGRAM_ID, "другой текст")
+    update_job(db_path, rendering_job, status=STATUS_RENDERING, provider_task_id="task-1")
+
+    await circle.on_delete_confirm(_callback(), db_path=db_path, state=state)
+
+    assert get_jobs_for_user(db_path, TELEGRAM_ID) == []
+    assert not audio_path.exists()
+    assert not video_path.exists()

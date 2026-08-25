@@ -10,9 +10,11 @@ from bot.storage.speech_jobs import (
     STATUS_RENDERING,
     STATUS_VOICED,
     create_job,
+    delete_jobs_for_user,
     get_active_job,
     get_job,
     get_jobs_by_status,
+    get_jobs_for_user,
     update_job,
 )
 
@@ -89,3 +91,26 @@ def test_active_job_is_per_user(db_path):
     create_job(db_path, 702, "чужое")
 
     assert get_active_job(db_path, TELEGRAM_ID) is None
+
+
+def test_jobs_for_user_includes_terminal_ones(db_path):
+    # Полное удаление двойника обязано увидеть и уже завершённые задания —
+    # get_active_job их для этого не годится, он их специально прячет.
+    published = create_job(db_path, TELEGRAM_ID, "старое")
+    update_job(db_path, published, status=STATUS_PUBLISHED)
+    draft = create_job(db_path, TELEGRAM_ID, "новое")
+    create_job(db_path, 702, "чужое")
+
+    jobs = get_jobs_for_user(db_path, TELEGRAM_ID)
+
+    assert {job.id for job in jobs} == {published, draft}
+
+
+def test_delete_jobs_for_user_erases_only_that_users_rows(db_path):
+    mine = create_job(db_path, TELEGRAM_ID, "текст")
+    other = create_job(db_path, 702, "чужое")
+
+    delete_jobs_for_user(db_path, TELEGRAM_ID)
+
+    assert get_job(db_path, mine) is None
+    assert get_job(db_path, other) is not None

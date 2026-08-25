@@ -142,6 +142,31 @@ async def test_poll_returns_video_bytes_and_cost_when_ready():
 
 @respx.mock
 @pytest.mark.asyncio
+async def test_poll_raises_a_typed_error_on_malformed_base64_video():
+    # Finding 2 (final whole-branch review): base64.b64decode was unguarded,
+    # so a malformed payload would raise binascii.Error/ValueError untyped,
+    # escaping the AvatarGatewayError hierarchy every caller is promised.
+    respx.post(RUNWARE_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": [
+                    {
+                        "taskUUID": TASK_UUID,
+                        "status": "success",
+                        "videoBase64Data": "not-valid-base64!!!",
+                    }
+                ]
+            },
+        )
+    )
+
+    with pytest.raises(AvatarGatewayInvalidResponseError):
+        await poll_render(TASK_UUID)
+
+
+@respx.mock
+@pytest.mark.asyncio
 async def test_poll_downloads_the_video_when_only_a_url_comes_back():
     # Runware отдаёт результат то байтами, то ссылкой. Наружу шлюз в обоих
     # случаях отдаёт байты — вызывающий код о разнице знать не должен.

@@ -35,6 +35,7 @@ from bot.locales.loader import DEFAULT_LANGUAGE, get_string
 from bot.logging_config import LOGGER_NAME
 from bot.services.speech_pipeline import collect_ready
 from bot.services.video_note import to_video_note
+from bot.storage.render_usage import add_usage
 from bot.storage.speech_jobs import (
     STATUS_FAILED,
     STATUS_READY,
@@ -61,6 +62,20 @@ JOB_ID = "speech_render_poll"
 # Всё это время задание держит пользователя в REASON_BUSY, поэтому предел
 # должен быть, и он должен заканчиваться внятным сообщением.
 DELIVERY_RETRY_LIMIT_SECONDS = 6 * 60 * 60
+
+# Сколько времени задание вправе провести в `rendering`, прежде чем опрос
+# провайдера будет признан безнадёжным. Тоже считается от `updated_at`: пока
+# рендер идёт, ни один тик не пишет в строку (см. критичное свойство модуля
+# ниже), так что возраст строки — это и есть возраст рендера.
+#
+# Замеры (docs/reference-video-avatar-engines.md) дают 213–520 с на пятисе-
+# кундном ролике; даже щедрый запас на кружок с максимальной озвучкой
+# (avatar_max_seconds) укладывается в кратно меньшее время. Два часа — это
+# заведомо больше любого настоящего рендера и одновременно ничтожно мало
+# рядом с календарным месяцем, на который иначе зависла бы бронь секунд: до
+# этой правки зависший у провайдера рендер держал пользователя в
+# REASON_BUSY и съедал его месячный лимит без единого слова от бота.
+RENDER_POLL_LIMIT_SECONDS = 2 * 60 * 60
 
 # Ошибки, у которых нет ни одной попытки с шансом на успех: пользователь
 # заблокировал бота или чата больше нет. Всё остальное — от 429 и обрыва
@@ -193,6 +208,46 @@ async def _give_up(
     update_job(db_path, job.id, status=STATUS_FAILED, error=error)
     _rendered_video_path(job.id).unlink(missing_ok=True)
     await _notify(bot, db_path, job.telegram_id, notify_key)
+
+
+def _render_poll_limit_exceeded(job: SpeechJob) -> bool:
+    """Исчерпан ли предел ожидания ответа провайдера для рендера.
+
+    Та же логика, что и у `_retry_limit_exceeded` для доставки: неразобранная
+    метка времени склоняет к завершению задания, а не к молчаливому
+    бесконечному опросу.
+    """
+    age = _age_seconds(job)
+    return age is None or age > RENDER_POLL_LIMIT_SECONDS
+
+
+async def _expire_stalled_render(bot: Bot, db_path: str, job: SpeechJob) -> None:
+    """Провалить рендер, который провайдер не заканчивает слишком долго.
+
+    Единственное место, где `rendering` закрывается по вине самого опроса
+    (а не ответа провайдера — тот случай уже обрабатывает `collect_ready`).
+    Бронь секунд обязана вернуться: `request_render` забронировал их у
+    провайдера, который теперь не отвечает вовсе, и без возврата пользователь
+    держал бы REASON_BUSY и урезанный лимит до конца календарного месяца.
+    Файла ролика тут ещё нет — рендер так и не завершился, — поэтому в
+    отличие от `_give_up` удалять на диске нечего.
+    """
+    if get_job(db_path, job.id) is None:
+        logger.warning(
+            "Speech job vanished before a stalled render could be failed",
+            extra={"user_id": job.telegram_id, "operation": "speech_worker"},
+        )
+        return
+    update_job(
+        db_path,
+        job.id,
+        status=STATUS_FAILED,
+        error="Рендер завис у провайдера — превышен предел ожидания ответа.",
+    )
+    reserved = int(round(job.audio_duration_sec or 0))
+    if reserved:
+        add_usage(db_path, job.telegram_id, -reserved, 0.0)
+    await _notify(bot, db_path, job.telegram_id, "speech_failed")
 
 
 def _keep_for_retry(db_path: str, job: SpeechJob) -> None:
@@ -355,6 +410,13 @@ async def _process_job(bot: Bot, db_path: str, job: SpeechJob) -> None:
                 job,
                 "Готовый ролик исчез с диска — доставить его больше нечем.",
             )
+        elif refreshed.status == STATUS_RENDERING and _render_poll_limit_exceeded(
+            refreshed
+        ):
+            # Провайдер не отвечает готовым результатом слишком долго —
+            # см. RENDER_POLL_LIMIT_SECONDS. Без этого предела рендер висел
+            # бы в `rendering` вечно, а пользователь — в REASON_BUSY.
+            await _expire_stalled_render(bot, db_path, refreshed)
         # Иначе рендер просто ещё идёт.
         return
 

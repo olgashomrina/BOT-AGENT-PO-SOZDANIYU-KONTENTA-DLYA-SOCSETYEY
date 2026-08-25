@@ -18,8 +18,10 @@ from bot.services.speech_pipeline import (
 from bot.storage.avatar_faces import save_face
 from bot.storage.avatar_looks import SOURCE_UPLOADED, add_look
 from bot.storage.limits import get_daily_count
-from bot.storage.render_usage import add_usage
+from bot.storage.render_usage import add_usage, seconds_left
 from bot.storage.speech_jobs import (
+    STATUS_FAILED,
+    STATUS_READY,
     STATUS_RENDERING,
     STATUS_VOICED,
     create_job,
@@ -305,6 +307,9 @@ async def test_render_starts_and_reports_the_wait(
     db_path, state, ready_double, monkeypatch
 ):
     monkeypatch.setattr(speech, "request_render", AsyncMock())
+    monkeypatch.setattr(
+        speech, "ensure_min_side", AsyncMock(side_effect=lambda src, dst: src)
+    )
     monkeypatch.setattr(speech, "_read_bytes", lambda path: b"image-bytes")
     job_id = create_job(db_path, TELEGRAM_ID, "текст")
     update_job(
@@ -327,6 +332,9 @@ async def test_render_refusal_by_busy_job_reports_the_render_in_progress(
     # Звать начать заново значило бы выбросить оплаченную работу.
     monkeypatch.setattr(
         speech, "request_render", AsyncMock(side_effect=RenderRefused(REASON_BUSY, 0))
+    )
+    monkeypatch.setattr(
+        speech, "ensure_min_side", AsyncMock(side_effect=lambda src, dst: src)
     )
     monkeypatch.setattr(speech, "_read_bytes", lambda path: b"image-bytes")
     job_id = create_job(db_path, TELEGRAM_ID, "текст")
@@ -403,3 +411,111 @@ async def test_wrong_input_while_waiting_is_answered(db_path, state, ready_doubl
     await speech.on_wrong_input(message, db_path=db_path, state=state)
 
     message.answer.assert_awaited_once()
+
+
+# Finding 1 (final whole-branch review): on_cancel used to fetch ANY
+# non-terminal job (including `rendering`/`ready`) and unconditionally mark it
+# `failed` — abandoning an already-paid render, never releasing its reserved
+# seconds and orphaning the video/audio files on disk.
+@pytest.mark.asyncio
+async def test_cancelling_a_rendering_job_is_refused_and_keeps_the_reservation(
+    db_path, state, ready_double
+):
+    job_id = create_job(db_path, TELEGRAM_ID, "текст")
+    update_job(
+        db_path,
+        job_id,
+        status=STATUS_RENDERING,
+        provider_task_id="task-1",
+        audio_duration_sec=30.0,
+    )
+    add_usage(db_path, TELEGRAM_ID, 30, 0.0)
+    await state.update_data(job_id=job_id)
+    callback = _callback()
+
+    await speech.on_cancel(callback, db_path=db_path, state=state)
+
+    job = get_job(db_path, job_id)
+    # Бронь всё ещё на месте — рендер и правда идёт, отменять тут нечего.
+    assert seconds_left(db_path, TELEGRAM_ID, 300) == 270
+    # А статус не должен был уйти в `failed`: до фикса именно это и
+    # происходило, оставляя оплаченный рендер без опроса и без возврата брони.
+    assert job.status == STATUS_RENDERING
+    callback.message.answer.assert_awaited_once_with(
+        get_string("speech_rendering", "ru")
+    )
+
+
+@pytest.mark.asyncio
+async def test_cancelling_a_ready_job_removes_the_orphaned_files(
+    db_path, state, ready_double, tmp_path
+):
+    audio_path = tmp_path / "voice.mp3"
+    audio_path.write_bytes(b"mp3")
+    job_id = create_job(db_path, TELEGRAM_ID, "текст")
+    update_job(
+        db_path,
+        job_id,
+        status=STATUS_READY,
+        audio_path=str(audio_path),
+        audio_duration_sec=30.0,
+    )
+    video_path = tmp_path / f"speech-{job_id}.mp4"
+    video_path.write_bytes(b"mp4")
+    await state.update_data(job_id=job_id)
+    callback = _callback()
+
+    await speech.on_cancel(callback, db_path=db_path, state=state)
+
+    job = get_job(db_path, job_id)
+    assert job.status == STATUS_FAILED
+    assert not video_path.exists()
+    assert not audio_path.exists()
+    callback.message.answer.assert_awaited_once_with(
+        get_string("speech_cancelled", "ru")
+    )
+
+
+# Finding 3: ensure_min_side was dead code — nothing wired it before the
+# provider call, though the provider rejects anything under 512px on its
+# short side.
+@pytest.mark.asyncio
+async def test_render_ensures_the_look_meets_the_providers_minimum_side(
+    db_path, state, ready_double, monkeypatch
+):
+    monkeypatch.setattr(speech, "request_render", AsyncMock())
+    ensure = AsyncMock(return_value="resized-look.jpg")
+    monkeypatch.setattr(speech, "ensure_min_side", ensure, raising=False)
+    read_calls: list[str] = []
+
+    def fake_read(path: str) -> bytes:
+        read_calls.append(path)
+        return b"image-bytes"
+
+    monkeypatch.setattr(speech, "_read_bytes", fake_read)
+    job_id = create_job(db_path, TELEGRAM_ID, "текст")
+    update_job(
+        db_path, job_id, status=STATUS_VOICED, audio_path="/tmp/a.mp3", audio_duration_sec=30.0
+    )
+    await state.update_data(job_id=job_id)
+    callback = _callback()
+
+    await speech.on_render(callback, db_path=db_path, state=state)
+
+    ensure.assert_awaited_once()
+    # Байты для рендера должны прийти из результата ensure_min_side, а не из
+    # сырого скачанного файла.
+    assert read_calls == ["resized-look.jpg"]
+
+
+# Finding 4: _show_look_screen crashed with AttributeError on None.title when
+# the user has no active look (look deleted after voicing, or a stale button).
+@pytest.mark.asyncio
+async def test_look_screen_survives_no_active_look(db_path):
+    save_face(db_path, TELEGRAM_ID, "photo-face")
+    message = MagicMock()
+    message.answer = AsyncMock()
+
+    await speech._show_look_screen(message, db_path, TELEGRAM_ID, "ru")
+
+    message.answer.assert_awaited_once_with(get_string("speech_need_look", "ru"))

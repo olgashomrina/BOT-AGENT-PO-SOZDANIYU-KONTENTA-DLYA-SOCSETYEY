@@ -50,6 +50,7 @@ from bot.storage.avatar_donors import (
 )
 from bot.storage.avatar_faces import delete_face, get_face
 from bot.storage.avatar_looks import clear_looks, count_looks, get_active_look
+from bot.storage.speech_jobs import delete_jobs_for_user, get_jobs_for_user
 from bot.storage.style_examples import (
     KIND_SPOKEN,
     add_style_example,
@@ -80,6 +81,20 @@ def _tmp_path(suffix: str) -> str:
     directory = pathlib.Path(load_settings().tmp_media_dir)
     directory.mkdir(parents=True, exist_ok=True)
     return str(directory / f"{uuid.uuid4().hex}{suffix}")
+
+
+def _unlink_speech_job_files(job) -> None:
+    """Убрать с диска то, что «Удалить двойника» иначе оставил бы сиротой.
+
+    Озвучка — mp3 клонированным голосом пользователя; готовый ролик лежит по
+    имени `speech-{id}.mp4` (контракт с `speech_pipeline._video_path`).
+    Задание при этом может быть ещё в `rendering` — файла ролика для него
+    просто ещё нет, `unlink(missing_ok=True)` тут безопасен.
+    """
+    if job.audio_path:
+        pathlib.Path(job.audio_path).unlink(missing_ok=True)
+    video_path = pathlib.Path(load_settings().tmp_media_dir) / f"speech-{job.id}.mp4"
+    video_path.unlink(missing_ok=True)
 
 
 @router.callback_query(F.data == CALLBACK_MY_DOUBLE)
@@ -317,6 +332,16 @@ async def on_delete_confirm(
     # файлов на диске под ними нет.
     delete_face(db_path, telegram_id)
     clear_looks(db_path, telegram_id)
+    # А ещё — задания речи: они хранят исходный текст и сценарий (слова
+    # пользователя) и путь к озвучке настоящим клонированным голосом,
+    # которые до этой правки переживали удаление навсегда. Рендер, ещё
+    # идущий у провайдера, продолжал бы жить своей жизнью и без этого —
+    # удаление строки убирает задание из выборки воркера (`_jobs_to_poll`),
+    # так что готовый ролик лица, которого только что не стало, больше
+    # некому будет доставить.
+    for job in get_jobs_for_user(db_path, telegram_id):
+        _unlink_speech_job_files(job)
+    delete_jobs_for_user(db_path, telegram_id)
     await state.set_state(None)
 
     await callback.message.answer(get_string("double_deleted", language))

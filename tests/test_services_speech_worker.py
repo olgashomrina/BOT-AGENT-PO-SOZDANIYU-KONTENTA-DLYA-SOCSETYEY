@@ -12,6 +12,7 @@ from bot.keyboards.circle import build_speech_ready_keyboard
 from bot.locales.loader import get_string
 from bot.services import speech_worker
 from bot.storage.db import get_connection
+from bot.storage.render_usage import add_usage, seconds_left
 from bot.storage.speech_jobs import (
     STATUS_FAILED,
     STATUS_READY,
@@ -709,6 +710,52 @@ async def test_a_notification_failure_on_one_job_does_not_block_the_next(
 
     bot.send_video_note.assert_awaited_once()
     assert get_job(db_path, second).result_file_id == "note-1"
+
+
+# Finding 2 (final whole-branch review): nothing expired a `rendering` job
+# whose provider never answers, so it was returned by get_active_job forever
+# — REASON_BUSY for that user permanently, and its reserved seconds held
+# until the calendar month rolled over.
+@pytest.mark.asyncio
+async def test_a_young_rendering_job_keeps_polling(db_path, monkeypatch, audio_file):
+    monkeypatch.setattr(speech_worker, "collect_ready", AsyncMock(return_value=None))
+    job_id = _rendering_job(db_path, audio_file)
+    add_usage(db_path, TELEGRAM_ID, 30, 0.0)
+    before = get_job(db_path, job_id).updated_at
+    bot = _bot()
+
+    await speech_worker.process_rendering_jobs(bot, db_path)
+    # Второй тик подряд: если бы просто ожидающий тик трогал updated_at,
+    # предел времени стал бы недостижимым (критичное свойство модуля).
+    await speech_worker.process_rendering_jobs(bot, db_path)
+
+    job = get_job(db_path, job_id)
+    assert job.status == STATUS_RENDERING
+    assert job.updated_at == before
+    assert seconds_left(db_path, TELEGRAM_ID, 300) == 270
+    bot.send_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_an_old_rendering_job_expires_releases_seconds_and_notifies(
+    db_path, monkeypatch, audio_file
+):
+    monkeypatch.setattr(speech_worker, "collect_ready", AsyncMock(return_value=None))
+    job_id = _rendering_job(db_path, audio_file)
+    add_usage(db_path, TELEGRAM_ID, 30, 0.0)
+    _age_job(db_path, job_id, speech_worker.RENDER_POLL_LIMIT_SECONDS + 60)
+    bot = _bot()
+
+    await speech_worker.process_rendering_jobs(bot, db_path)
+
+    job = get_job(db_path, job_id)
+    assert job.status == STATUS_FAILED
+    # Бронь обязана вернуться пользователю — иначе завис провайдер, а платит
+    # за это пользователь весь оставшийся месяц.
+    assert seconds_left(db_path, TELEGRAM_ID, 300) == 300
+    bot.send_message.assert_awaited_once_with(
+        TELEGRAM_ID, get_string("speech_failed", "ru")
+    )
 
 
 def test_scheduler_runs_on_the_configured_interval(db_path):

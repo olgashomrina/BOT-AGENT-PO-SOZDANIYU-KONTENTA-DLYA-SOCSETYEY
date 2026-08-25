@@ -107,6 +107,43 @@ def get_active_job(db_path: str, telegram_id: int) -> SpeechJob | None:
         connection.close()
 
 
+def get_jobs_for_user(db_path: str, telegram_id: int) -> list[SpeechJob]:
+    """Все задания пользователя, включая терминальные.
+
+    Отдельно от `get_active_job`: тому терминальные ни к чему, а полное
+    удаление двойника (`bot.handlers.circle.on_delete_confirm`) обязано
+    увидеть и их — иначе на диске останутся файлы задания, которого
+    формально уже как бы нет в активной выборке.
+    """
+    connection = get_connection(db_path)
+    try:
+        rows = connection.execute(
+            f"SELECT {_FIELDS} FROM speech_jobs WHERE telegram_id = ? ORDER BY id ASC",
+            (telegram_id,),
+        ).fetchall()
+        return [_row_to_job(row) for row in rows]
+    finally:
+        connection.close()
+
+
+def delete_jobs_for_user(db_path: str, telegram_id: int) -> None:
+    """Стереть все задания речи пользователя без следа.
+
+    Единственный вызывающий — полное удаление двойника: задания хранят
+    исходный текст и сценарий (слова пользователя) и путь к озвучке настоящим
+    клонированным голосом, которые больше ничей `_give_up` не подчищает.
+    «Удалил всё» должно быть правдой, а не обещанием с оговоркой.
+    """
+    connection = get_connection(db_path)
+    try:
+        connection.execute(
+            "DELETE FROM speech_jobs WHERE telegram_id = ?", (telegram_id,)
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
 def get_jobs_by_status(db_path: str, status: str) -> list[SpeechJob]:
     connection = get_connection(db_path)
     try:

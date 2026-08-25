@@ -52,6 +52,7 @@ from bot.services.speech_pipeline import (
     attach_audio,
     request_render,
 )
+from bot.services.video_note import ensure_min_side
 from bot.services.voice_gateway import VoiceGatewayError, synthesize
 from bot.storage.avatar_faces import get_face
 from bot.storage.avatar_looks import count_looks, get_active_look, get_looks
@@ -61,6 +62,8 @@ from bot.storage.speech_jobs import (
     STATUS_DRAFT,
     STATUS_FAILED,
     STATUS_PUBLISHED,
+    STATUS_READY,
+    STATUS_RENDERING,
     STATUS_VOICED,
     create_job,
     get_active_job,
@@ -86,6 +89,14 @@ class SpeechStates(StatesGroup):
 # attach_audio всё равно откажется принять.
 _VOICEABLE_STATUSES = (STATUS_DRAFT, STATUS_VOICED, STATUS_FAILED)
 
+# Совпадает с _RENDER_BLOCKING_STATUSES в speech_pipeline, за вычетом
+# `ready`: рендер, который уже идёт или уже ушёл в канал, отменить нечем —
+# деньги потрачены (или тратятся прямо сейчас), а бросить оплаченную работу
+# значило бы никогда не забрать её ни у провайдера, ни из брони месячного
+# лимита. `ready` — не блокирующий статус для отмены: кружок уже доставлен
+# и лежит на диске, пользователь просто законно отказывается его публиковать.
+_CANCEL_BLOCKING_STATUSES = (STATUS_RENDERING, STATUS_PUBLISHED)
+
 
 def _read_bytes(path: str) -> bytes:
     # Вынесено функцией, чтобы тесты подменяли чтение диска, не трогая
@@ -97,6 +108,12 @@ def _tmp_path(suffix: str) -> str:
     directory = pathlib.Path(load_settings().tmp_media_dir)
     directory.mkdir(parents=True, exist_ok=True)
     return str(directory / f"{uuid.uuid4().hex}{suffix}")
+
+
+def _rendered_video_path(job_id: int) -> pathlib.Path:
+    # Совпадает с speech_pipeline._video_path — тот же контракт по имени
+    # файла (см. её докстринг про то, чей это файл).
+    return pathlib.Path(load_settings().tmp_media_dir) / f"speech-{job_id}.mp4"
 
 
 async def _current_job(db_path: str, state: FSMContext, telegram_id: int):
@@ -122,6 +139,12 @@ async def _show_look_screen(
     message: Message, db_path: str, telegram_id: int, language: str
 ) -> None:
     active = get_active_look(db_path, telegram_id)
+    if active is None:
+        # Тот же случай, что в on_other_look: активный образ мог быть удалён
+        # уже после того, как клавиатура с этой кнопкой была нарисована
+        # (последний образ снесён, или «Удалить двойника» стёр их все).
+        await message.answer(get_string("speech_need_look", language))
+        return
     await message.answer(
         get_string("speech_look_screen", language, title=active.title),
         reply_markup=build_speech_look_keyboard(
@@ -439,11 +462,19 @@ async def on_render(callback: CallbackQuery, db_path: str, state: FSMContext) ->
             return
 
     look_path = _tmp_path(".jpg")
+    resized_path = _tmp_path(".jpg")
     try:
         await callback.message.bot.download(look.file_id, destination=look_path)
-        image_bytes = _read_bytes(look_path)
+        # Провайдер требует сторону не меньше 512px и однажды уже ответил
+        # платным invalidWidth на кружке меньшего размера (см. докстринг
+        # ensure_min_side) — вызов обязан стоять здесь, до request_render,
+        # а не быть просто написанным и забытым. Если исходник и так большой,
+        # ensure_min_side вернёт тот же look_path без пересжатия.
+        source_path = await ensure_min_side(look_path, resized_path)
+        image_bytes = _read_bytes(source_path)
     finally:
         pathlib.Path(look_path).unlink(missing_ok=True)
+        pathlib.Path(resized_path).unlink(missing_ok=True)
 
     try:
         await request_render(db_path, job.id, image_bytes, look_id=look.id)
@@ -506,6 +537,28 @@ async def on_cancel(callback: CallbackQuery, db_path: str, state: FSMContext) ->
     language = _resolve_language(db_path, telegram_id, callback.from_user.language_code)
     job = await _current_job(db_path, state, telegram_id)
     if job is not None:
+        if job.status in _CANCEL_BLOCKING_STATUSES:
+            # Рендер уже идёт (или уже ушёл в канал) и оплачен — тут нечего
+            # отменять. Клавиатура с кнопкой «Отмена» остаётся в чате поверх
+            # экрана образа даже после того, как on_render уже стартовал
+            # рендер: без этой проверки тап писал STATUS_FAILED поверх
+            # `rendering`, бронь секунд не возвращалась (единственные два
+            # места для этого — старт-отказ в request_render и
+            # collect_ready — не подберут уже отменённое задание никогда), а
+            # сам рендер продолжал опрашиваться никем. Правда тут та же, что
+            # и в on_render/on_voice_as_is: рендер идёт, надо ждать.
+            await callback.message.answer(get_string("speech_rendering", language))
+            await safe_answer(callback)
+            return
+        if job.status == STATUS_READY:
+            # Кружок уже доставлен и лежит оплаченным на диске — пользователь
+            # законно отказывается его публиковать, а не бросает рендер в
+            # процессе. Оркестратор сам этот файл не удаляет (см. докстринг
+            # speech_pipeline._video_path), значит убрать его — наша забота,
+            # иначе видео и озвучка так и останутся сиротами на диске.
+            _rendered_video_path(job.id).unlink(missing_ok=True)
+            if job.audio_path:
+                pathlib.Path(job.audio_path).unlink(missing_ok=True)
         # Закрытое задание перестаёт быть активным — следующая речь начнётся
         # с чистого листа. Отдельного статуса «отменено» не заводим: для всей
         # остальной логики отменённое и несостоявшееся ведут себя одинаково.

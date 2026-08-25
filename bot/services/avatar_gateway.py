@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import logging
 import uuid
 from dataclasses import dataclass
@@ -244,7 +245,19 @@ async def poll_render(task_uuid: str) -> RenderStatus:
 
     # Наружу — всегда байты. То, что провайдер иногда отвечает ссылкой,
     # а иногда телом, остаётся его личным делом.
-    video_bytes = base64.b64decode(encoded) if encoded else await _download(str(url))
+    if encoded:
+        try:
+            video_bytes = base64.b64decode(encoded, validate=True)
+        except binascii.Error as exc:
+            # Битый base64 — уже не сеть и не HTTP-статус, а сам провайдер
+            # прислал мусор вместо оплаченного видео. Наружу обещаны только
+            # подклассы AvatarGatewayError; голый binascii.Error пролетел бы
+            # мимо всех обработчиков вызывающего.
+            raise AvatarGatewayInvalidResponseError(
+                "Не удалось разобрать видео из ответа сервиса"
+            ) from exc
+    else:
+        video_bytes = await _download(str(url))
     cost = task.get("cost")
     try:
         cost_usd = float(cost) if cost is not None else None
