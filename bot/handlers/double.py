@@ -11,13 +11,19 @@ import pathlib
 import uuid
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramAPIError
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
 from bot.config import load_settings
 from bot.handlers.content import _resolve_language
-from bot.handlers.guards import check_whitelist_or_reply
+from bot.handlers.guards import (
+    check_message_limit_or_reply,
+    check_whitelist_or_reply,
+    safe_answer,
+)
+from bot.handlers.image_budget import ensure_image_budget
 from bot.keyboards.circle import (
     CALLBACK_FACE,
     CALLBACK_LOOK_ACTIVATE_PREFIX,
@@ -46,6 +52,7 @@ from bot.storage.avatar_looks import (
     set_active_look,
 )
 from bot.storage.costs import record_cost
+from bot.storage.limits import increment_image_usage, increment_usage
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -105,7 +112,7 @@ async def on_face_request(callback: CallbackQuery, db_path: str, state: FSMConte
     language = _resolve_language(db_path, callback.from_user.id, callback.from_user.language_code)
     await state.set_state(DoubleStates.waiting_face)
     await callback.message.answer(get_string("face_invite", language))
-    await callback.answer()
+    await safe_answer(callback)
 
 
 @router.message(DoubleStates.waiting_face, F.photo)
@@ -133,7 +140,7 @@ async def on_looks(callback: CallbackQuery, db_path: str, state: FSMContext) -> 
     language = _resolve_language(db_path, telegram_id, callback.from_user.language_code)
     await state.set_state(None)
     await show_looks(callback.message, db_path, telegram_id, language)
-    await callback.answer()
+    await safe_answer(callback)
 
 
 @router.callback_query(F.data == CALLBACK_LOOK_ADD_PHOTO)
@@ -141,7 +148,7 @@ async def on_look_add_photo(callback: CallbackQuery, db_path: str, state: FSMCon
     language = _resolve_language(db_path, callback.from_user.id, callback.from_user.language_code)
     await state.set_state(DoubleStates.waiting_look_photo)
     await callback.message.answer(get_string("looks_upload_invite", language))
-    await callback.answer()
+    await safe_answer(callback)
 
 
 @router.message(DoubleStates.waiting_look_photo, F.photo)
@@ -178,12 +185,12 @@ async def on_look_add_prompt(callback: CallbackQuery, db_path: str, state: FSMCo
     if get_face(db_path, telegram_id) is None:
         # Отказ до денег и до состояния: генерировать образ не из чего.
         await callback.message.answer(get_string("looks_need_face", language))
-        await callback.answer()
+        await safe_answer(callback)
         return
 
     await state.set_state(DoubleStates.waiting_look_prompt)
     await callback.message.answer(get_string("looks_prompt_invite", language))
-    await callback.answer()
+    await safe_answer(callback)
 
 
 @router.message(DoubleStates.waiting_look_prompt, F.text)
@@ -192,10 +199,25 @@ async def on_look_prompt(message: Message, db_path: str, state: FSMContext) -> N
     language = _resolve_language(db_path, telegram_id, message.from_user.language_code)
     description = message.text.strip()
 
+    if not description:
+        # Пробел вместо описания долетал прямо до платного вызова — так же,
+        # как пустая строка. Переспрашиваем и не тратим деньги.
+        await message.answer(get_string("looks_prompt_invite", language))
+        return
+
     face = get_face(db_path, telegram_id)
     if face is None:
         await message.answer(get_string("looks_need_face", language))
         await state.set_state(None)
+        return
+
+    # Платная кнопка (4 ₽ за образ): тот же общий дневной лимит и тот же
+    # общий бюджет картинок, которым подчиняются остальные платные кнопки
+    # (refine.py, start.py) — иначе N нажатий здесь тратили бы без потолка.
+    if not await check_message_limit_or_reply(message, db_path, language):
+        return
+
+    if not await ensure_image_budget(message.answer, db_path, telegram_id, language):
         return
 
     if mentions_hair(description):
@@ -223,18 +245,14 @@ async def on_look_prompt(message: Message, db_path: str, state: FSMContext) -> N
     finally:
         pathlib.Path(face_path).unlink(missing_ok=True)
 
+    # Оплата — свершившийся факт в момент, когда edit_image вернул байты, а
+    # не в момент успешной доставки в Telegram. Иначе сбой одной лишь отправки
+    # (сеть, flood wait, невалидные размеры) списывал бы уже оплаченную
+    # генерацию молча: без строки в /costs и без выхода из состояния, которое
+    # тратит деньги на следующее же сообщение.
     settings = load_settings()
-    sent = await message.answer_photo(
-        BufferedInputFile(image_bytes, filename="look.jpg")
-    )
-    add_look(
-        db_path,
-        telegram_id,
-        sent.photo[-1].file_id,
-        _short_title(description, f"Образ {count_looks(db_path, telegram_id) + 1}"),
-        SOURCE_GENERATED,
-        prompt=description,
-    )
+    increment_usage(db_path, telegram_id)
+    increment_image_usage(db_path, telegram_id)
     record_cost(
         db_path,
         telegram_id,
@@ -243,9 +261,37 @@ async def on_look_prompt(message: Message, db_path: str, state: FSMContext) -> N
         image_cost(settings.avatar_look_model),
     )
 
+    try:
+        sent = await message.answer_photo(
+            BufferedInputFile(image_bytes, filename="look.jpg")
+        )
+    except TelegramAPIError:
+        logger.warning(
+            "Failed to deliver generated look to user",
+            extra={"user_id": telegram_id, "operation": "handler:double"},
+        )
+        await state.set_state(None)
+        await message.answer(get_string("image_delivery_failed", language))
+        return
+
+    add_look(
+        db_path,
+        telegram_id,
+        sent.photo[-1].file_id,
+        _short_title(description, f"Образ {count_looks(db_path, telegram_id) + 1}"),
+        SOURCE_GENERATED,
+        prompt=description,
+    )
+
     await state.set_state(None)
     await message.answer(get_string("looks_saved", language))
     await show_looks(message, db_path, telegram_id, language)
+
+
+@router.message(DoubleStates.waiting_look_prompt)
+async def on_look_prompt_wrong_input(message: Message, db_path: str, state: FSMContext) -> None:
+    language = _resolve_language(db_path, message.from_user.id, message.from_user.language_code)
+    await message.answer(get_string("looks_prompt_invite", language))
 
 
 @router.callback_query(F.data.startswith(f"{CALLBACK_LOOK_ACTIVATE_PREFIX}:"))
@@ -262,7 +308,11 @@ async def on_look_activate(callback: CallbackQuery, db_path: str, state: FSMCont
             caption=get_string("looks_activated", language),
             reply_markup=build_look_actions_keyboard(language, look_id, is_active=True),
         )
-    await callback.answer()
+    else:
+        # Кнопка с устаревшей клавиатуры — образ уже удалён. Раньше тап не
+        # делал ничего видимого; перерисовываем список, чтобы кнопка исчезла.
+        await show_looks(callback.message, db_path, telegram_id, language)
+    await safe_answer(callback)
 
 
 @router.callback_query(F.data.startswith(f"{CALLBACK_LOOK_DELETE_PREFIX}:"))
@@ -271,7 +321,11 @@ async def on_look_delete(callback: CallbackQuery, db_path: str, state: FSMContex
     language = _resolve_language(db_path, telegram_id, callback.from_user.language_code)
     look_id = int(callback.data.rsplit(":", 1)[1])
 
+    # Проверяем до удаления: иначе повторный тап по уже неактуальной кнопке
+    # рапортовал бы «Образ удалён» о том, чего давно нет.
+    existed = get_look(db_path, telegram_id, look_id) is not None
     delete_look(db_path, telegram_id, look_id)
-    await callback.message.answer(get_string("look_deleted", language))
+    if existed:
+        await callback.message.answer(get_string("look_deleted", language))
     await show_looks(callback.message, db_path, telegram_id, language)
-    await callback.answer()
+    await safe_answer(callback)
