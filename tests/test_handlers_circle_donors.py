@@ -8,6 +8,7 @@ from aiogram.fsm.storage.base import StorageKey
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from bot.handlers import circle
+from bot.keyboards.circle import CALLBACK_VOICE
 from bot.storage.avatar_donors import count_donors, get_donors
 from bot.storage.style_examples import KIND_SPOKEN, get_style_examples
 
@@ -149,6 +150,28 @@ async def test_non_video_note_is_rejected_without_counting(db_path, state):
 
     message.answer.assert_awaited()
     assert count_donors(db_path, TELEGRAM_ID) == 0
+
+
+@pytest.mark.asyncio
+async def test_voice_button_routes_to_the_donor_collection_screen():
+    # «Голос» (double:voice) должна вести на тот же готовый экран этапа 1,
+    # что и «Добавить кружки» / согласие — без нового кода, просто новый
+    # вход в существующий обработчик on_consent_accept.
+    handler = next(
+        h
+        for h in circle.router.callback_query.handlers
+        if h.callback.__name__ == "on_consent_accept"
+    )
+    fake_event = MagicMock()
+    fake_event.data = CALLBACK_VOICE
+
+    matched = False
+    for filter_object in handler.filters:
+        matched = await filter_object.call(fake_event)
+        if not matched:
+            break
+
+    assert matched
 
 
 @pytest.mark.asyncio

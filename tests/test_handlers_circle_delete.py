@@ -9,6 +9,8 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 from bot.handlers import circle
 from bot.storage.avatar_donors import add_donor, count_donors
+from bot.storage.avatar_faces import get_face, save_face
+from bot.storage.avatar_looks import SOURCE_UPLOADED, add_look, get_looks
 from bot.storage.style_examples import (
     KIND_SPOKEN,
     KIND_WRITTEN,
@@ -97,6 +99,21 @@ async def test_local_data_is_wiped_even_if_provider_delete_fails(
 
     assert count_donors(db_path, TELEGRAM_ID) == 0
     assert get_voice_profile(db_path, TELEGRAM_ID) is None
+
+
+@pytest.mark.asyncio
+async def test_confirm_deletes_face_and_looks_too(db_path, state, monkeypatch):
+    # Спека требует, чтобы «Удалить двойника» стирала лицо и образы вместе с
+    # голосом — иначе следующий экран «Мой двойник» соврёт, что они на месте.
+    monkeypatch.setattr(circle, "delete_voice", AsyncMock())
+    _seed_double(db_path)
+    save_face(db_path, TELEGRAM_ID, "photo-1")
+    add_look(db_path, TELEGRAM_ID, "img-1", "студия", SOURCE_UPLOADED)
+
+    await circle.on_delete_confirm(_callback(), db_path=db_path, state=state)
+
+    assert get_face(db_path, TELEGRAM_ID) is None
+    assert get_looks(db_path, TELEGRAM_ID) == []
 
 
 @pytest.mark.asyncio

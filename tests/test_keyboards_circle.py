@@ -86,8 +86,55 @@ def test_callback_data_fits_telegram_limit():
         CALLBACK_ADD_DONORS,
         CALLBACK_DELETE,
         CALLBACK_DELETE_CONFIRM,
+        CALLBACK_SPEAK,
+        CALLBACK_LOOKS,
+        CALLBACK_FACE,
+        CALLBACK_VOICE,
+        CALLBACK_LOOK_ADD_PHOTO,
+        CALLBACK_LOOK_ADD_PROMPT,
+        CALLBACK_SPEECH_SCRIPT,
+        CALLBACK_SPEECH_VOICE_AS_IS,
+        CALLBACK_SPEECH_REWRITE,
+        CALLBACK_SPEECH_CANCEL,
+        CALLBACK_SPEECH_TO_LOOK,
+        CALLBACK_SPEECH_RENDER,
+        CALLBACK_SPEECH_REVOICE,
+        CALLBACK_SPEECH_BACK_TO_TEXT,
+        CALLBACK_SPEECH_OTHER_LOOK,
+        CALLBACK_SPEECH_PUBLISH,
+        CALLBACK_SPEECH_DROP,
+        CALLBACK_SPEECH_RETRY,
+        # Префиксные callback'и растут вместе с id образа — проверяем их
+        # тоже, на реалистичном (шестизначном) id.
+        f"{CALLBACK_LOOK_ACTIVATE_PREFIX}:999999",
+        f"{CALLBACK_LOOK_DELETE_PREFIX}:999999",
     ):
         assert len(value.encode("utf-8")) <= 64
+
+
+def test_callback_constants_have_the_exact_expected_values():
+    # Tasks 18/19/20 импортируют эти же символы — опечатка в значении будет
+    # самосогласованной и незаметной без теста, который пинит саму строку.
+    assert CALLBACK_SPEAK == "double:speak"
+    assert CALLBACK_LOOKS == "double:looks"
+    assert CALLBACK_FACE == "double:face"
+    assert CALLBACK_VOICE == "double:voice"
+    assert CALLBACK_LOOK_ADD_PHOTO == "double:look_photo"
+    assert CALLBACK_LOOK_ADD_PROMPT == "double:look_prompt"
+    assert CALLBACK_LOOK_ACTIVATE_PREFIX == "double:look_on"
+    assert CALLBACK_LOOK_DELETE_PREFIX == "double:look_del"
+    assert CALLBACK_SPEECH_SCRIPT == "speech:script"
+    assert CALLBACK_SPEECH_VOICE_AS_IS == "speech:as_is"
+    assert CALLBACK_SPEECH_REWRITE == "speech:rewrite"
+    assert CALLBACK_SPEECH_CANCEL == "speech:cancel"
+    assert CALLBACK_SPEECH_TO_LOOK == "speech:to_look"
+    assert CALLBACK_SPEECH_RENDER == "speech:render"
+    assert CALLBACK_SPEECH_REVOICE == "speech:revoice"
+    assert CALLBACK_SPEECH_BACK_TO_TEXT == "speech:back"
+    assert CALLBACK_SPEECH_OTHER_LOOK == "speech:other_look"
+    assert CALLBACK_SPEECH_PUBLISH == "speech:publish"
+    assert CALLBACK_SPEECH_DROP == "speech:drop"
+    assert CALLBACK_SPEECH_RETRY == "speech:retry"
 
 
 def test_double_screen_offers_speech_looks_face_and_voice():

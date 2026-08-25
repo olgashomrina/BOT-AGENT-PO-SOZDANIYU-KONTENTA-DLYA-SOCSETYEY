@@ -19,6 +19,7 @@ from bot.keyboards.circle import (
     CALLBACK_DELETE_CONFIRM,
     CALLBACK_DONORS_DONE,
     CALLBACK_MY_DOUBLE,
+    CALLBACK_VOICE,
     build_consent_keyboard,
     build_delete_confirm_keyboard,
     build_donors_keyboard,
@@ -47,8 +48,8 @@ from bot.storage.avatar_donors import (
     count_donors,
     get_donors,
 )
-from bot.storage.avatar_faces import get_face
-from bot.storage.avatar_looks import count_looks, get_active_look
+from bot.storage.avatar_faces import delete_face, get_face
+from bot.storage.avatar_looks import clear_looks, count_looks, get_active_look
 from bot.storage.style_examples import (
     KIND_SPOKEN,
     add_style_example,
@@ -119,7 +120,9 @@ async def on_my_double(callback: CallbackQuery, db_path: str, state: FSMContext)
     await callback.answer()
 
 
-@router.callback_query(F.data.in_({CALLBACK_CONSENT_ACCEPT, CALLBACK_ADD_DONORS}))
+@router.callback_query(
+    F.data.in_({CALLBACK_CONSENT_ACCEPT, CALLBACK_ADD_DONORS, CALLBACK_VOICE})
+)
 async def on_consent_accept(
     callback: CallbackQuery, db_path: str, state: FSMContext
 ) -> None:
@@ -258,9 +261,17 @@ async def on_donors_done(
     # сообщения перехватывает этот роутер, и бот перестаёт отвечать на всё
     # остальное (та же причина, что в сценарии авторского поста).
     await state.set_state(None)
+    # Тот же расчёт флагов, что и в on_my_double: этот сценарий этот таск
+    # специально расширил так, что лицо и образ могут появиться раньше
+    # голоса, и экран подтверждения должен честно предлагать «Сказать речь»,
+    # если снимать уже есть чем.
+    face = get_face(db_path, telegram_id)
+    active_look = get_active_look(db_path, telegram_id)
     await callback.message.answer(
         get_string("double_ready", language, donors=len(donors)),
-        reply_markup=build_my_double_keyboard(language),
+        reply_markup=build_my_double_keyboard(
+            language, has_face=face is not None, has_look=active_look is not None
+        ),
     )
     await callback.answer()
 
@@ -301,6 +312,11 @@ async def on_delete_confirm(
     delete_voice_profile(db_path, telegram_id)
     clear_donors(db_path, telegram_id)
     clear_style_examples(db_path, telegram_id, kind=KIND_SPOKEN)
+    # «Удалить двойника» теперь стирает не только голос, но и лицо с
+    # образами — таблицы хранят только чужой file_id из Telegram, локальных
+    # файлов на диске под ними нет.
+    delete_face(db_path, telegram_id)
+    clear_looks(db_path, telegram_id)
     await state.set_state(None)
 
     await callback.message.answer(get_string("double_deleted", language))

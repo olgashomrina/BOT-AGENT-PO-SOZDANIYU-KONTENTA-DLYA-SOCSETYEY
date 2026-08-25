@@ -346,8 +346,9 @@ STRINGS = {
     ),
     "double_ready": "Double ready: built on {donors} circles, voice created.",
     "double_delete_confirm_text": (
-        "This deletes the circles, the transcripts and the voice. "
-        "It can't be undone — the double would have to be built from scratch."
+        "This deletes the circles, the transcripts, the voice, the face and "
+        "the looks. It can't be undone — the double would have to be built "
+        "from scratch."
     ),
     "double_deleted": "The double and all of its data are deleted.",
     "menu_my_double_button": "🎭 My double",

@@ -357,8 +357,9 @@ STRINGS = {
         "Bản sao đã sẵn sàng: dựng trên {donors} video tròn, giọng nói đã được tạo."
     ),
     "double_delete_confirm_text": (
-        "Thao tác này xoá các video tròn, bản ghi lời và giọng nói. Không thể "
-        "hoàn tác — bản sao sẽ phải dựng lại từ đầu."
+        "Thao tác này xoá các video tròn, bản ghi lời, giọng nói, khuôn mặt "
+        "và các tạo hình. Không thể hoàn tác — bản sao sẽ phải dựng lại từ "
+        "đầu."
     ),
     "double_deleted": "Bản sao và toàn bộ dữ liệu của nó đã bị xoá.",
     "menu_my_double_button": "🎭 Bản sao của tôi",

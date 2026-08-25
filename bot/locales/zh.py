@@ -268,7 +268,7 @@ STRINGS = {
     ),
     "double_ready": "分身已就绪：基于 {donors} 条圆形视频，声音已创建。",
     "double_delete_confirm_text": (
-        "此操作将删除圆形视频、文字记录和声音。无法撤销——分身需要从头重建。"
+        "此操作将删除圆形视频、文字记录、声音、面容和造型。无法撤销——分身需要从头重建。"
     ),
     "double_deleted": "分身及其全部数据已删除。",
     "menu_my_double_button": "🎭 我的分身",

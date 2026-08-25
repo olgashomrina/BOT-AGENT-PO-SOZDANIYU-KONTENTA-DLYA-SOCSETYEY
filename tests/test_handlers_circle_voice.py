@@ -8,7 +8,10 @@ from aiogram.fsm.storage.base import StorageKey
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from bot.handlers import circle
+from bot.keyboards.circle import CALLBACK_SPEAK
 from bot.storage.avatar_donors import add_donor
+from bot.storage.avatar_faces import save_face
+from bot.storage.avatar_looks import SOURCE_UPLOADED, add_look
 from bot.storage.voice_profiles import get_voice_profile
 
 TELEGRAM_ID = 111
@@ -106,6 +109,30 @@ async def test_provider_failure_leaves_no_profile(db_path, state, monkeypatch):
 
     assert get_voice_profile(db_path, TELEGRAM_ID) is None
     callback.message.answer.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_ready_screen_offers_speak_when_face_and_look_already_exist(
+    db_path, state, monkeypatch
+):
+    # Ordering this task deliberately allows: пользователь загружает лицо и
+    # делает образ ДО записи голоса, потом собирает доноров и жмёт «Готово».
+    # Экран подтверждения обязан честно предложить «Сказать речь», а не
+    # заставлять возвращаться на «Мой двойник» за той же кнопкой.
+    monkeypatch.setattr(circle, "clone_voice", AsyncMock(return_value="voice-abc"))
+    _seed_donors(db_path)
+    await state.update_data(consent_at=CONSENT_AT)
+    save_face(db_path, TELEGRAM_ID, "photo-1")
+    add_look(db_path, TELEGRAM_ID, "img-1", "студия", SOURCE_UPLOADED)
+    callback = _callback()
+
+    await circle.on_donors_done(callback, db_path=db_path, state=state)
+
+    markup = callback.message.answer.await_args.kwargs["reply_markup"]
+    callbacks = [
+        button.callback_data for row in markup.inline_keyboard for button in row
+    ]
+    assert CALLBACK_SPEAK in callbacks
 
 
 @pytest.mark.asyncio
