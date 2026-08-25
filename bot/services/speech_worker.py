@@ -376,12 +376,27 @@ async def _process_job(bot: Bot, db_path: str, job: SpeechJob) -> None:
         video_bytes = await collect_ready(db_path, job)
     except Exception:
         # Опрос провайдера сорвался. Задание остаётся как было — следующий
-        # тик повторит; терять из-за этого соседние задания незачем.
+        # тик повторит; терять из-за этого соседние задания незачем. НО:
+        # протухший taskUUID отвечает так же (404/5xx -> исключение), а не
+        # молчаливым "ещё не готово", так что предел ожидания ответа обязан
+        # сработать и здесь — иначе он никогда не сработает для той самой
+        # формы зависания, ради которой был заведён (см. RENDER_POLL_LIMIT_
+        # SECONDS). Строку перечитываем: объект `job` тут ещё дорендерный —
+        # `collect_ready` мог упасть до какой-либо записи в базу, но
+        # опираться нужно на то, что реально лежит в базе, а не на входной
+        # аргумент.
         logger.warning(
             "Speech job polling failed",
             extra={"user_id": job.telegram_id, "operation": "speech_worker"},
             exc_info=True,
         )
+        refreshed_after_error = get_job(db_path, job.id)
+        if (
+            refreshed_after_error is not None
+            and refreshed_after_error.status == STATUS_RENDERING
+            and _render_poll_limit_exceeded(refreshed_after_error)
+        ):
+            await _expire_stalled_render(bot, db_path, refreshed_after_error)
         return
 
     refreshed = get_job(db_path, job.id)

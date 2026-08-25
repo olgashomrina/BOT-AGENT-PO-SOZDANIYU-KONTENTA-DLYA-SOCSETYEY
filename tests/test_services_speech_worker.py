@@ -758,6 +758,68 @@ async def test_an_old_rendering_job_expires_releases_seconds_and_notifies(
     )
 
 
+# Finding 2 (this round): the bound above only fires when `collect_ready`
+# RETURNS None, but a stale `taskUUID` answering 404/5xx makes `collect_ready`
+# RAISE instead — caught by `_process_job`'s own `except Exception` a few
+# lines above `video_bytes is None`, which returned before any bound was
+# consulted. This reproduces exactly the condition the bound was raised for:
+# a month-old `rendering` job whose poll errors out stays `rendering` forever,
+# with its reserved seconds held for the rest of the calendar month.
+@pytest.mark.asyncio
+async def test_an_old_rendering_job_whose_poll_raises_still_expires(
+    db_path, monkeypatch, audio_file
+):
+    from bot.services.avatar_gateway import AvatarGatewayUnavailableError
+
+    monkeypatch.setattr(
+        speech_worker,
+        "collect_ready",
+        AsyncMock(side_effect=AvatarGatewayUnavailableError("сервис недоступен")),
+    )
+    job_id = _rendering_job(db_path, audio_file)
+    add_usage(db_path, TELEGRAM_ID, 30, 0.0)
+    _age_job(db_path, job_id, speech_worker.RENDER_POLL_LIMIT_SECONDS + 60)
+    bot = _bot()
+
+    await speech_worker.process_rendering_jobs(bot, db_path)
+
+    job = get_job(db_path, job_id)
+    assert job.status == STATUS_FAILED
+    assert seconds_left(db_path, TELEGRAM_ID, 300) == 300
+    bot.send_message.assert_awaited_once_with(
+        TELEGRAM_ID, get_string("speech_failed", "ru")
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_young_rendering_job_whose_poll_raises_keeps_polling(
+    db_path, monkeypatch, audio_file
+):
+    # Тот же критичный инвариант, что и test_a_young_rendering_job_keeps_polling,
+    # но по ветке исключения: тик, который лишь сорвался у провайдера, не
+    # должен трогать updated_at — иначе предел времени станет недостижимым.
+    from bot.services.avatar_gateway import AvatarGatewayUnavailableError
+
+    monkeypatch.setattr(
+        speech_worker,
+        "collect_ready",
+        AsyncMock(side_effect=AvatarGatewayUnavailableError("сервис недоступен")),
+    )
+    job_id = _rendering_job(db_path, audio_file)
+    add_usage(db_path, TELEGRAM_ID, 30, 0.0)
+    before = get_job(db_path, job_id).updated_at
+    bot = _bot()
+
+    await speech_worker.process_rendering_jobs(bot, db_path)
+    await speech_worker.process_rendering_jobs(bot, db_path)
+
+    job = get_job(db_path, job_id)
+    assert job.status == STATUS_RENDERING
+    assert job.updated_at == before
+    assert seconds_left(db_path, TELEGRAM_ID, 300) == 270
+    bot.send_message.assert_not_awaited()
+
+
 def test_scheduler_runs_on_the_configured_interval(db_path):
     scheduler = speech_worker.build_speech_scheduler(_bot(), db_path, 20)
 

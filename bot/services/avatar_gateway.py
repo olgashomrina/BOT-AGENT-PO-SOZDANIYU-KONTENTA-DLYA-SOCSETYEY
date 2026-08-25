@@ -247,7 +247,13 @@ async def poll_render(task_uuid: str) -> RenderStatus:
     # а иногда телом, остаётся его личным делом.
     if encoded:
         try:
-            video_bytes = base64.b64decode(encoded, validate=True)
+            # Без validate=True: провайдеры оборачивают base64 переводами
+            # строк в HTTP-теле, а строгий режим считает перенос строки
+            # непечатным мусором и валит уже оплаченный рендер на ровном
+            # месте. Обычный b64decode переносы строк спокойно пропускает
+            # и всё равно ловит настоящий брак — не кратную 4 длину,
+            # нехватку паддинга — тем же binascii.Error.
+            video_bytes = base64.b64decode(encoded)
         except binascii.Error as exc:
             # Битый base64 — уже не сеть и не HTTP-статус, а сам провайдер
             # прислал мусор вместо оплаченного видео. Наружу обещаны только

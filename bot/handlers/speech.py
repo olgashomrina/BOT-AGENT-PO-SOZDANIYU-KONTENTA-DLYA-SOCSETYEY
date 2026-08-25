@@ -44,6 +44,7 @@ from bot.logging_config import LOGGER_NAME
 from bot.services.ai_gateway import TranscriptionError, transcribe
 from bot.services.avatar_gateway import AvatarGatewayError
 from bot.services.content_generator import generate_spoken_script
+from bot.services.ffmpeg_tools import FfmpegError
 from bot.services.speech_pipeline import (
     REASON_BUSY,
     REASON_LIMIT,
@@ -93,8 +94,12 @@ _VOICEABLE_STATUSES = (STATUS_DRAFT, STATUS_VOICED, STATUS_FAILED)
 # `ready`: рендер, который уже идёт или уже ушёл в канал, отменить нечем —
 # деньги потрачены (или тратятся прямо сейчас), а бросить оплаченную работу
 # значило бы никогда не забрать её ни у провайдера, ни из брони месячного
-# лимита. `ready` — не блокирующий статус для отмены: кружок уже доставлен
-# и лежит на диске, пользователь просто законно отказывается его публиковать.
+# лимита. `ready` сюда намеренно не входит целиком — он не один статус, а
+# два разных случая (см. on_cancel): `ready` БЕЗ result_file_id — рендер,
+# который воркер ещё не доставил и продолжает пытаться (см.
+# DELIVERY_RETRY_LIMIT_SECONDS в speech_worker), отменять там нечего ровно
+# так же, как и в `rendering`; `ready` С result_file_id — кружок уже
+# доставлен и лежит на диске, вот тут отмена законна.
 _CANCEL_BLOCKING_STATUSES = (STATUS_RENDERING, STATUS_PUBLISHED)
 
 
@@ -470,7 +475,23 @@ async def on_render(callback: CallbackQuery, db_path: str, state: FSMContext) ->
         # ensure_min_side) — вызов обязан стоять здесь, до request_render,
         # а не быть просто написанным и забытым. Если исходник и так большой,
         # ensure_min_side вернёт тот же look_path без пересжатия.
-        source_path = await ensure_min_side(look_path, resized_path)
+        try:
+            source_path = await ensure_min_side(look_path, resized_path)
+        except FfmpegError:
+            # До request_render — деньги ещё не потрачены. Но без этого
+            # перехвата исключение улетало наружу необработанным: спиннер
+            # колбэка никогда не гас, а пользователь не получал ни слова.
+            logger.warning(
+                "Look preprocessing failed before render",
+                extra={"user_id": telegram_id, "operation": "handler:speech"},
+                exc_info=True,
+            )
+            await callback.message.answer(
+                get_string("speech_failed", language),
+                reply_markup=build_speech_failed_keyboard(language),
+            )
+            await safe_answer(callback)
+            return
         image_bytes = _read_bytes(source_path)
     finally:
         pathlib.Path(look_path).unlink(missing_ok=True)
@@ -527,6 +548,12 @@ async def on_publish(callback: CallbackQuery, db_path: str, state: FSMContext) -
     # Публикация по file_id: рендер уже оплачен, второй раз платить не за что.
     await callback.message.bot.send_video_note(channel_id, job.result_file_id)
     update_job(db_path, job.id, status=STATUS_PUBLISHED)
+    # Иначе _current_job (через job_id в состоянии) продолжает находить это
+    # же задание и после публикации — get_active_job его бы уже не вернул
+    # (published терминален), но прямой lookup по job_id в состоянии не
+    # смотрит на статус вовсе. Без сброса «Отмена» на опубликованный кружок
+    # отвечала бы «Идёт съёмка…» про то, что уже лежит в канале.
+    await state.update_data(job_id=None)
     await callback.message.answer(get_string("publish_success", language))
     await safe_answer(callback)
 
@@ -537,23 +564,36 @@ async def on_cancel(callback: CallbackQuery, db_path: str, state: FSMContext) ->
     language = _resolve_language(db_path, telegram_id, callback.from_user.language_code)
     job = await _current_job(db_path, state, telegram_id)
     if job is not None:
-        if job.status in _CANCEL_BLOCKING_STATUSES:
-            # Рендер уже идёт (или уже ушёл в канал) и оплачен — тут нечего
-            # отменять. Клавиатура с кнопкой «Отмена» остаётся в чате поверх
-            # экрана образа даже после того, как on_render уже стартовал
-            # рендер: без этой проверки тап писал STATUS_FAILED поверх
-            # `rendering`, бронь секунд не возвращалась (единственные два
-            # места для этого — старт-отказ в request_render и
-            # collect_ready — не подберут уже отменённое задание никогда), а
-            # сам рендер продолжал опрашиваться никем. Правда тут та же, что
-            # и в on_render/on_voice_as_is: рендер идёт, надо ждать.
+        # `ready` без result_file_id — рендер ЕЩЁ НЕ доставлен: воркер прямо
+        # сейчас пытается его отправить (см. DELIVERY_RETRY_LIMIT_SECONDS в
+        # speech_worker). Отменять там нечего ровно так же, как и в
+        # `rendering`/`published` — до фикса именно этот случай тап здесь
+        # писал STATUS_FAILED поверх недоставленного задания, удалял с диска
+        # уже оплаченный ролик, который воркер вот-вот пришлёт, и отвечал
+        # «ничего не потрачено», хотя 30 секунд брони уже списаны.
+        undelivered_ready = job.status == STATUS_READY and job.result_file_id is None
+        if job.status in _CANCEL_BLOCKING_STATUSES or undelivered_ready:
+            # Рендер уже идёт, уже ушёл в канал, либо оплачен и лежит в
+            # `ready`, но ещё не доставлен, — тут нечего отменять ни в одном
+            # из трёх случаев. Клавиатура с кнопкой «Отмена» остаётся в чате
+            # поверх экрана образа даже после того, как on_render уже
+            # стартовал рендер: без этой проверки тап писал STATUS_FAILED
+            # поверх ещё не закрытого задания, бронь секунд не возвращалась
+            # (единственные два места для этого — старт-отказ в
+            # request_render и collect_ready — не подберут уже отменённое
+            # задание никогда), а сам рендер (или доставка) продолжался
+            # никем не опрашиваемым. Правда тут та же, что и в
+            # on_render/on_voice_as_is: рендер идёт (или доставляется), надо
+            # ждать.
             await callback.message.answer(get_string("speech_rendering", language))
             await safe_answer(callback)
             return
         if job.status == STATUS_READY:
-            # Кружок уже доставлен и лежит оплаченным на диске — пользователь
-            # законно отказывается его публиковать, а не бросает рендер в
-            # процессе. Оркестратор сам этот файл не удаляет (см. докстринг
+            # Сюда попадает только ДОСТАВЛЕННЫЙ `ready` (result_file_id уже
+            # есть — проверка выше отсекла обратный случай): кружок уже
+            # показан пользователю и лежит оплаченным на диске — он законно
+            # отказывается его публиковать, а не бросает рендер в процессе.
+            # Оркестратор сам этот файл не удаляет (см. докстринг
             # speech_pipeline._video_path), значит убрать его — наша забота,
             # иначе видео и озвучка так и останутся сиротами на диске.
             _rendered_video_path(job.id).unlink(missing_ok=True)

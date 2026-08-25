@@ -167,6 +167,37 @@ async def test_poll_raises_a_typed_error_on_malformed_base64_video():
 
 @respx.mock
 @pytest.mark.asyncio
+async def test_poll_decodes_a_line_wrapped_base64_video():
+    # Finding 3 (this round): `validate=True` is stricter than the previous
+    # fix needed to be — it rejects the newline-wrapped base64 bodies that
+    # HTTP payloads commonly carry, even though the same bytes decode fine
+    # under the plain `base64.b64decode`. Combined with finding 2, that made
+    # an already-paid render fail on every tick for a perfectly valid video.
+    raw = b"mp4-bytes-for-a-line-wrapped-payload-test"
+    encoded = base64.b64encode(raw).decode()
+    wrapped = "\n".join(encoded[i : i + 20] for i in range(0, len(encoded), 20))
+    respx.post(RUNWARE_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": [
+                    {
+                        "taskUUID": TASK_UUID,
+                        "status": "success",
+                        "videoBase64Data": wrapped,
+                    }
+                ]
+            },
+        )
+    )
+
+    status = await poll_render(TASK_UUID)
+
+    assert status.video_bytes == raw
+
+
+@respx.mock
+@pytest.mark.asyncio
 async def test_poll_downloads_the_video_when_only_a_url_comes_back():
     # Runware отдаёт результат то байтами, то ссылкой. Наружу шлюз в обоих
     # случаях отдаёт байты — вызывающий код о разнице знать не должен.
