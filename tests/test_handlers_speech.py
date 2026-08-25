@@ -8,8 +8,16 @@ from aiogram.fsm.storage.base import StorageKey
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from bot.handlers import speech
+from bot.locales.loader import get_string
+from bot.services.speech_pipeline import (
+    REASON_BUSY,
+    REASON_NO_AUDIO,
+    REASON_TOO_LONG,
+    RenderRefused,
+)
 from bot.storage.avatar_faces import save_face
 from bot.storage.avatar_looks import SOURCE_UPLOADED, add_look
+from bot.storage.limits import get_daily_count
 from bot.storage.render_usage import add_usage
 from bot.storage.speech_jobs import (
     STATUS_RENDERING,
@@ -156,6 +164,103 @@ async def test_synthesis_uses_the_existing_cloned_voice(
 
 
 @pytest.mark.asyncio
+async def test_stale_voice_as_is_tap_does_not_pay(
+    db_path, state, ready_double, monkeypatch
+):
+    # «Озвучить как есть» может остаться нажимаемой на старом сообщении в
+    # чате уже после того, как это же задание ушло в рендер. Синтез — платный
+    # вызов ElevenLabs, и раз attach_audio всё равно откажет заданию в этом
+    # статусе, платить за озвучку, которую тут же выбросят, нельзя.
+    save_voice_profile(db_path, TELEGRAM_ID, "elevenlabs", "voice-abc", "2026-08-01")
+    synthesize = AsyncMock(return_value=b"mp3")
+    monkeypatch.setattr(speech, "synthesize", synthesize)
+    monkeypatch.setenv("AVATAR_VOICE_SYNTHESIS_ENABLED", "1")
+    job_id = create_job(db_path, TELEGRAM_ID, "текст")
+    update_job(db_path, job_id, status=STATUS_RENDERING)
+    await state.update_data(job_id=job_id)
+
+    await speech.on_voice_as_is(_callback(), db_path=db_path, state=state)
+
+    synthesize.assert_not_awaited()
+    assert get_daily_count(db_path, TELEGRAM_ID) == 0
+
+
+@pytest.mark.asyncio
+async def test_voice_refusal_by_busy_job_tells_the_truth(
+    db_path, state, ready_double, monkeypatch
+):
+    # attach_audio отказывает нулём и для "занято", и для "звука нет вовсе" —
+    # только speech_too_long про эти нули врёт ("длиннее 0 секунд").
+    monkeypatch.setattr(
+        speech, "attach_audio", AsyncMock(side_effect=RenderRefused(REASON_BUSY, 0))
+    )
+    monkeypatch.setattr(speech, "transcribe", AsyncMock(return_value="расшифровка"))
+    monkeypatch.setattr(speech, "_read_bytes", lambda path: b"voice-bytes")
+    await state.set_state(speech.SpeechStates.waiting_input)
+    message = _voice_message()
+
+    await speech.on_voice(message, db_path=db_path, state=state)
+
+    message.answer.assert_awaited_once_with(get_string("speech_rendering", "ru"))
+
+
+@pytest.mark.asyncio
+async def test_voice_as_is_refusal_by_missing_job_tells_the_truth(
+    db_path, state, ready_double, monkeypatch
+):
+    save_voice_profile(db_path, TELEGRAM_ID, "elevenlabs", "voice-abc", "2026-08-01")
+    monkeypatch.setattr(speech, "synthesize", AsyncMock(return_value=b"mp3"))
+    monkeypatch.setattr(
+        speech, "attach_audio", AsyncMock(side_effect=RenderRefused(REASON_NO_AUDIO, 0))
+    )
+    monkeypatch.setenv("AVATAR_VOICE_SYNTHESIS_ENABLED", "1")
+    job_id = create_job(db_path, TELEGRAM_ID, "текст")
+    await state.update_data(job_id=job_id)
+
+    callback = _callback()
+    await speech.on_voice_as_is(callback, db_path=db_path, state=state)
+
+    callback.message.answer.assert_awaited_once_with(get_string("speech_invite", "ru"))
+
+
+@pytest.mark.asyncio
+async def test_voice_too_long_leaves_the_user_able_to_retry(
+    db_path, state, ready_double, monkeypatch
+):
+    # Реальный случай отказа attach_audio: запись длиннее 60 секунд.
+    # Пользователь должен суметь просто прислать что-то ещё, а не упереться
+    # в состояние None, где ни on_text, ни on_voice уже не сработают.
+    monkeypatch.setattr(
+        speech, "attach_audio", AsyncMock(side_effect=RenderRefused(REASON_TOO_LONG, 60))
+    )
+    monkeypatch.setattr(speech, "transcribe", AsyncMock(return_value="расшифровка"))
+    monkeypatch.setattr(speech, "_read_bytes", lambda path: b"voice-bytes")
+    await state.set_state(speech.SpeechStates.waiting_input)
+
+    await speech.on_voice(_voice_message(), db_path=db_path, state=state)
+
+    assert await state.get_state() == speech.SpeechStates.waiting_input.state
+
+
+@pytest.mark.asyncio
+async def test_voice_as_is_too_long_leaves_the_user_able_to_retry(
+    db_path, state, ready_double, monkeypatch
+):
+    save_voice_profile(db_path, TELEGRAM_ID, "elevenlabs", "voice-abc", "2026-08-01")
+    monkeypatch.setattr(speech, "synthesize", AsyncMock(return_value=b"mp3"))
+    monkeypatch.setattr(
+        speech, "attach_audio", AsyncMock(side_effect=RenderRefused(REASON_TOO_LONG, 60))
+    )
+    monkeypatch.setenv("AVATAR_VOICE_SYNTHESIS_ENABLED", "1")
+    job_id = create_job(db_path, TELEGRAM_ID, "текст")
+    await state.update_data(job_id=job_id)
+
+    await speech.on_voice_as_is(_callback(), db_path=db_path, state=state)
+
+    assert await state.get_state() == speech.SpeechStates.waiting_input.state
+
+
+@pytest.mark.asyncio
 async def test_script_button_rewrites_the_text_without_touching_the_original(
     db_path, state, ready_double, monkeypatch
 ):
@@ -176,8 +281,10 @@ async def test_script_button_rewrites_the_text_without_touching_the_original(
 async def test_render_is_refused_when_the_monthly_limit_is_out(
     db_path, state, ready_double, monkeypatch
 ):
-    start = AsyncMock(return_value="task-1")
-    monkeypatch.setattr(speech, "start_render", start)
+    # on_render зовёт request_render, а не start_render (тот вызывается уже
+    # внутри speech_pipeline) — патчим и проверяем реальный путь вызова.
+    request = AsyncMock()
+    monkeypatch.setattr(speech, "request_render", request)
     add_usage(db_path, TELEGRAM_ID, 300, 1350.0)
     job_id = create_job(db_path, TELEGRAM_ID, "текст")
     update_job(
@@ -188,7 +295,7 @@ async def test_render_is_refused_when_the_monthly_limit_is_out(
 
     await speech.on_render(callback, db_path=db_path, state=state)
 
-    start.assert_not_awaited()
+    request.assert_not_awaited()
     assert get_job(db_path, job_id).status == STATUS_VOICED
     assert "секунды" in callback.message.answer.await_args.args[0].lower()
 
@@ -210,6 +317,28 @@ async def test_render_starts_and_reports_the_wait(
 
     speech.request_render.assert_awaited_once()
     callback.message.answer.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_render_refusal_by_busy_job_reports_the_render_in_progress(
+    db_path, state, ready_double, monkeypatch
+):
+    # REASON_BUSY значит рендер уже идёт (или уже готов) и уже оплачен.
+    # Звать начать заново значило бы выбросить оплаченную работу.
+    monkeypatch.setattr(
+        speech, "request_render", AsyncMock(side_effect=RenderRefused(REASON_BUSY, 0))
+    )
+    monkeypatch.setattr(speech, "_read_bytes", lambda path: b"image-bytes")
+    job_id = create_job(db_path, TELEGRAM_ID, "текст")
+    update_job(
+        db_path, job_id, status=STATUS_VOICED, audio_path="/tmp/a.mp3", audio_duration_sec=30.0
+    )
+    await state.update_data(job_id=job_id)
+    callback = _callback()
+
+    await speech.on_render(callback, db_path=db_path, state=state)
+
+    callback.message.answer.assert_awaited_once_with(get_string("speech_rendering", "ru"))
 
 
 @pytest.mark.asyncio

@@ -42,10 +42,12 @@ from bot.keyboards.circle import (
 from bot.locales.loader import get_string
 from bot.logging_config import LOGGER_NAME
 from bot.services.ai_gateway import TranscriptionError, transcribe
-from bot.services.avatar_gateway import AvatarGatewayError, start_render
+from bot.services.avatar_gateway import AvatarGatewayError
 from bot.services.content_generator import generate_spoken_script
 from bot.services.speech_pipeline import (
+    REASON_BUSY,
     REASON_LIMIT,
+    REASON_TOO_LONG,
     RenderRefused,
     attach_audio,
     request_render,
@@ -56,8 +58,10 @@ from bot.storage.avatar_looks import count_looks, get_active_look, get_looks
 from bot.storage.limits import increment_usage
 from bot.storage.render_usage import seconds_left
 from bot.storage.speech_jobs import (
+    STATUS_DRAFT,
     STATUS_FAILED,
     STATUS_PUBLISHED,
+    STATUS_VOICED,
     create_job,
     get_active_job,
     get_job,
@@ -74,6 +78,13 @@ router = Router(name="speech")
 
 class SpeechStates(StatesGroup):
     waiting_input = State()
+
+
+# Совпадает с _ATTACHABLE_STATUSES в speech_pipeline.attach_audio: задание
+# принимает новую озвучку только в этих статусах. Проверяем тем же набором
+# здесь же, до платного synthesize, чтобы не платить за озвучку, которую
+# attach_audio всё равно откажется принять.
+_VOICEABLE_STATUSES = (STATUS_DRAFT, STATUS_VOICED, STATUS_FAILED)
 
 
 def _read_bytes(path: str) -> bytes:
@@ -188,7 +199,20 @@ async def on_voice(message: Message, db_path: str, state: FSMContext) -> None:
     try:
         duration = await attach_audio(db_path, job_id, audio_bytes)
     except RenderRefused as refusal:
-        await message.answer(get_string("speech_too_long", language, limit=refusal.detail))
+        if refusal.reason == REASON_TOO_LONG:
+            await message.answer(
+                get_string("speech_too_long", language, limit=refusal.detail)
+            )
+            # Не оставляем человека без хода: короче голосовое или текст
+            # снова примет on_text/on_voice в этом же состоянии.
+            await state.set_state(SpeechStates.waiting_input)
+        elif refusal.reason == REASON_BUSY:
+            # Задание уже ушло дальше voiced — рендер идёт или уже готов
+            # и оплачен. Число тут ни при чём, "0 секунд" было бы враньём.
+            await message.answer(get_string("speech_rendering", language))
+        else:  # REASON_NO_AUDIO: задание пропало
+            await message.answer(get_string("speech_invite", language))
+            await state.set_state(SpeechStates.waiting_input)
         return
 
     await message.answer(
@@ -268,6 +292,15 @@ async def on_voice_as_is(callback: CallbackQuery, db_path: str, state: FSMContex
     if job is None:
         await safe_answer(callback)
         return
+    if job.status not in _VOICEABLE_STATUSES:
+        # Задание ушло дальше voiced (rendering/ready/published) — тап по
+        # клавиатуре, оставшейся в чате с прошлого раза. Синтез — платный
+        # вызов ElevenLabs, а attach_audio всё равно откажется принять
+        # озвучку в этом статусе, так что платить здесь не за что: рендер
+        # уже идёт или уже готов и оплачен, сообщаем правду об этом.
+        await callback.message.answer(get_string("speech_rendering", language))
+        await safe_answer(callback)
+        return
 
     text = job.script or job.source_text
     settings = load_settings()
@@ -306,9 +339,20 @@ async def on_voice_as_is(callback: CallbackQuery, db_path: str, state: FSMContex
     try:
         duration = await attach_audio(db_path, job.id, audio_bytes)
     except RenderRefused as refusal:
-        await callback.message.answer(
-            get_string("speech_too_long", language, limit=refusal.detail)
-        )
+        if refusal.reason == REASON_TOO_LONG:
+            await callback.message.answer(
+                get_string("speech_too_long", language, limit=refusal.detail)
+            )
+            # Не оставляем человека без хода: короче голосовое или текст
+            # снова примет on_text/on_voice в этом же состоянии.
+            await state.set_state(SpeechStates.waiting_input)
+        elif refusal.reason == REASON_BUSY:
+            # Задание уже ушло дальше voiced — рендер идёт или уже готов
+            # и оплачен. Число тут ни при чём, "0 секунд" было бы враньём.
+            await callback.message.answer(get_string("speech_rendering", language))
+        else:  # REASON_NO_AUDIO: задание пропало
+            await callback.message.answer(get_string("speech_invite", language))
+            await state.set_state(SpeechStates.waiting_input)
         await safe_answer(callback)
         return
 
@@ -408,11 +452,15 @@ async def on_render(callback: CallbackQuery, db_path: str, state: FSMContext) ->
             await callback.message.answer(
                 get_string("speech_limit_exceeded", language, left=refusal.detail)
             )
+        elif refusal.reason == REASON_BUSY:
+            # Рендер для этого задания уже идёт (или уже готов) — деньги
+            # уже потрачены. Звать начать заново значило бы выбросить
+            # оплаченную работу; правда тут — "снимаю, жди".
+            await callback.message.answer(get_string("speech_rendering", language))
         else:
-            # REASON_NO_AUDIO/REASON_BUSY: задание пропало или уже ушло
-            # дальше по статусам (стало rendering/ready/published между
-            # показом клавиатуры и тапом). Числа тут нет и врать про предел
-            # формата нечем — просим начать заново с чистого экрана.
+            # REASON_NO_AUDIO: задание пропало между показом клавиатуры и
+            # тапом. Числа тут нет и врать про предел формата нечем —
+            # просим начать заново с чистого экрана.
             await callback.message.answer(get_string("speech_invite", language))
             await state.set_state(SpeechStates.waiting_input)
         await safe_answer(callback)
