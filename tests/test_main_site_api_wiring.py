@@ -157,3 +157,49 @@ def test_speech_routers_are_wired_before_the_catch_all():
     assert "speech" in names
     assert names.index("double") < names.index("content")
     assert names.index("speech") < names.index("content")
+
+
+def _router_owns_command(router) -> bool:
+    # Роутер "владеет" командой, если хоть один из его message-хендлеров
+    # фильтрует по Command(...) или CommandStart() — т.е. реально отвечает
+    # на bang-команду вида /start или /costs.
+    from aiogram.filters import Command, CommandStart
+
+    for handler in router.message.handlers:
+        for filter_obj in handler.filters or []:
+            if isinstance(filter_obj.callback, (Command, CommandStart)):
+                return True
+    return False
+
+
+def test_double_and_speech_are_wired_after_every_command_router_before_content():
+    # double_router и speech_router перехватывают сообщения только по
+    # FSM-состоянию (@router.message(DoubleStates.waiting_face) и т.п.),
+    # без фильтра по команде. Значит, любой роутер, который отвечает на
+    # команду и по архитектуре должен быть виден раньше "ловца всего"
+    # content_router, обязан быть зарегистрирован раньше double/speech —
+    # иначе пользователь, застрявший в состоянии двойника или озвучки,
+    # получит /start, /costs и другие команды съеденными этим состоянием
+    # вместо их обычного выполнения. Свойство пиновано программно (через
+    # реальные фильтры хендлеров), а не списком имён роутеров, чтобы новый
+    # command-роутер, добавленный в диспетчер, автоматически проверялся тоже.
+    from bot.main import build_dispatcher
+
+    dispatcher = build_dispatcher()
+    routers = list(dispatcher.sub_routers)
+    names = [router.name for router in routers]
+
+    double_index = names.index("double")
+    speech_index = names.index("speech")
+    content_index = names.index("content")
+
+    for index, router in enumerate(routers):
+        if index < content_index and _router_owns_command(router):
+            assert index < double_index, (
+                f"{router.name!r} владеет командой, но зарегистрирован после double_router — "
+                "команда будет съедена FSM-состоянием двойника"
+            )
+            assert index < speech_index, (
+                f"{router.name!r} владеет командой, но зарегистрирован после speech_router — "
+                "команда будет съедена FSM-состоянием озвучки"
+            )
