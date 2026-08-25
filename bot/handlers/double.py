@@ -312,6 +312,17 @@ async def on_look_activate(callback: CallbackQuery, db_path: str, state: FSMCont
         # Кнопка с устаревшей клавиатуры — образ уже удалён. Раньше тап не
         # делал ничего видимого; перерисовываем список, чтобы кнопка исчезла.
         await show_looks(callback.message, db_path, telegram_id, language)
+
+    # Если человек пришёл сюда из сценария речи по кнопке «Другой образ»,
+    # вернём его туда же, а не оставим в галерее.
+    from bot.storage.speech_jobs import STATUS_READY, STATUS_VOICED, get_active_job
+
+    job = get_active_job(db_path, telegram_id)
+    if job is not None and job.status in {STATUS_VOICED, STATUS_READY}:
+        from bot.handlers.speech import _show_look_screen
+
+        await _show_look_screen(callback.message, db_path, telegram_id, language)
+
     await safe_answer(callback)
 
 

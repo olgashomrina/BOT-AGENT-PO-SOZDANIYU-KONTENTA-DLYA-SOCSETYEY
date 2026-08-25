@@ -326,6 +326,28 @@ async def test_picking_a_look_makes_it_active(db_path, state):
 
 
 @pytest.mark.asyncio
+async def test_picking_a_look_mid_speech_returns_to_the_speech_screen(db_path, state):
+    # Пришли сюда по кнопке «Другой образ» экрана речи — активировав образ,
+    # вернуться нужно туда же, а не оставаться в галерее лиц.
+    from bot.storage.speech_jobs import STATUS_VOICED, create_job, update_job
+
+    add_look(db_path, TELEGRAM_ID, "img-1", "студия", SOURCE_UPLOADED)
+    second = add_look(db_path, TELEGRAM_ID, "img-2", "улица", SOURCE_UPLOADED)
+    job_id = create_job(db_path, TELEGRAM_ID, "текст")
+    update_job(
+        db_path, job_id, status=STATUS_VOICED, audio_path="/tmp/a.mp3", audio_duration_sec=10.0
+    )
+
+    callback = _callback(f"double:look_on:{second}")
+    await double.on_look_activate(callback, db_path=db_path, state=state)
+
+    assert get_active_look(db_path, TELEGRAM_ID).id == second
+    assert callback.message.answer.await_args.args[0] == get_string(
+        "speech_look_screen", "ru", title="улица"
+    )
+
+
+@pytest.mark.asyncio
 async def test_deleting_a_look_removes_it(db_path, state):
     look_id = add_look(db_path, TELEGRAM_ID, "img-1", "студия", SOURCE_UPLOADED)
 
